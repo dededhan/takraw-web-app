@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Build the PHP runtime
-FROM php:8.3-fpm-alpine
+FROM php:8.4-fpm-alpine
 WORKDIR /var/www/html
 
 # Install system dependencies and PHP extensions
