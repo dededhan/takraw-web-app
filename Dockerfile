@@ -57,10 +57,6 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/php.ini /usr/local/etc/php/conf.d/app.ini
 
-# GANTI DUA BARIS SED SEBELUMNYA DENGAN INI:
-RUN sed -i 's/listen 80 default_server;/listen [::]:80 default_server;/g' /etc/nginx/nginx.conf
-RUN sed -i 's/listen 80;/listen ${PORT};/g' /etc/nginx/nginx.conf || true
-RUN sed -i "s/listen 80 default_server;/listen 80 default_server;/g" /etc/nginx/nginx.conf
 # Fix directories and permissions for Laravel storage/cache
 RUN mkdir -p storage/framework/cache/data \
     && mkdir -p storage/framework/app/cache \
