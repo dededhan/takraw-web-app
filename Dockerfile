@@ -49,9 +49,17 @@ COPY --from=assets-builder /app/public/build/manifest.json ./public/build/manife
 ENV COMPOSER_ALLOW_SUPERUSER=1
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Copy configurations
+# ==========================================
+# PERBAIKAN STRATEGIS UNTUK RAILWAY
+# ==========================================
+
+# 1. Copy konfigurasi dari folder docker/ ke sistem lokal container
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/php.ini /usr/local/etc/php/conf.d/app.ini
+
+# Trik cerdas: Mengubah port 80 di nginx.conf secara dinamis menggunakan variabel ${PORT} dari Railway
+RUN sed -i 's/listen 80 default_server;/listen ${PORT} default_server;/g' /etc/nginx/nginx.conf
+RUN sed -i 's/listen \[::\]:80 default_server;/listen \[::\]:${PORT} default_server;/g' /etc/nginx/nginx.conf
 
 # Fix directories and permissions for Laravel storage/cache
 RUN mkdir -p storage/framework/cache/data \
@@ -62,10 +70,7 @@ RUN mkdir -p storage/framework/cache/data \
     && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Expose port 80
-EXPOSE 80
-
-# Configure entrypoint
+# Copy dan konfigurasikan entrypoint agar bisa dieksekusi oleh Railway
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
