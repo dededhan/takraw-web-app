@@ -1,5 +1,5 @@
-import { Head, usePage } from '@inertiajs/react';
-import { useState, useCallback } from 'react';
+import { Head, usePage, router } from '@inertiajs/react';
+import { useState, useCallback, useEffect } from 'react';
 
 const STAT_GROUPS = [
     {
@@ -84,30 +84,39 @@ export default function LiveScoring({ match: initialMatch }) {
         return res.json();
     };
 
+    // Sync state with props when Inertia reloads/updates props
+    useEffect(() => {
+        setMatchData(initialMatch);
+        setShowSetup(initialMatch.status === 'scheduled' || initialMatch.status === 'setup');
+    }, [initialMatch]);
+
     // Setup match
-    const handleSetup = async (e) => {
+    const handleSetup = (e) => {
         e.preventDefault();
         setProcessing(true);
-        try {
-            await fetchPost(route('scoring.setup', matchData.id), setupData);
-            // Reload the page to get fresh data
-            window.location.reload();
-        } catch (err) {
-            console.error('Setup error:', err);
-        }
-        setProcessing(false);
+        router.post(route('scoring.setup', matchData.id), setupData, {
+            preserveState: false,
+            onSuccess: () => {
+                setProcessing(false);
+            },
+            onError: () => {
+                setProcessing(false);
+            }
+        });
     };
 
     // Start match
-    const handleStart = async () => {
+    const handleStart = () => {
         setProcessing(true);
-        try {
-            await fetchPost(route('scoring.start', matchData.id), {});
-            window.location.reload();
-        } catch (err) {
-            console.error('Start error:', err);
-        }
-        setProcessing(false);
+        router.post(route('scoring.start', matchData.id), {}, {
+            preserveState: false,
+            onSuccess: () => {
+                setProcessing(false);
+            },
+            onError: () => {
+                setProcessing(false);
+            }
+        });
     };
 
     // Update score

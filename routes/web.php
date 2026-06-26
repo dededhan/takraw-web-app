@@ -9,6 +9,7 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\CoachTournamentController;
+use App\Http\Controllers\BracketController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -37,6 +38,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('role:admin')->group(function () {
         // Tournaments
         Route::resource('tournaments', TournamentController::class);
+        Route::post('/tournaments/{tournament}/generate-bracket', [BracketController::class, 'generateFromPools'])->name('tournaments.generate-bracket');
+        Route::post('/tournaments/{tournament}/add-team', [TournamentController::class, 'addTeam'])->name('tournaments.add-team');
+        Route::delete('/tournaments/{tournament}/teams/{team}', [TournamentController::class, 'removeTeam'])->name('tournaments.remove-team');
 
         // Pool Management
         Route::get('/tournaments/{tournament}/pools', [PoolController::class, 'index'])->name('pools.index');

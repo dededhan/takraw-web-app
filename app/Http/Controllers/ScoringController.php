@@ -184,6 +184,11 @@ class ScoringController extends Controller
                 'winner_team_id' => $matchWinner,
             ]);
 
+            // Recalculate standings if it's a pool match
+            if ($match->pool_id) {
+                \App\Models\PoolStanding::recalculate($match->pool_id);
+            }
+
             // If bracket match, advance winner to next match
             if ($match->next_match_id) {
                 $nextMatch = Match_::find($match->next_match_id);
