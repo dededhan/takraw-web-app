@@ -58,14 +58,13 @@ COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/php.ini /usr/local/etc/php/conf.d/app.ini
 
 # Fix directories and permissions for Laravel storage/cache
+# Fix directories and permissions for Laravel storage/cache
 RUN mkdir -p storage/framework/cache/data \
-    && mkdir -p storage/framework/app/cache \
     && mkdir -p storage/framework/sessions \
-    && mkdir -p storage/framework/views \
+    && storage/framework/views \
     && mkdir -p storage/logs \
     && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
-
 # Copy dan konfigurasikan entrypoint agar bisa dieksekusi oleh Railway
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
