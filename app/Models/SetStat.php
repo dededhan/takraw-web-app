@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'feeding_success', 'feeding_fail',
     'strike_success', 'strike_fail',
     'block_success', 'block_fail',
+    'zone_1', 'zone_2', 'zone_3', 'zone_4',
+    'zone_5', 'zone_6', 'zone_7',
 ])]
 class SetStat extends Model
 {
@@ -28,6 +30,8 @@ class SetStat extends Model
         'feeding_success', 'feeding_fail',
         'strike_success', 'strike_fail',
         'block_success', 'block_fail',
+        'zone_1', 'zone_2', 'zone_3', 'zone_4',
+        'zone_5', 'zone_6', 'zone_7',
     ];
 
     // ─── Relationships ──────────────────────────────
