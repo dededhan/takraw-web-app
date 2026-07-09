@@ -23,9 +23,19 @@ class RegistrationTest extends TestCase
             'email' => 'test@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
+            'role' => 'coach',
+            'phone' => '0812345678',
         ]);
 
-        $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        $this->assertGuest();
+        $response->assertRedirect(route('login'));
+        $response->assertSessionHas('status', 'Registrasi berhasil! Akun Anda sedang menunggu persetujuan admin.');
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'test@example.com',
+            'role' => 'coach',
+            'phone' => '0812345678',
+            'is_active' => false,
+        ]);
     }
 }

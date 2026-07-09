@@ -1,8 +1,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, useForm, router, usePage } from '@inertiajs/react';
 import { useState, useMemo } from 'react';
 
 export default function UserIndex({ users }) {
+    const { auth } = usePage().props;
     const [search, setSearch] = useState('');
     const [activeTab, setActiveTab] = useState('all'); // all, admin, coach, referee
     const [isOpen, setIsOpen] = useState(false);
@@ -240,39 +241,67 @@ export default function UserIndex({ users }) {
                                         <td className="px-6 py-4 font-mono text-xs text-surface-400">
                                             {user.phone || '—'}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-4 text-center">
                                             <div className="flex items-center justify-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleToggleActive(user)}
-                                                    className={`${
-                                                        user.is_active ? 'bg-emerald-500' : 'bg-surface-700'
-                                                    } relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500/50`}
-                                                >
-                                                    <span
-                                                        className={`${
-                                                            user.is_active ? 'translate-x-5' : 'translate-x-0'
-                                                        } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out`}
-                                                    />
-                                                </button>
+                                                {user.is_active ? (
+                                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                        Aktif
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-glow-accent">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                        Menunggu Persetujuan
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-3">
-                                                <button
-                                                    onClick={() => openEditModal(user)}
-                                                    className="p-1.5 rounded-lg bg-surface-800 text-surface-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all text-xs flex items-center gap-1 border border-surface-700/50 hover:border-blue-500/30"
-                                                    title="Edit Akun"
-                                                >
-                                                    ✏️ <span className="hidden md:inline">Edit</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => confirmDelete(user)}
-                                                    className="p-1.5 rounded-lg bg-surface-800 text-surface-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs flex items-center gap-1 border border-surface-700/50 hover:border-red-500/30"
-                                                    title="Hapus Akun"
-                                                >
-                                                    🗑️ <span className="hidden md:inline">Hapus</span>
-                                                </button>
+                                            <div className="flex items-center justify-end gap-2">
+                                                {!user.is_active ? (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleToggleActive(user)}
+                                                            className="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/20 hover:border-emerald-500 font-semibold text-xs transition-all duration-200 flex items-center gap-1"
+                                                            title="Setujui Pendaftaran"
+                                                        >
+                                                            ✅ Setujui
+                                                        </button>
+                                                        <button
+                                                            onClick={() => confirmDelete(user)}
+                                                            className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/20 hover:border-rose-500 font-semibold text-xs transition-all duration-200 flex items-center gap-1"
+                                                            title="Tolak Pendaftaran"
+                                                        >
+                                                            ❌ Tolak
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {auth?.user?.id !== user.id && (
+                                                            <button
+                                                                onClick={() => handleToggleActive(user)}
+                                                                className="p-1.5 rounded-lg bg-surface-800 text-surface-400 hover:text-amber-400 hover:bg-amber-500/10 transition-all text-xs flex items-center gap-1 border border-surface-700/50 hover:border-amber-500/30"
+                                                                title="Nonaktifkan Akun"
+                                                            >
+                                                                ⏸️ <span className="hidden md:inline">Nonaktifkan</span>
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => openEditModal(user)}
+                                                            className="p-1.5 rounded-lg bg-surface-800 text-surface-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all text-xs flex items-center gap-1 border border-surface-700/50 hover:border-blue-500/30"
+                                                            title="Edit Akun"
+                                                        >
+                                                            ✏️ <span className="hidden md:inline">Edit</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => confirmDelete(user)}
+                                                            className="p-1.5 rounded-lg bg-surface-800 text-surface-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs flex items-center gap-1 border border-surface-700/50 hover:border-red-500/30"
+                                                            title="Hapus Akun"
+                                                        >
+                                                            🗑️ <span className="hidden md:inline">Hapus</span>
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
