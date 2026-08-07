@@ -132,6 +132,124 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
     );
 }
 
+function computePoolStandings(pool, tournamentMatches = []) {
+    const isTeamMode = pool.match_mode === 'team_regu' || pool.match_mode === 'team_double';
+    const teams = isTeamMode
+        ? (pool.super_teams || pool.superTeams || [])
+        : (pool.teams || []);
+
+    const poolMatches = (tournamentMatches || []).filter(
+        m => m.pool_id === pool.id || (m.stage === 'pool' && m.match_mode === pool.match_mode && (
+            isTeamMode
+                ? teams.some(t => t.id === m.home_super_team_id || t.id === m.away_super_team_id)
+                : teams.some(t => t.id === m.home_team_id || t.id === m.away_team_id)
+        ))
+    );
+
+    const standingsMap = {};
+
+    teams.forEach(t => {
+        standingsMap[t.id] = {
+            id: t.id,
+            name: t.name,
+            members: t.members || [],
+            matches_played: 0,
+            matches_won: 0,
+            matches_lost: 0,
+            matches_diff: 0,
+            game_won: 0,
+            game_lost: 0,
+            game_diff: 0,
+            set_won: 0,
+            set_lost: 0,
+            set_diff: 0,
+            pts_won: 0,
+            pts_lost: 0,
+            pts_diff: 0,
+            score: 0,
+        };
+    });
+
+    poolMatches.forEach(m => {
+        if (m.status !== 'finished') return;
+
+        const homeId = isTeamMode ? m.home_super_team_id : m.home_team_id;
+        const awayId = isTeamMode ? m.away_super_team_id : m.away_team_id;
+
+        const homeEntry = standingsMap[homeId];
+        const awayEntry = standingsMap[awayId];
+
+        if (!homeEntry || !awayEntry) return;
+
+        homeEntry.matches_played += 1;
+        awayEntry.matches_played += 1;
+
+        let homeSetsWon = 0;
+        let awaySetsWon = 0;
+
+        (m.sets || []).forEach(s => {
+            if (s.status !== 'finished') return;
+            const hScore = s.home_score || 0;
+            const aScore = s.away_score || 0;
+
+            homeEntry.pts_won += hScore;
+            homeEntry.pts_lost += aScore;
+            awayEntry.pts_won += aScore;
+            awayEntry.pts_lost += hScore;
+
+            // Check set winner matching team or super team
+            if (s.winner_team_id === homeId || (isTeamMode && (s.winner_team_id === m.home_super_team_id || s.winner_team_id === m.home_team_id))) {
+                homeSetsWon += 1;
+            } else if (s.winner_team_id === awayId || (isTeamMode && (s.winner_team_id === m.away_super_team_id || s.winner_team_id === m.away_team_id))) {
+                awaySetsWon += 1;
+            }
+        });
+
+        homeEntry.set_won += homeSetsWon;
+        homeEntry.set_lost += awaySetsWon;
+        awayEntry.set_won += awaySetsWon;
+        awayEntry.set_lost += homeSetsWon;
+
+        const winnerId = m.winner_team_id || (homeSetsWon > awaySetsWon ? homeId : awayId);
+
+        if (winnerId === homeId) {
+            homeEntry.matches_won += 1;
+            awayEntry.matches_lost += 1;
+            homeEntry.score += 3;
+            awayEntry.score += 0;
+        } else if (winnerId === awayId) {
+            awayEntry.matches_won += 1;
+            homeEntry.matches_lost += 1;
+            awayEntry.score += 3;
+            homeEntry.score += 0;
+        }
+
+        if (isTeamMode) {
+            homeEntry.game_won += homeSetsWon;
+            homeEntry.game_lost += awaySetsWon;
+            awayEntry.game_won += awaySetsWon;
+            awayEntry.game_lost += homeSetsWon;
+        }
+    });
+
+    const standingsList = Object.values(standingsMap).map(st => {
+        st.matches_diff = st.matches_won - st.matches_lost;
+        st.game_diff = st.game_won - st.game_lost;
+        st.set_diff = st.set_won - st.set_lost;
+        st.pts_diff = st.pts_won - st.pts_lost;
+        return st;
+    });
+
+    standingsList.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (b.matches_diff !== a.matches_diff) return b.matches_diff - a.matches_diff;
+        if (b.set_diff !== a.set_diff) return b.set_diff - a.set_diff;
+        return b.pts_diff - a.pts_diff;
+    });
+
+    return standingsList;
+}
+
 function OverviewTab({ tournament }) {
     const poolsByMode = (tournament.pools || []).reduce((acc, pool) => {
         const mode = pool.match_mode || tournament.mode || 'regu';
@@ -176,61 +294,127 @@ function OverviewTab({ tournament }) {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {pools.map((pool) => {
                                 const isTeamMode = pool.match_mode === 'team_regu' || pool.match_mode === 'team_double';
-                                const superTeams = pool.super_teams || pool.superTeams || [];
+                                const standings = computePoolStandings(pool, tournament.matches);
 
                                 return (
-                                    <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden shadow-sm">
-                                        <div className="px-5 py-3 border-b border-surface-700/50 bg-surface-800/30 flex items-center justify-between">
-                                            <h4 className="text-sm font-semibold text-surface-200">Pool {pool.name}</h4>
-                                            <span className="text-xs text-surface-500 font-mono">{cfg.label}</span>
+                                    <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden shadow-md">
+                                        <div className="px-5 py-3 border-b border-surface-700/50 bg-surface-800/40 flex items-center justify-between">
+                                            <h4 className="text-sm font-bold text-surface-100 flex items-center gap-2">
+                                                <span>🏊 Pool {pool.name}</span>
+                                            </h4>
+                                            <span className="text-[10px] text-surface-400 font-mono uppercase bg-surface-950 px-2 py-0.5 rounded border border-surface-800">
+                                                {cfg.label}
+                                            </span>
                                         </div>
-                                        <table className="w-full text-left">
-                                            <thead>
-                                                <tr className="text-xs text-surface-500 border-b border-surface-700/30">
-                                                    <th className="px-4 py-2">#</th>
-                                                    <th className="px-4 py-2">Tim / Super Team</th>
-                                                    <th className="px-4 py-2 text-center">M</th>
-                                                    <th className="px-4 py-2 text-center">W</th>
-                                                    <th className="px-4 py-2 text-center">L</th>
-                                                    <th className="px-4 py-2 text-center">PF</th>
-                                                    <th className="px-4 py-2 text-center">PA</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-surface-700/20">
-                                                {isTeamMode || (superTeams.length > 0 && (!pool.standings || pool.standings.length === 0)) ? (
-                                                    superTeams.map((st, i) => (
-                                                        <tr key={st.id} className={i < 2 ? 'bg-primary-500/5' : ''}>
-                                                            <td className="px-4 py-2.5 text-xs text-surface-400">{i + 1}</td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-200 font-medium">
-                                                                <div>
-                                                                    <span className="font-bold text-amber-300">🏆 {st.name}</span>
-                                                                    <div className="text-[10px] text-surface-400 font-mono">
-                                                                        {(st.members || []).map(m => m.name).join(' • ') || '3 Sub-regu'}
+
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse font-sans text-xs">
+                                                <thead>
+                                                    {/* Header Row 1 */}
+                                                    <tr className="bg-surface-950 text-surface-400 border-b border-surface-700/60 uppercase tracking-wider text-[10px] font-bold">
+                                                        <th className="px-3 py-2 text-center w-8 border-r border-surface-800">#</th>
+                                                        <th className="px-4 py-2 border-r border-surface-800">Tim / Kontingen</th>
+                                                        <th colSpan="4" className="px-2 py-1.5 text-center border-r border-surface-800 bg-surface-900/80">Matches</th>
+                                                        {isTeamMode && (
+                                                            <th colSpan="3" className="px-2 py-1.5 text-center border-r border-surface-800 bg-amber-500/10 text-amber-300">Game</th>
+                                                        )}
+                                                        <th colSpan="3" className="px-2 py-1.5 text-center border-r border-surface-800 bg-blue-500/10 text-blue-300">Sets</th>
+                                                        <th colSpan="3" className="px-2 py-1.5 text-center border-r border-surface-800 bg-emerald-500/10 text-emerald-300">Points</th>
+                                                        <th className="px-3 py-2 text-center bg-amber-500/20 text-amber-300 font-black">Score</th>
+                                                    </tr>
+
+                                                    {/* Header Row 2 */}
+                                                    <tr className="bg-surface-900/90 text-surface-400 border-b border-surface-700/60 text-[9px] font-semibold text-center">
+                                                        <th className="border-r border-surface-800"></th>
+                                                        <th className="border-r border-surface-800"></th>
+                                                        {/* Matches */}
+                                                        <th className="px-2 py-1 border-r border-surface-800/50">Played</th>
+                                                        <th className="px-2 py-1 border-r border-surface-800/50 text-primary-400">Won</th>
+                                                        <th className="px-2 py-1 border-r border-surface-800/50 text-red-400">Lost</th>
+                                                        <th className="px-2 py-1 border-r border-surface-800">Diff</th>
+
+                                                        {/* Game */}
+                                                        {isTeamMode && (
+                                                            <>
+                                                                <th className="px-2 py-1 border-r border-surface-800/50 text-amber-300">Won</th>
+                                                                <th className="px-2 py-1 border-r border-surface-800/50 text-red-400">Lost</th>
+                                                                <th className="px-2 py-1 border-r border-surface-800">Diff</th>
+                                                            </>
+                                                        )}
+
+                                                        {/* Sets */}
+                                                        <th className="px-2 py-1 border-r border-surface-800/50 text-blue-300">Won</th>
+                                                        <th className="px-2 py-1 border-r border-surface-800/50 text-red-400">Lost</th>
+                                                        <th className="px-2 py-1 border-r border-surface-800">Diff</th>
+
+                                                        {/* Points */}
+                                                        <th className="px-2 py-1 border-r border-surface-800/50 text-emerald-300">Won</th>
+                                                        <th className="px-2 py-1 border-r border-surface-800/50 text-red-400">Lost</th>
+                                                        <th className="px-2 py-1 border-r border-surface-800">Diff</th>
+
+                                                        {/* Score */}
+                                                        <th className="px-2 py-1 bg-amber-500/10 text-amber-400 font-bold">Pts</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-surface-800/40">
+                                                    {standings.map((st, i) => {
+                                                        const rankBadgeClass = i === 0
+                                                            ? 'bg-emerald-500/15 text-emerald-300 border-l-4 border-emerald-500 font-extrabold'
+                                                            : i === 1
+                                                            ? 'bg-teal-500/15 text-teal-300 border-l-4 border-teal-400 font-extrabold'
+                                                            : 'text-surface-300 hover:bg-surface-800/30';
+
+                                                        return (
+                                                            <tr key={st.id} className={`transition-colors text-xs ${rankBadgeClass}`}>
+                                                                <td className="px-3 py-2.5 text-center font-mono font-bold">
+                                                                    {i === 0 ? '🥇 1' : i === 1 ? '🥈 2' : (i + 1)}
+                                                                </td>
+                                                                <td className="px-4 py-2.5 font-semibold text-surface-100">
+                                                                    <div>
+                                                                        {st.name}
+                                                                        {st.members && st.members.length > 0 && (
+                                                                            <div className="text-[9px] text-surface-400 font-normal truncate max-w-[150px]">
+                                                                                {st.members.map(m => m.name).join(' • ')}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">0</td>
-                                                            <td className="px-4 py-2.5 text-sm text-primary-400 text-center font-medium">0</td>
-                                                            <td className="px-4 py-2.5 text-sm text-red-400 text-center">0</td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">0</td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">0</td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    pool.standings?.map((s, i) => (
-                                                        <tr key={s.id} className={i < 2 ? 'bg-primary-500/5' : ''}>
-                                                            <td className="px-4 py-2.5 text-xs text-surface-400">{s.rank || i + 1}</td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-200 font-medium">{s.team?.name || '—'}</td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.played}</td>
-                                                            <td className="px-4 py-2.5 text-sm text-primary-400 text-center font-medium">{s.won}</td>
-                                                            <td className="px-4 py-2.5 text-sm text-red-400 text-center">{s.lost}</td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.points_for}</td>
-                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.points_against}</td>
-                                                        </tr>
-                                                    ))
-                                                )}
-                                            </tbody>
-                                        </table>
+                                                                </td>
+
+                                                                {/* Matches */}
+                                                                <td className="px-2 py-2.5 text-center font-mono text-surface-300">{st.matches_played}</td>
+                                                                <td className="px-2 py-2.5 text-center font-mono text-primary-400 font-bold">{st.matches_won}</td>
+                                                                <td className="px-2 py-2.5 text-center font-mono text-red-400">{st.matches_lost}</td>
+                                                                <td className="px-2 py-2.5 text-center font-mono text-surface-400">{st.matches_diff > 0 ? `+${st.matches_diff}` : st.matches_diff}</td>
+
+                                                                {/* Game */}
+                                                                {isTeamMode && (
+                                                                    <>
+                                                                        <td className="px-2 py-2.5 text-center font-mono text-amber-300 font-bold">{st.game_won}</td>
+                                                                        <td className="px-2 py-2.5 text-center font-mono text-red-400">{st.game_lost}</td>
+                                                                        <td className="px-2 py-2.5 text-center font-mono text-surface-400">{st.game_diff > 0 ? `+${st.game_diff}` : st.game_diff}</td>
+                                                                    </>
+                                                                )}
+
+                                                                {/* Sets */}
+                                                                <td className="px-2 py-2.5 text-center font-mono text-blue-300 font-bold">{st.set_won}</td>
+                                                                <td className="px-2 py-2.5 text-center font-mono text-red-400">{st.set_lost}</td>
+                                                                <td className="px-2 py-2.5 text-center font-mono text-surface-400">{st.set_diff > 0 ? `+${st.set_diff}` : st.set_diff}</td>
+
+                                                                {/* Points */}
+                                                                <td className="px-2 py-2.5 text-center font-mono text-emerald-300 font-bold">{st.pts_won}</td>
+                                                                <td className="px-2 py-2.5 text-center font-mono text-red-400">{st.pts_lost}</td>
+                                                                <td className="px-2 py-2.5 text-center font-mono text-surface-400">{st.pts_diff > 0 ? `+${st.pts_diff}` : st.pts_diff}</td>
+
+                                                                {/* Score */}
+                                                                <td className="px-3 py-2.5 text-center font-mono font-black text-amber-400 bg-amber-500/10">
+                                                                    {st.score}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 );
                             })}

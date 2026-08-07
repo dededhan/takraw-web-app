@@ -49,6 +49,10 @@ class MasterScheduleDemoSeeder extends Seeder
                 ['name' => 'Pelatih Medan',     'email' => 'coach6@takraw.test', 'region' => 'Sumatera Utara',     'code' => 'Sumatera Utara'],
                 ['name' => 'Pelatih Makassar',  'email' => 'coach7@takraw.test', 'region' => 'Sulawesi Selatan',   'code' => 'Sulawesi Selatan'],
                 ['name' => 'Pelatih Denpasar',  'email' => 'coach8@takraw.test', 'region' => 'Bali',              'code' => 'Bali'],
+                ['name' => 'Pelatih Lampung',   'email' => 'coach9@takraw.test', 'region' => 'Lampung',           'code' => 'Lampung'],
+                ['name' => 'Pelatih Pekanbaru', 'email' => 'coach10@takraw.test','region' => 'Riau',              'code' => 'Riau'],
+                ['name' => 'Pelatih Samarinda', 'email' => 'coach11@takraw.test','region' => 'Kalimantan Timur',  'code' => 'Kalimantan Timur'],
+                ['name' => 'Pelatih Mataram',   'email' => 'coach12@takraw.test','region' => 'NTB',               'code' => 'NTB'],
             ];
 
             $coaches = [];
@@ -60,7 +64,7 @@ class MasterScheduleDemoSeeder extends Seeder
                 $coaches[$cd['code']] = ['user' => $coach, 'region' => $cd['region']];
             }
 
-            // ─── 2. Buat Turnamen Skala Besar (8 Daerah, 4 Lapangan, 5 Hari) ──
+            // ─── 2. Buat Turnamen Skala Besar (12 Daerah, 4 Lapangan, 5 Hari) ──
             $tournament = Tournament::create([
                 'name'                     => 'Kejuaraan Nasional Sepak Takraw Grand Master 2026',
                 'start_date'               => '2026-08-15',
@@ -91,7 +95,7 @@ class MasterScheduleDemoSeeder extends Seeder
 
             $this->command->info("🏆 Turnamen Mega dibuat dengan 3 Mode Aktif & 4 Pool per Mode.");
 
-            // ─── 3. Pendaftaran Tim oleh 8 Pelatih ────────────────────
+            // ─── 3. Pendaftaran Tim oleh 12 Pelatih ────────────────────
             $reguTeams   = [];
             $doubleTeams = [];
             $superTeams  = [];
@@ -165,30 +169,29 @@ class MasterScheduleDemoSeeder extends Seeder
                 $superTeams[$region] = $superTeam;
             }
 
-            $this->command->info("👥 8 Kontingen mendaftarkan: 8 Tim Regu, 8 Tim Double, dan 8 Super Team (24 sub-regu). Total 40 tim terdaftar.");
+            $this->command->info("👥 12 Kontingen mendaftarkan: 12 Tim Regu, 12 Tim Double, dan 12 Super Team (36 sub-regu). Total 60 tim terdaftar.");
 
-            // ─── 4. Pembagian 4 Pool per Mode (A, B, C, D) ──────────────
-            $regionsList = array_keys($coaches); // 8 daerah
+            // ─── 4. Pembagian 4 Pool per Mode (3 Tim per Pool) ──────────
 
             // A) Mode Regu (Pool A, B, C, D)
             $pRegu = [];
             foreach (['A', 'B', 'C', 'D'] as $label) {
                 $pRegu[$label] = Pool::create(['tournament_id' => $tournament->id, 'name' => $label, 'match_mode' => 'regu']);
             }
-            $pRegu['A']->teams()->attach([$reguTeams['DKI Jakarta']->id, $reguTeams['Jawa Barat']->id]);
-            $pRegu['B']->teams()->attach([$reguTeams['Jawa Timur']->id, $reguTeams['DIY']->id]);
-            $pRegu['C']->teams()->attach([$reguTeams['Jawa Tengah']->id, $reguTeams['Sumatera Utara']->id]);
-            $pRegu['D']->teams()->attach([$reguTeams['Sulawesi Selatan']->id, $reguTeams['Bali']->id]);
+            $pRegu['A']->teams()->attach([$reguTeams['DKI Jakarta']->id, $reguTeams['Jawa Barat']->id, $reguTeams['Lampung']->id]);
+            $pRegu['B']->teams()->attach([$reguTeams['Jawa Timur']->id, $reguTeams['DIY']->id, $reguTeams['Riau']->id]);
+            $pRegu['C']->teams()->attach([$reguTeams['Jawa Tengah']->id, $reguTeams['Sumatera Utara']->id, $reguTeams['Kalimantan Timur']->id]);
+            $pRegu['D']->teams()->attach([$reguTeams['Sulawesi Selatan']->id, $reguTeams['Bali']->id, $reguTeams['NTB']->id]);
 
             // B) Mode Double (Pool A, B, C, D)
             $pDouble = [];
             foreach (['A', 'B', 'C', 'D'] as $label) {
                 $pDouble[$label] = Pool::create(['tournament_id' => $tournament->id, 'name' => $label, 'match_mode' => 'double']);
             }
-            $pDouble['A']->teams()->attach([$doubleTeams['DKI Jakarta']->id, $doubleTeams['Jawa Barat']->id]);
-            $pDouble['B']->teams()->attach([$doubleTeams['Jawa Timur']->id, $doubleTeams['DIY']->id]);
-            $pDouble['C']->teams()->attach([$doubleTeams['Jawa Tengah']->id, $doubleTeams['Sumatera Utara']->id]);
-            $pDouble['D']->teams()->attach([$doubleTeams['Sulawesi Selatan']->id, $doubleTeams['Bali']->id]);
+            $pDouble['A']->teams()->attach([$doubleTeams['DKI Jakarta']->id, $doubleTeams['Jawa Barat']->id, $doubleTeams['Lampung']->id]);
+            $pDouble['B']->teams()->attach([$doubleTeams['Jawa Timur']->id, $doubleTeams['DIY']->id, $doubleTeams['Riau']->id]);
+            $pDouble['C']->teams()->attach([$doubleTeams['Jawa Tengah']->id, $doubleTeams['Sumatera Utara']->id, $doubleTeams['Kalimantan Timur']->id]);
+            $pDouble['D']->teams()->attach([$doubleTeams['Sulawesi Selatan']->id, $doubleTeams['Bali']->id, $doubleTeams['NTB']->id]);
 
             // C) Mode Team Regu (Pool A, B, C, D Super Teams)
             $pTeam = [];
@@ -197,15 +200,19 @@ class MasterScheduleDemoSeeder extends Seeder
             }
             $superTeams['DKI Jakarta']->update(['pool_id' => $pTeam['A']->id]);
             $superTeams['Jawa Barat']->update(['pool_id' => $pTeam['A']->id]);
+            $superTeams['Lampung']->update(['pool_id' => $pTeam['A']->id]);
 
             $superTeams['Jawa Timur']->update(['pool_id' => $pTeam['B']->id]);
             $superTeams['DIY']->update(['pool_id' => $pTeam['B']->id]);
+            $superTeams['Riau']->update(['pool_id' => $pTeam['B']->id]);
 
             $superTeams['Jawa Tengah']->update(['pool_id' => $pTeam['C']->id]);
             $superTeams['Sumatera Utara']->update(['pool_id' => $pTeam['C']->id]);
+            $superTeams['Kalimantan Timur']->update(['pool_id' => $pTeam['C']->id]);
 
             $superTeams['Sulawesi Selatan']->update(['pool_id' => $pTeam['D']->id]);
             $superTeams['Bali']->update(['pool_id' => $pTeam['D']->id]);
+            $superTeams['NTB']->update(['pool_id' => $pTeam['D']->id]);
 
             // Inisialisasi pool standings untuk regu & double
             foreach ([...array_values($pRegu), ...array_values($pDouble)] as $p) {
