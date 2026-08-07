@@ -19,7 +19,10 @@ class PoolController extends Controller
     {
         $tournament->load([
             'teams',
+            'modes',
+            'superTeams.members',
             'pools.teams',
+            'pools.superTeams.members',
             'pools.standings' => fn($q) => $q->with('team')->orderBy('rank'),
         ]);
 
@@ -29,77 +32,229 @@ class PoolController extends Controller
     }
 
     /**
-     * Auto-generate pools (random distribution).
+     * Create a custom pool manually for a specific match_mode.
+     */
+    public function createCustom(Request $request, Tournament $tournament)
+    {
+        $validated = $request->validate([
+            'name'       => 'required|string|max:10',
+            'match_mode' => 'required|in:regu,double,quadrant,team_regu,team_double',
+        ]);
+
+        $name = strtoupper(trim($validated['name']));
+
+        $exists = Pool::where('tournament_id', $tournament->id)
+            ->where('match_mode', $validated['match_mode'])
+            ->where('name', $name)
+            ->exists();
+
+        if ($exists) {
+            return back()->withErrors(['name' => "Pool {$name} sudah ada untuk mode ini!"]);
+        }
+
+        Pool::create([
+            'tournament_id' => $tournament->id,
+            'name'          => $name,
+            'match_mode'    => $validated['match_mode'],
+        ]);
+
+        return back()->with('success', "Pool \"{$name}\" untuk mode {$validated['match_mode']} berhasil dibuat!");
+    }
+
+    /**
+     * Auto-generate pools (random distribution) per mode.
      */
     public function generateRandom(Request $request, Tournament $tournament)
     {
         $validated = $request->validate([
             'pool_count' => 'required|integer|min:2|max:8',
+            'match_mode' => 'required|in:regu,double,quadrant,team_regu,team_double',
         ]);
 
-        // Remove existing pools
-        $tournament->pools()->delete();
-
-        $teams = $tournament->teams->shuffle();
+        $matchMode = $validated['match_mode'];
         $poolCount = $validated['pool_count'];
+
+        // Hapus pool lama KHUSUS mode ini
+        $tournament->pools()->where('match_mode', $matchMode)->delete();
+
         $poolLabels = range('A', chr(64 + $poolCount));
 
-        // Create pools
+        // Buat pools baru untuk mode ini
         $pools = [];
         foreach ($poolLabels as $label) {
             $pools[] = Pool::create([
                 'tournament_id' => $tournament->id,
-                'name' => $label,
+                'name'          => $label,
+                'match_mode'    => $matchMode,
             ]);
         }
 
-        // Distribute teams round-robin style
-        foreach ($teams as $index => $team) {
-            $pool = $pools[$index % $poolCount];
-            $pool->teams()->attach($team->id);
+        $isTeamMode = in_array($matchMode, ['team_regu', 'team_double']);
 
-            // Initialize standing
-            PoolStanding::create([
-                'pool_id' => $pool->id,
-                'team_id' => $team->id,
-            ]);
+        if ($isTeamMode) {
+            // Distribusi Super Teams per mode
+            $superTeams = $tournament->superTeams()
+                ->where('match_mode', $matchMode)
+                ->get()
+                ->shuffle();
+
+            foreach ($superTeams as $index => $st) {
+                $pool = $pools[$index % $poolCount];
+                $st->update(['pool_id' => $pool->id]);
+            }
+        } else {
+            // Filter tim agar sub-tim anggota SuperTeam DI-LOCK dan tim mode lain (Regu vs Double) tidak bercampur
+            $superTeamMemberIds = \Illuminate\Support\Facades\DB::table('super_team_members')
+                ->join('super_teams', 'super_teams.id', '=', 'super_team_members.super_team_id')
+                ->where('super_teams.tournament_id', $tournament->id)
+                ->pluck('super_team_members.team_id')
+                ->toArray();
+
+            $teams = $tournament->teams
+                ->reject(fn($team) => in_array($team->id, $superTeamMemberIds))
+                ->filter(function ($team) use ($matchMode) {
+                    $nameLower = strtolower($team->name);
+                    if ($matchMode === 'regu' && str_contains($nameLower, 'double')) return false;
+                    if ($matchMode === 'double' && str_contains($nameLower, 'regu') && !str_contains($nameLower, 'double')) return false;
+                    if ($matchMode === 'quadrant' && (str_contains($nameLower, 'regu') || str_contains($nameLower, 'double'))) return false;
+                    return true;
+                })
+                ->shuffle();
+
+            foreach ($teams as $index => $team) {
+                $pool = $pools[$index % $poolCount];
+                $pool->teams()->attach($team->id);
+
+                // Initialize standing
+                PoolStanding::create([
+                    'pool_id' => $pool->id,
+                    'team_id' => $team->id,
+                ]);
+            }
         }
 
-        // Generate round-robin matches for each pool
-        $this->generatePoolMatches($tournament, $pools);
+        // Update sync pool_count pada konfigurasi mode turnamen & auto-generate Bracket Matrix sesuai jumlah pool
+        $tournament->modes()->where('match_mode', $matchMode)->update(['pool_count' => $poolCount]);
+        $this->syncBracketMatrixForMode($tournament, $matchMode, $poolCount);
 
         return redirect()->route('pools.index', $tournament)
-            ->with('success', 'Pool berhasil di-generate secara acak!');
+            ->with('success', "Pool untuk mode \"{$matchMode}\" berhasil di-generate secara acak ({$poolCount} Pool)! Bagan Gugur (Bracket Matrix) telah disesuaikan.");
     }
 
     /**
-     * Manually assign a team to a pool.
+     * Auto-sync Bracket Matrix berdasarkan jumlah pool mode tanding.
+     * 2 Pool -> Semifinal (2 Laga) + Final (1 Laga) + Perebutan Juara 3 (1 Laga)
+     * 4 Pool -> Quarterfinal (4 Laga) + Semifinal (2 Laga) + Final (1 Laga) + Perebutan Juara 3
+     */
+    public function syncBracketMatrixForMode(Tournament $tournament, string $matchMode, int $poolCount): void
+    {
+        \App\Models\BracketMatrix::where('tournament_id', $tournament->id)
+            ->where('match_mode', $matchMode)
+            ->delete();
+
+        if ($poolCount <= 2) {
+            // 2 Pool → Langsung ke Semifinal (A1 vs B2, B1 vs A2)
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'semifinal', 'bracket_position' => 1,
+                'home_source'   => 'pool_A_rank_1', 'away_source' => 'pool_B_rank_2',
+            ]);
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'semifinal', 'bracket_position' => 2,
+                'home_source'   => 'pool_B_rank_1', 'away_source' => 'pool_A_rank_2',
+            ]);
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'final', 'bracket_position' => 1,
+                'home_source'   => 'winner_sf_1', 'away_source' => 'winner_sf_2',
+            ]);
+        } else {
+            // 4 Pool → Quarterfinal (A1 vs B2, C1 vs D2, B1 vs A2, D1 vs C2)
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'round_of_8', 'bracket_position' => 1,
+                'home_source'   => 'pool_A_rank_1', 'away_source' => 'pool_B_rank_2',
+            ]);
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'round_of_8', 'bracket_position' => 2,
+                'home_source'   => 'pool_C_rank_1', 'away_source' => 'pool_D_rank_2',
+            ]);
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'round_of_8', 'bracket_position' => 3,
+                'home_source'   => 'pool_B_rank_1', 'away_source' => 'pool_A_rank_2',
+            ]);
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'round_of_8', 'bracket_position' => 4,
+                'home_source'   => 'pool_D_rank_1', 'away_source' => 'pool_C_rank_2',
+            ]);
+
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'semifinal', 'bracket_position' => 1,
+                'home_source'   => 'winner_qf_1', 'away_source' => 'winner_qf_2',
+            ]);
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'semifinal', 'bracket_position' => 2,
+                'home_source'   => 'winner_qf_3', 'away_source' => 'winner_qf_4',
+            ]);
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'final', 'bracket_position' => 1,
+                'home_source'   => 'winner_sf_1', 'away_source' => 'winner_sf_2',
+            ]);
+        }
+    }
+
+    /**
+     * Manually assign a team or super team to a pool.
      */
     public function assignTeam(Request $request, Pool $pool)
     {
-        $validated = $request->validate([
-            'team_id' => 'required|exists:teams,id',
-        ]);
+        $isTeamMode = in_array($pool->match_mode, ['team_regu', 'team_double']);
 
-        $pool->teams()->syncWithoutDetaching([$validated['team_id']]);
+        if ($isTeamMode) {
+            $validated = $request->validate([
+                'super_team_id' => 'required|exists:super_teams,id',
+            ]);
 
-        PoolStanding::firstOrCreate([
-            'pool_id' => $pool->id,
-            'team_id' => $validated['team_id'],
-        ]);
+            \App\Models\SuperTeam::where('id', $validated['super_team_id'])
+                ->update(['pool_id' => $pool->id]);
+        } else {
+            $validated = $request->validate([
+                'team_id' => 'required|exists:teams,id',
+            ]);
 
-        return back()->with('success', 'Tim berhasil ditambahkan ke pool!');
+            $pool->teams()->syncWithoutDetaching([$validated['team_id']]);
+
+            PoolStanding::firstOrCreate([
+                'pool_id' => $pool->id,
+                'team_id' => $validated['team_id'],
+            ]);
+        }
+
+        return back()->with('success', 'Kontestan berhasil ditambahkan ke pool!');
     }
 
     /**
-     * Remove a team from a pool.
+     * Remove a team or super team from a pool.
      */
-    public function removeTeam(Pool $pool, int $teamId)
+    public function removeTeam(Pool $pool, int $id)
     {
-        $pool->teams()->detach($teamId);
-        PoolStanding::where('pool_id', $pool->id)->where('team_id', $teamId)->delete();
+        $isTeamMode = in_array($pool->match_mode, ['team_regu', 'team_double']);
 
-        return back()->with('success', 'Tim berhasil dihapus dari pool!');
+        if ($isTeamMode) {
+            \App\Models\SuperTeam::where('id', $id)->update(['pool_id' => null]);
+        } else {
+            $pool->teams()->detach($id);
+            PoolStanding::where('pool_id', $pool->id)->where('team_id', $id)->delete();
+        }
+
+        return back()->with('success', 'Kontestan berhasil dihapus dari pool!');
     }
 
     /**
@@ -134,25 +289,49 @@ class PoolController extends Controller
     }
 
     /**
-     * Generate round-robin matches for pools.
+     * Generate round-robin matches for pools (mode-aware).
      */
     protected function generatePoolMatches(Tournament $tournament, array $pools): void
     {
         foreach ($pools as $pool) {
-            $teams = $pool->teams->values();
-            $teamCount = $teams->count();
+            $matchMode  = $pool->match_mode ?: 'regu';
+            $isTeamMode = in_array($matchMode, ['team_regu', 'team_double']);
 
-            // Round-robin: each pair plays once
-            for ($i = 0; $i < $teamCount; $i++) {
-                for ($j = $i + 1; $j < $teamCount; $j++) {
-                    Match_::create([
-                        'tournament_id' => $tournament->id,
-                        'pool_id' => $pool->id,
-                        'stage' => 'pool',
-                        'home_team_id' => $teams[$i]->id,
-                        'away_team_id' => $teams[$j]->id,
-                        'status' => 'scheduled',
-                    ]);
+            if ($isTeamMode) {
+                $superTeams = $pool->superTeams->values();
+                $count      = $superTeams->count();
+
+                for ($i = 0; $i < $count; $i++) {
+                    for ($j = $i + 1; $j < $count; $j++) {
+                        Match_::create([
+                            'tournament_id'      => $tournament->id,
+                            'pool_id'            => $pool->id,
+                            'match_mode'         => $matchMode,
+                            'stage'              => 'pool',
+                            'home_super_team_id' => $superTeams[$i]->id,
+                            'away_super_team_id' => $superTeams[$j]->id,
+                            'slot_span'          => 3,
+                            'status'             => 'scheduled',
+                        ]);
+                    }
+                }
+            } else {
+                $teams = $pool->teams->values();
+                $count = $teams->count();
+
+                for ($i = 0; $i < $count; $i++) {
+                    for ($j = $i + 1; $j < $count; $j++) {
+                        Match_::create([
+                            'tournament_id' => $tournament->id,
+                            'pool_id'       => $pool->id,
+                            'match_mode'    => $matchMode,
+                            'stage'         => 'pool',
+                            'home_team_id'  => $teams[$i]->id,
+                            'away_team_id'  => $teams[$j]->id,
+                            'slot_span'     => 1,
+                            'status'        => 'scheduled',
+                        ]);
+                    }
                 }
             }
         }

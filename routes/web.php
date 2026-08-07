@@ -10,6 +10,9 @@ use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\CoachTournamentController;
 use App\Http\Controllers\BracketController;
+use App\Http\Controllers\MasterScheduleController;
+use App\Http\Controllers\BracketMatrixController;
+use App\Http\Controllers\SuperTeamController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -44,10 +47,65 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Pool Management
         Route::get('/tournaments/{tournament}/pools', [PoolController::class, 'index'])->name('pools.index');
+        Route::post('/tournaments/{tournament}/pools/create-custom', [PoolController::class, 'createCustom'])->name('pools.create-custom');
         Route::post('/tournaments/{tournament}/pools/generate-random', [PoolController::class, 'generateRandom'])->name('pools.generate-random');
         Route::post('/tournaments/{tournament}/pools/generate-matches', [PoolController::class, 'generateMatches'])->name('pools.generate-matches');
         Route::post('/pools/{pool}/assign-team', [PoolController::class, 'assignTeam'])->name('pools.assign-team');
         Route::delete('/pools/{pool}/teams/{team}', [PoolController::class, 'removeTeam'])->name('pools.remove-team');
+
+        // ─── Master Schedule ──────────────────────────────
+        Route::prefix('tournaments/{tournament}')->name('tournaments.')->group(function () {
+            // Step 1: Konfigurasi Parameter
+            Route::get('master-schedule/config', [MasterScheduleController::class, 'config'])
+                ->name('master-schedule.config');
+            Route::post('master-schedule/config', [MasterScheduleController::class, 'saveConfig'])
+                ->name('master-schedule.save-config');
+
+            // Step 2: Bracket Matrix
+            Route::get('master-schedule/bracket-matrix', [BracketMatrixController::class, 'index'])
+                ->name('master-schedule.bracket-matrix');
+            Route::post('master-schedule/bracket-matrix', [BracketMatrixController::class, 'store'])
+                ->name('master-schedule.bracket-matrix.store');
+            Route::put('master-schedule/bracket-matrix/{matrix}', [BracketMatrixController::class, 'update'])
+                ->name('master-schedule.bracket-matrix.update');
+
+            // Step 3: Generate
+            Route::get('master-schedule/generate', fn(\App\Models\Tournament $tournament) =>
+                \Inertia\Inertia::render('Tournament/MasterSchedule/GenerateConfirm', ['tournament' => $tournament])
+            )->name('master-schedule.generate-form');
+            Route::post('master-schedule/generate', [MasterScheduleController::class, 'generate'])
+                ->name('master-schedule.generate');
+
+            // Step 4: Grid (Interactive)
+            Route::get('master-schedule', [MasterScheduleController::class, 'index'])
+                ->name('master-schedule.index');
+            Route::post('master-schedule/publish', [MasterScheduleController::class, 'publish'])
+                ->name('master-schedule.publish');
+            Route::get('master-schedule/conflicts', [MasterScheduleController::class, 'conflicts'])
+                ->name('master-schedule.conflicts');
+            Route::post('master-schedule/assign-referee-bulk', [MasterScheduleController::class, 'bulkAssignReferee'])
+                ->name('master-schedule.assign-referee-bulk');
+
+            // Super Teams (mode team_regu / team_double)
+            Route::get('super-teams', [SuperTeamController::class, 'index'])
+                ->name('super-teams.index');
+            Route::post('super-teams', [SuperTeamController::class, 'store'])
+                ->name('super-teams.store');
+        });
+
+        // Super Team: update, delete, member management (tanpa prefix tournament)
+        Route::put('super-teams/{superTeam}', [SuperTeamController::class, 'update'])
+            ->name('super-teams.update');
+        Route::delete('super-teams/{superTeam}', [SuperTeamController::class, 'destroy'])
+            ->name('super-teams.destroy');
+        Route::post('super-teams/{superTeam}/members', [SuperTeamController::class, 'addMember'])
+            ->name('super-teams.members.add');
+        Route::delete('super-teams/{superTeam}/members/{team}', [SuperTeamController::class, 'removeMember'])
+            ->name('super-teams.members.remove');
+
+        // Drag & Drop Reschedule
+        Route::patch('matches/{match}/reschedule', [MasterScheduleController::class, 'reschedule'])
+            ->name('matches.reschedule');
 
         // Match Management
         Route::get('/matches', [MatchController::class, 'index'])->name('matches.index');
@@ -60,6 +118,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('users', UserController::class);
         Route::patch('/users/{user}/toggle-active', [UserController::class, 'toggleActive'])->name('users.toggle-active');
     });
+
 
     // ─── Coach Routes ───────────────────────────────
     Route::middleware('role:coach')->group(function () {

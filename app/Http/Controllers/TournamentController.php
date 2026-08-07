@@ -28,29 +28,45 @@ class TournamentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:150',
+            'name'       => 'required|string|max:150',
             'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
-            'mode' => 'required|in:regu,double,quarter',
+            'end_date'   => 'required|date|after_or_equal:start_date',
+            'modes'      => 'required|array|min:1',
+            'modes.*'    => 'in:regu,double,quadrant,team_regu,team_double',
         ]);
 
         $tournament = Tournament::create([
-            ...$validated,
+            'name'       => $validated['name'],
+            'start_date' => $validated['start_date'],
+            'end_date'   => $validated['end_date'],
+            'mode'       => $validated['modes'][0], // Mode utama untuk kompatibilitas
             'created_by' => $request->user()->id,
         ]);
 
+        // Simpan semua mode yang dipilih ke tabel tournament_modes
+        foreach ($validated['modes'] as $modeKey) {
+            $tournament->modes()->create([
+                'match_mode' => $modeKey,
+                'pool_count' => 2,
+                'is_active'  => true,
+            ]);
+        }
+
         return redirect()->route('tournaments.show', $tournament)
-            ->with('success', 'Turnamen berhasil dibuat!');
+            ->with('success', 'Turnamen berhasil dibuat dengan ' . count($validated['modes']) . ' mode tanding! Silakan kelola Master Schedule.');
     }
 
     public function show(Tournament $tournament): Response
     {
         $tournament->load([
             'creator',
+            'modes',
             'teams.athletes',
+            'superTeams.members',
             'pools.teams',
+            'pools.superTeams.members',
             'pools.standings' => fn($q) => $q->with('team')->orderBy('rank'),
-            'matches' => fn($q) => $q->with(['homeTeam', 'awayTeam', 'referee', 'sets'])->orderBy('scheduled_at'),
+            'matches' => fn($q) => $q->with(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'referee', 'sets'])->orderBy('scheduled_at'),
         ]);
 
         // Get all teams in the system that are NOT registered in this tournament
@@ -67,6 +83,8 @@ class TournamentController extends Controller
 
     public function edit(Tournament $tournament): Response
     {
+        $tournament->load('modes');
+
         return Inertia::render('Tournament/Edit', [
             'tournament' => $tournament,
         ]);
@@ -75,14 +93,31 @@ class TournamentController extends Controller
     public function update(Request $request, Tournament $tournament)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:150',
+            'name'       => 'required|string|max:150',
             'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
-            'mode' => 'required|in:regu,double,quarter',
-            'status' => 'sometimes|in:draft,registration,pool_stage,bracket_stage,completed',
+            'end_date'   => 'required|date|after_or_equal:start_date',
+            'modes'      => 'required|array|min:1',
+            'modes.*'    => 'in:regu,double,quadrant,team_regu,team_double',
+            'status'     => 'sometimes|in:draft,registration,pool_stage,bracket_stage,completed',
         ]);
 
-        $tournament->update($validated);
+        $tournament->update([
+            'name'       => $validated['name'],
+            'start_date' => $validated['start_date'],
+            'end_date'   => $validated['end_date'],
+            'mode'       => $validated['modes'][0],
+            'status'     => $validated['status'] ?? $tournament->status,
+        ]);
+
+        // Re-sync tournament_modes
+        $tournament->modes()->delete();
+        foreach ($validated['modes'] as $modeKey) {
+            $tournament->modes()->create([
+                'match_mode' => $modeKey,
+                'pool_count' => 2,
+                'is_active'  => true,
+            ]);
+        }
 
         return redirect()->route('tournaments.show', $tournament)
             ->with('success', 'Turnamen berhasil diupdate!');

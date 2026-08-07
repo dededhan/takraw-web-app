@@ -109,14 +109,14 @@ export default function Login({ status, canResetPassword }) {
                         </span>
                     </label>
 
-                    {canResetPassword && (
-                        <Link
-                            href={route('password.request')}
-                            className="text-slate-400 hover:text-amber-400 underline underline-offset-4 transition-colors focus:outline-none"
-                        >
-                            Lupa Password?
-                        </Link>
-                    )}
+                    <a
+                        href="https://wa.me/6289654032950?text=Halo%20Admin%2C%20saya%20lupa%20kata%20sandi%20akun%20aplikasi%20Sepak%20Takraw."
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-slate-400 hover:text-amber-400 underline underline-offset-4 transition-colors focus:outline-none flex items-center gap-1"
+                    >
+                        <span>💬</span> Lupa Password?
+                    </a>
                 </div>
 
                 {/* Submit button */}

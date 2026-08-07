@@ -85,17 +85,67 @@ class DashboardController extends Controller
 
     private function refereeDashboard(User $user): Response
     {
+        $matches = Match_::with([
+                'homeTeam.athletes', 'awayTeam.athletes',
+                'homeSuperTeam', 'awaySuperTeam',
+                'tournament', 'court', 'timeSlot', 'sets'
+            ])
+            ->where('referee_id', $user->id)
+            ->whereIn('status', ['scheduled', 'setup', 'live'])
+            ->orderByRaw("FIELD(status, 'live', 'setup', 'scheduled')")
+            ->orderBy('day_number', 'asc')
+            ->orderBy('time_slot_id', 'asc')
+            ->orderBy('scheduled_at', 'asc')
+            ->get();
+
+        // Hitung nomor urut pertandingan per turnamen
+        $tournaments = Tournament::whereHas('matches', fn($q) => $q->where('referee_id', $user->id))
+            ->get();
+
+        $tournamentMatchNumbers = [];
+        foreach ($tournaments as $t) {
+            $tMatchIds = Match_::where('tournament_id', $t->id)
+                ->orderBy('day_number')
+                ->orderBy('time_slot_id')
+                ->orderBy('court_id')
+                ->pluck('id');
+            foreach ($tMatchIds as $idx => $mid) {
+                $tournamentMatchNumbers[$mid] = $idx + 1;
+            }
+        }
+
+        $assignedMatches = $matches->map(function ($m) use ($tournamentMatchNumbers) {
+            return [
+                ...$m->toArray(),
+                'match_number'      => $tournamentMatchNumbers[$m->id] ?? $m->id,
+                'home_display_name' => $m->home_display_name,
+                'away_display_name' => $m->away_display_name,
+            ];
+        });
+
+        // Daftar turnamen untuk filter tab di dashboard wasit
+        $tournamentsList = $tournaments->map(fn($t) => [
+            'id'    => $t->id,
+            'name'  => $t->name,
+            'count' => $assignedMatches->where('tournament_id', $t->id)->count(),
+        ]);
+
+        $completedToday = Match_::with(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'tournament'])
+            ->where('referee_id', $user->id)
+            ->where('status', 'finished')
+            ->whereDate('finished_at', today())
+            ->latest('finished_at')
+            ->get()
+            ->map(fn($m) => [
+                ...$m->toArray(),
+                'home_display_name' => $m->home_display_name,
+                'away_display_name' => $m->away_display_name,
+            ]);
+
         return Inertia::render('Dashboard/Referee', [
-            'assignedMatches' => Match_::with(['homeTeam.athletes', 'awayTeam.athletes', 'tournament', 'sets'])
-                ->where('referee_id', $user->id)
-                ->whereIn('status', ['scheduled', 'setup', 'live'])
-                ->orderByRaw("FIELD(status, 'live', 'setup', 'scheduled')")
-                ->get(),
-            'completedToday' => Match_::with(['homeTeam', 'awayTeam'])
-                ->where('referee_id', $user->id)
-                ->where('status', 'finished')
-                ->whereDate('finished_at', today())
-                ->get(),
+            'assignedMatches' => $assignedMatches,
+            'tournaments'     => $tournamentsList,
+            'completedToday'  => $completedToday,
         ]);
     }
 }

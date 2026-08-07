@@ -3,9 +3,11 @@ import StatusBadge from '@/Components/StatusBadge';
 import { Head, useForm, Link } from '@inertiajs/react';
 
 const MODES = [
-    { value: 'regu', label: 'Regu', desc: '3 pemain per tim', icon: '👤👤👤' },
-    { value: 'double', label: 'Double', desc: '2 pemain per tim', icon: '👤👤' },
-    { value: 'quarter', label: 'Quarter', desc: '4 pemain per tim', icon: '👤👤👤👤' },
+    { value: 'regu',        label: 'Regu',        desc: '3 pemain per tim (standar)', icon: '🏐' },
+    { value: 'double',      label: 'Double',      desc: '2 pemain per tim', icon: '👥' },
+    { value: 'quadrant',    label: 'Quadrant',    desc: '4 pemain per tim', icon: '⬡' },
+    { value: 'team_regu',   label: 'Team Regu',   desc: 'Super Team (3 tim regu)', icon: '🏆' },
+    { value: 'team_double', label: 'Team Double', desc: 'Super Team (3 tim double)', icon: '🥇' },
 ];
 
 const STATUSES = [
@@ -17,13 +19,24 @@ const STATUSES = [
 ];
 
 export default function TournamentEdit({ tournament }) {
+    const initialModes = (tournament.modes || []).map(m => m.match_mode);
+
     const { data, setData, patch, processing, errors } = useForm({
         name: tournament.name || '',
         start_date: tournament.start_date?.split('T')[0] || '',
         end_date: tournament.end_date?.split('T')[0] || '',
-        mode: tournament.mode || 'regu',
+        modes: initialModes.length > 0 ? initialModes : [tournament.mode || 'regu'],
         status: tournament.status || 'draft',
     });
+
+    const toggleMode = (value) => {
+        if (data.modes.includes(value)) {
+            if (data.modes.length === 1) return;
+            setData('modes', data.modes.filter(m => m !== value));
+        } else {
+            setData('modes', [...data.modes, value]);
+        }
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -87,28 +100,48 @@ export default function TournamentEdit({ tournament }) {
                             </div>
                         </div>
 
-                        {/* Mode */}
+                        {/* Modes Multi-select */}
                         <div>
-                            <label className="block text-sm font-medium text-surface-300 mb-3">Mode Takraw <span className="text-red-400">*</span></label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                {MODES.map((mode) => (
-                                    <button
-                                        key={mode.value}
-                                        type="button"
-                                        onClick={() => setData('mode', mode.value)}
-                                        className={`p-4 rounded-xl border-2 text-left transition-all duration-200
-                                            ${data.mode === mode.value
-                                                ? 'border-primary-500 bg-primary-500/10 shadow-glow-primary'
-                                                : 'border-surface-700 bg-surface-800/50 hover:border-surface-600'
-                                            }`}
-                                    >
-                                        <div className="text-lg mb-1">{mode.icon}</div>
-                                        <p className={`text-sm font-semibold ${data.mode === mode.value ? 'text-primary-300' : 'text-surface-200'}`}>{mode.label}</p>
-                                        <p className="text-xs text-surface-500 mt-0.5">{mode.desc}</p>
-                                    </button>
-                                ))}
+                            <label className="block text-sm font-medium text-surface-300 mb-1">
+                                Mode Takraw Aktif (Pilih 1 atau Lebih) <span className="text-red-400">*</span>
+                            </label>
+                            <p className="text-xs text-surface-500 mb-3">Pilih semua mode tanding yang dipertandingkan.</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {MODES.map((mode) => {
+                                    const isSelected = data.modes.includes(mode.value);
+                                    return (
+                                        <button
+                                            key={mode.value}
+                                            type="button"
+                                            onClick={() => toggleMode(mode.value)}
+                                            className={`
+                                                p-4 rounded-xl border-2 text-left transition-all duration-200 relative
+                                                ${isSelected
+                                                    ? 'border-primary-500 bg-primary-500/10 shadow-glow-primary'
+                                                    : 'border-surface-700 bg-surface-800/50 hover:border-surface-600 opacity-60 hover:opacity-100'
+                                                }
+                                            `}
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-lg">{mode.icon}</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    readOnly
+                                                    className="w-4 h-4 rounded text-primary-500 focus:ring-0"
+                                                />
+                                            </div>
+                                            <p className={`text-sm font-semibold ${isSelected ? 'text-primary-300' : 'text-surface-200'}`}>
+                                                {mode.label}
+                                            </p>
+                                            <p className="text-xs text-surface-500 mt-0.5">{mode.desc}</p>
+                                        </button>
+                                    );
+                                })}
                             </div>
+                            {errors.modes && <p className="text-red-400 text-xs mt-1">{errors.modes}</p>}
                         </div>
+
 
                         {/* Status */}
                         <div>

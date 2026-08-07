@@ -2,9 +2,11 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, Link } from '@inertiajs/react';
 
 const MODES = [
-    { value: 'regu', label: 'Regu', desc: '3 pemain per tim', icon: '👤👤👤' },
-    { value: 'double', label: 'Double', desc: '2 pemain per tim', icon: '👤👤' },
-    { value: 'quarter', label: 'Quarter', desc: '4 pemain per tim', icon: '👤👤👤👤' },
+    { value: 'regu',        label: 'Regu',        desc: '3 pemain per tim (standar)', icon: '🏐', color: 'border-blue-500' },
+    { value: 'double',      label: 'Double',      desc: '2 pemain per tim', icon: '👥', color: 'border-emerald-500' },
+    { value: 'quadrant',    label: 'Quadrant',    desc: '4 pemain per tim', icon: '⬡', color: 'border-purple-500' },
+    { value: 'team_regu',   label: 'Team Regu',   desc: 'Super Team (3 tim regu)', icon: '🏆', color: 'border-amber-500' },
+    { value: 'team_double', label: 'Team Double', desc: 'Super Team (3 tim double)', icon: '🥇', color: 'border-red-500' },
 ];
 
 export default function TournamentCreate() {
@@ -12,8 +14,17 @@ export default function TournamentCreate() {
         name: '',
         start_date: '',
         end_date: '',
-        mode: 'regu',
+        modes: ['regu'], // Array multi-select
     });
+
+    const toggleMode = (value) => {
+        if (data.modes.includes(value)) {
+            if (data.modes.length === 1) return; // Minimal 1 mode aktif
+            setData('modes', data.modes.filter(m => m !== value));
+        } else {
+            setData('modes', [...data.modes, value]);
+        }
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -81,35 +92,48 @@ export default function TournamentCreate() {
                             </div>
                         </div>
 
-                        {/* Mode */}
+                        {/* Modes Multi-select */}
                         <div>
-                            <label className="block text-sm font-medium text-surface-300 mb-3">
-                                Mode Takraw <span className="text-red-400">*</span>
+                            <label className="block text-sm font-medium text-surface-300 mb-1">
+                                Mode Takraw Aktif (Pilih 1 atau Lebih) <span className="text-red-400">*</span>
                             </label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                {MODES.map((mode) => (
-                                    <button
-                                        key={mode.value}
-                                        type="button"
-                                        onClick={() => setData('mode', mode.value)}
-                                        className={`
-                                            p-4 rounded-xl border-2 text-left transition-all duration-200
-                                            ${data.mode === mode.value
-                                                ? 'border-primary-500 bg-primary-500/10 shadow-glow-primary'
-                                                : 'border-surface-700 bg-surface-800/50 hover:border-surface-600'
-                                            }
-                                        `}
-                                    >
-                                        <div className="text-lg mb-1">{mode.icon}</div>
-                                        <p className={`text-sm font-semibold ${data.mode === mode.value ? 'text-primary-300' : 'text-surface-200'}`}>
-                                            {mode.label}
-                                        </p>
-                                        <p className="text-xs text-surface-500 mt-0.5">{mode.desc}</p>
-                                    </button>
-                                ))}
+                            <p className="text-xs text-surface-500 mb-3">Pilih semua mode tanding yang akan dipertandingkan dalam turnamen ini.</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {MODES.map((mode) => {
+                                    const isSelected = data.modes.includes(mode.value);
+                                    return (
+                                        <button
+                                            key={mode.value}
+                                            type="button"
+                                            onClick={() => toggleMode(mode.value)}
+                                            className={`
+                                                p-4 rounded-xl border-2 text-left transition-all duration-200 relative
+                                                ${isSelected
+                                                    ? 'border-primary-500 bg-primary-500/10 shadow-glow-primary'
+                                                    : 'border-surface-700 bg-surface-800/50 hover:border-surface-600 opacity-60 hover:opacity-100'
+                                                }
+                                            `}
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-lg">{mode.icon}</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    readOnly
+                                                    className="w-4 h-4 rounded text-primary-500 focus:ring-0"
+                                                />
+                                            </div>
+                                            <p className={`text-sm font-semibold ${isSelected ? 'text-primary-300' : 'text-surface-200'}`}>
+                                                {mode.label}
+                                            </p>
+                                            <p className="text-xs text-surface-500 mt-0.5">{mode.desc}</p>
+                                        </button>
+                                    );
+                                })}
                             </div>
-                            {errors.mode && <p className="text-red-400 text-xs mt-1">{errors.mode}</p>}
+                            {errors.modes && <p className="text-red-400 text-xs mt-1">{errors.modes}</p>}
                         </div>
+
 
                         {/* Submit */}
                         <div className="flex items-center justify-end gap-3 pt-4 border-t border-surface-700/50">

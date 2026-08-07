@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['tournament_id', 'name'])]
+#[Fillable(['tournament_id', 'name', 'match_mode'])]
 class Pool extends Model
 {
     use HasFactory;
@@ -34,5 +34,18 @@ class Pool extends Model
     public function matches(): HasMany
     {
         return $this->hasMany(Match_::class);
+    }
+
+    public function superTeams(): HasMany
+    {
+        return $this->hasMany(SuperTeam::class);
+    }
+
+    /**
+     * Alias mode -> match_mode untuk fleksibilitas query.
+     */
+    public function getModeAttribute(): ?string
+    {
+        return $this->match_mode;
     }
 }

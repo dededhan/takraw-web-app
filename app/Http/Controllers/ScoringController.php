@@ -21,7 +21,11 @@ class ScoringController extends Controller
         $match->load([
             'homeTeam.athletes',
             'awayTeam.athletes',
+            'homeSuperTeam.members.athletes',
+            'awaySuperTeam.members.athletes',
             'tournament',
+            'court',
+            'timeSlot',
             'sets.stats.athlete',
         ]);
 
@@ -37,18 +41,21 @@ class ScoringController extends Controller
     {
         $validated = $request->validate([
             'court_number' => 'required|integer|min:1',
-            'max_sets' => 'required|integer|min:1|max:5',
+            'max_sets'     => 'required|integer|min:1|max:9',
         ]);
+
+        $totalSets = $match->isTeamMode() ? 9 : $validated['max_sets'];
 
         $match->update([
-            ...$validated,
-            'status' => 'setup',
+            'court_number' => $validated['court_number'],
+            'max_sets'     => $totalSets,
+            'status'       => 'setup',
         ]);
 
-        // Pre-create sets
-        for ($i = 1; $i <= $validated['max_sets']; $i++) {
+        // Pre-create sets (9 sets for Team mode: 3 sets x 3 sub-regu matches)
+        for ($i = 1; $i <= $totalSets; $i++) {
             MatchSet::firstOrCreate([
-                'match_id' => $match->id,
+                'match_id'   => $match->id,
                 'set_number' => $i,
             ]);
         }
@@ -193,10 +200,19 @@ class ScoringController extends Controller
             if ($match->next_match_id) {
                 $nextMatch = Match_::find($match->next_match_id);
                 if ($nextMatch) {
-                    if (!$nextMatch->home_team_id) {
-                        $nextMatch->update(['home_team_id' => $matchWinner]);
+                    if ($match->home_super_team_id || $match->away_super_team_id) {
+                        $winnerSuperTeamId = $setsWonHome >= $setsToWin ? $match->home_super_team_id : $match->away_super_team_id;
+                        if (!$nextMatch->home_super_team_id) {
+                            $nextMatch->update(['home_super_team_id' => $winnerSuperTeamId]);
+                        } else {
+                            $nextMatch->update(['away_super_team_id' => $winnerSuperTeamId]);
+                        }
                     } else {
-                        $nextMatch->update(['away_team_id' => $matchWinner]);
+                        if (!$nextMatch->home_team_id) {
+                            $nextMatch->update(['home_team_id' => $matchWinner]);
+                        } else {
+                            $nextMatch->update(['away_team_id' => $matchWinner]);
+                        }
                     }
                 }
             }
@@ -234,24 +250,34 @@ class ScoringController extends Controller
      */
     private function initializeSetStats(MatchSet $set, Match_ $match): void
     {
-        $homeAthletes = $match->homeTeam->athletes;
-        $awayAthletes = $match->awayTeam->athletes;
+        if ($match->isTeamMode()) {
+            // Tentukan sub-regu index berdasarkan set_number (1-3: Regu 1, 4-6: Regu 2, 7-9: Regu 3)
+            $subIndex = (int) floor(($set->set_number - 1) / 3);
+            $homeSubTeam = $match->homeSuperTeam?->members[$subIndex] ?? null;
+            $awaySubTeam = $match->awaySuperTeam?->members[$subIndex] ?? null;
+
+            $homeAthletes = $homeSubTeam?->athletes ?? collect();
+            $awayAthletes = $awaySubTeam?->athletes ?? collect();
+        } else {
+            $homeAthletes = $match->homeTeam?->athletes ?? collect();
+            $awayAthletes = $match->awayTeam?->athletes ?? collect();
+        }
 
         foreach ($homeAthletes as $athlete) {
             SetStat::firstOrCreate([
                 'match_set_id' => $set->id,
-                'athlete_id' => $athlete->id,
+                'athlete_id'   => $athlete->id,
             ], [
-                'team_id' => $match->home_team_id,
+                'team_id'      => $athlete->team_id,
             ]);
         }
 
         foreach ($awayAthletes as $athlete) {
             SetStat::firstOrCreate([
                 'match_set_id' => $set->id,
-                'athlete_id' => $athlete->id,
+                'athlete_id'   => $athlete->id,
             ], [
-                'team_id' => $match->away_team_id,
+                'team_id'      => $athlete->team_id,
             ]);
         }
     }

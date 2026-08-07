@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\Match_;
+use App\Observers\MatchObserver;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\URL; // <-- 1. Kita tambahkan ini di atas
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,9 +25,13 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
 
-        // 2. Tambahkan baris ini untuk memaksa semua URL rute/Axios menjadi HTTPS di server
+        // Memaksa semua URL menjadi HTTPS di production
         if (config('app.env') !== 'local' || env('FORCE_HTTPS') === 'true') {
             URL::forceScheme('https');
         }
+
+        // Daftarkan Observer untuk model Match_
+        // Memantau penyelesaian pool match → trigger PlaceholderResolver
+        Match_::observe(MatchObserver::class);
     }
 }

@@ -13,7 +13,13 @@ const TABS = [
 
 export default function TournamentShow({ tournament, availableTeams = [] }) {
     const [activeTab, setActiveTab] = useState('overview');
-    const modeLabels = { regu: 'Regu (3v3)', double: 'Double (2v2)', quarter: 'Quarter (4v4)' };
+    const modeLabels = {
+        regu:        'Regu (3v3)',
+        double:      'Double (2v2)',
+        quadrant:    'Quadrant (4v4)',
+        team_regu:   'Team Regu (Super Team 3x3)',
+        team_double: 'Team Double (Super Team 3x2)',
+    };
 
     return (
         <AuthenticatedLayout header={tournament.name}>
@@ -43,7 +49,19 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
                             {tournament.creator && <span>👤 {tournament.creator.name}</span>}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center flex-wrap gap-2">
+                        <Link
+                            href={route('tournaments.master-schedule.index', tournament.id)}
+                            className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-md transition-colors flex items-center gap-1.5"
+                        >
+                            🗓️ Master Schedule
+                        </Link>
+                        <Link
+                            href={route('tournaments.super-teams.index', tournament.id)}
+                            className="px-4 py-2 rounded-xl text-sm font-medium text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-colors flex items-center gap-1.5"
+                        >
+                            🏆 Super Team
+                        </Link>
                         <Link
                             href={route('pools.index', tournament.id)}
                             className="px-4 py-2 rounded-xl text-sm font-medium text-accent-300 bg-accent-500/10 border border-accent-500/30 hover:bg-accent-500/20 transition-colors"
@@ -115,54 +133,115 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
 }
 
 function OverviewTab({ tournament }) {
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Pool Standings */}
-            {tournament.pools?.map((pool) => (
-                <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-surface-700/50 bg-surface-800/30">
-                        <h3 className="text-sm font-semibold text-surface-200">Pool {pool.name}</h3>
-                    </div>
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="text-xs text-surface-500 border-b border-surface-700/30">
-                                <th className="px-4 py-2">#</th>
-                                <th className="px-4 py-2">Tim</th>
-                                <th className="px-4 py-2 text-center">M</th>
-                                <th className="px-4 py-2 text-center">W</th>
-                                <th className="px-4 py-2 text-center">L</th>
-                                <th className="px-4 py-2 text-center">PF</th>
-                                <th className="px-4 py-2 text-center">PA</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-surface-700/20">
-                            {pool.standings?.map((s, i) => (
-                                <tr key={s.id} className={i < 2 ? 'bg-primary-500/5' : ''}>
-                                    <td className="px-4 py-2.5 text-xs text-surface-400">{s.rank || i + 1}</td>
-                                    <td className="px-4 py-2.5 text-sm text-surface-200 font-medium">{s.team?.name || '—'}</td>
-                                    <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.played}</td>
-                                    <td className="px-4 py-2.5 text-sm text-primary-400 text-center font-medium">{s.won}</td>
-                                    <td className="px-4 py-2.5 text-sm text-red-400 text-center">{s.lost}</td>
-                                    <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.points_for}</td>
-                                    <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.points_against}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            ))}
+    const poolsByMode = (tournament.pools || []).reduce((acc, pool) => {
+        const mode = pool.match_mode || tournament.mode || 'regu';
+        if (!acc[mode]) acc[mode] = [];
+        acc[mode].push(pool);
+        return acc;
+    }, {});
 
-            {(!tournament.pools || tournament.pools.length === 0) && (
-                <div className="col-span-full text-center py-12 rounded-xl border border-dashed border-surface-700/50">
-                    <p className="text-surface-500 text-sm">Belum ada pool dibuat</p>
-                    <Link href={route('pools.index', tournament.id)} className="text-primary-400 text-sm hover:text-primary-300 mt-2 inline-block">
-                        Buat Pool →
-                    </Link>
-                </div>
-            )}
+    const modeConfig = {
+        regu:        { label: 'Mode Regu',        badge: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: '🏐' },
+        double:      { label: 'Mode Double',      badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: '👥' },
+        quadrant:    { label: 'Mode Quadrant',    badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30', icon: '⬡' },
+        team_regu:   { label: 'Mode Team Regu',   badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30', icon: '🏆' },
+        team_double: { label: 'Mode Team Double', badge: 'bg-red-500/20 text-red-300 border-red-500/30', icon: '🥇' },
+    };
+
+    if (!tournament.pools || tournament.pools.length === 0) {
+        return (
+            <div className="text-center py-12 rounded-xl border border-dashed border-surface-700/50">
+                <p className="text-surface-500 text-sm">Belum ada pool dibuat</p>
+                <Link href={route('pools.index', tournament.id)} className="text-primary-400 text-sm hover:text-primary-300 mt-2 inline-block">
+                    Buat Pool →
+                </Link>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-8">
+            {Object.entries(poolsByMode).map(([modeKey, pools]) => {
+                const cfg = modeConfig[modeKey] || { label: modeKey, badge: 'bg-surface-800 text-surface-300', icon: '⚽' };
+                return (
+                    <div key={modeKey} className="space-y-4">
+                        <div className="flex items-center gap-2 pb-2 border-b border-surface-800">
+                            <span className="text-lg">{cfg.icon}</span>
+                            <h3 className="text-base font-bold text-surface-100">{cfg.label}</h3>
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium ${cfg.badge}`}>
+                                {pools.length} Pool
+                            </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {pools.map((pool) => {
+                                const isTeamMode = pool.match_mode === 'team_regu' || pool.match_mode === 'team_double';
+                                const superTeams = pool.super_teams || pool.superTeams || [];
+
+                                return (
+                                    <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden shadow-sm">
+                                        <div className="px-5 py-3 border-b border-surface-700/50 bg-surface-800/30 flex items-center justify-between">
+                                            <h4 className="text-sm font-semibold text-surface-200">Pool {pool.name}</h4>
+                                            <span className="text-xs text-surface-500 font-mono">{cfg.label}</span>
+                                        </div>
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="text-xs text-surface-500 border-b border-surface-700/30">
+                                                    <th className="px-4 py-2">#</th>
+                                                    <th className="px-4 py-2">Tim / Super Team</th>
+                                                    <th className="px-4 py-2 text-center">M</th>
+                                                    <th className="px-4 py-2 text-center">W</th>
+                                                    <th className="px-4 py-2 text-center">L</th>
+                                                    <th className="px-4 py-2 text-center">PF</th>
+                                                    <th className="px-4 py-2 text-center">PA</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-surface-700/20">
+                                                {isTeamMode || (superTeams.length > 0 && (!pool.standings || pool.standings.length === 0)) ? (
+                                                    superTeams.map((st, i) => (
+                                                        <tr key={st.id} className={i < 2 ? 'bg-primary-500/5' : ''}>
+                                                            <td className="px-4 py-2.5 text-xs text-surface-400">{i + 1}</td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-200 font-medium">
+                                                                <div>
+                                                                    <span className="font-bold text-amber-300">🏆 {st.name}</span>
+                                                                    <div className="text-[10px] text-surface-400 font-mono">
+                                                                        {(st.members || []).map(m => m.name).join(' • ') || '3 Sub-regu'}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">0</td>
+                                                            <td className="px-4 py-2.5 text-sm text-primary-400 text-center font-medium">0</td>
+                                                            <td className="px-4 py-2.5 text-sm text-red-400 text-center">0</td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">0</td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">0</td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    pool.standings?.map((s, i) => (
+                                                        <tr key={s.id} className={i < 2 ? 'bg-primary-500/5' : ''}>
+                                                            <td className="px-4 py-2.5 text-xs text-surface-400">{s.rank || i + 1}</td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-200 font-medium">{s.team?.name || '—'}</td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.played}</td>
+                                                            <td className="px-4 py-2.5 text-sm text-primary-400 text-center font-medium">{s.won}</td>
+                                                            <td className="px-4 py-2.5 text-sm text-red-400 text-center">{s.lost}</td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.points_for}</td>
+                                                            <td className="px-4 py-2.5 text-sm text-surface-400 text-center">{s.points_against}</td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }
+
 
 function TeamsTab({ teams, availableTeams, tournamentId, status }) {
     const { auth } = usePage().props;
@@ -369,8 +448,23 @@ function TeamsTab({ teams, availableTeams, tournamentId, status }) {
 }
 
 function PoolsTab({ pools, tournamentId }) {
+    const poolsByMode = (pools || []).reduce((acc, pool) => {
+        const mode = pool.match_mode || 'regu';
+        if (!acc[mode]) acc[mode] = [];
+        acc[mode].push(pool);
+        return acc;
+    }, {});
+
+    const modeLabels = {
+        regu:        { label: 'Mode Regu',        icon: '🏐', color: 'text-blue-400' },
+        double:      { label: 'Mode Double',      icon: '👥', color: 'text-emerald-400' },
+        quadrant:    { label: 'Mode Quadrant',    icon: '⬡', color: 'text-purple-400' },
+        team_regu:   { label: 'Mode Team Regu',   icon: '🏆', color: 'text-amber-400' },
+        team_double: { label: 'Mode Team Double', icon: '🥇', color: 'text-red-400' },
+    };
+
     return (
-        <div>
+        <div className="space-y-6">
             <div className="flex justify-end mb-4">
                 <Link
                     href={route('pools.index', tournamentId)}
@@ -379,36 +473,86 @@ function PoolsTab({ pools, tournamentId }) {
                     ⚙️ Kelola Pool
                 </Link>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {pools?.map((pool) => (
-                    <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 p-5">
-                        <h3 className="text-sm font-semibold text-accent-300 mb-3">Pool {pool.name}</h3>
-                        <div className="space-y-2">
-                            {pool.teams?.map((team) => (
-                                <div key={team.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-800/50">
-                                    <div className="w-7 h-7 rounded-lg bg-primary-500/20 flex items-center justify-center text-xs font-bold text-primary-300">
-                                        {team.name.charAt(0)}
+
+            {Object.keys(poolsByMode).length === 0 ? (
+                <div className="text-center py-12 rounded-xl border border-dashed border-surface-700/50">
+                    <p className="text-surface-500 text-sm">Belum ada pool dibuat</p>
+                </div>
+            ) : (
+                Object.entries(poolsByMode).map(([modeKey, modePools]) => {
+                    const cfg = modeLabels[modeKey] || { label: modeKey, icon: '⚽', color: 'text-surface-300' };
+                    return (
+                        <div key={modeKey} className="space-y-3">
+                            <h3 className={`text-sm font-bold flex items-center gap-2 ${cfg.color}`}>
+                                <span>{cfg.icon}</span>
+                                {cfg.label} ({modePools.length} Pool)
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {modePools.map((pool) => (
+                                    <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 p-5">
+                                        <h4 className="text-sm font-semibold text-accent-300 mb-3">Pool {pool.name}</h4>
+                                        <div className="space-y-2">
+                                            {pool.teams?.map((team) => (
+                                                <div key={team.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-800/50">
+                                                    <div className="w-7 h-7 rounded-lg bg-primary-500/20 flex items-center justify-center text-xs font-bold text-primary-300">
+                                                        {team.name.charAt(0)}
+                                                    </div>
+                                                    <span className="text-sm text-surface-300">{team.name}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <span className="text-sm text-surface-300">{team.name}</span>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    );
+                })
+            )}
         </div>
     );
 }
 
 function MatchesTab({ matches }) {
+    const [selectedMode, setSelectedMode] = useState('all');
+
+    const availableModes = Array.from(new Set((matches || []).map(m => m.match_mode).filter(Boolean)));
+
+    const filteredMatches = selectedMode === 'all'
+        ? matches
+        : (matches || []).filter(m => m.match_mode === selectedMode);
+
     return (
-        <div className="space-y-3">
-            {(!matches || matches.length === 0) ? (
+        <div className="space-y-4">
+            {availableModes.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                    <button
+                        onClick={() => setSelectedMode('all')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            selectedMode === 'all' ? 'bg-primary-600 text-white' : 'bg-surface-800 text-surface-400 hover:text-surface-200'
+                        }`}
+                    >
+                        Semua Mode ({matches?.length || 0})
+                    </button>
+                    {availableModes.map(m => (
+                        <button
+                            key={m}
+                            onClick={() => setSelectedMode(m)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium uppercase tracking-wider transition-colors ${
+                                selectedMode === m ? 'bg-primary-600 text-white' : 'bg-surface-800 text-surface-400 hover:text-surface-200'
+                            }`}
+                        >
+                            {m.replace('_', ' ')}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {(!filteredMatches || filteredMatches.length === 0) ? (
                 <div className="text-center py-12 rounded-xl border border-dashed border-surface-700/50">
                     <p className="text-surface-500 text-sm">Belum ada pertandingan</p>
                 </div>
             ) : (
-                matches.map((match) => (
+                filteredMatches.map((match) => (
                     <Link
                         key={match.id}
                         href={route('matches.show', match.id)}
@@ -418,12 +562,17 @@ function MatchesTab({ matches }) {
                             <div className="flex items-center gap-2">
                                 <StatusBadge status={match.status} size="xs" />
                                 <StatusBadge status={match.stage} size="xs" />
+                                {match.match_mode && (
+                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-surface-800 text-primary-300">
+                                        {match.match_mode.replace('_', ' ')}
+                                    </span>
+                                )}
                             </div>
                             {match.referee && <span className="text-xs text-surface-500">🧑‍⚖️ {match.referee.name}</span>}
                         </div>
                         <div className="flex items-center justify-center gap-4">
                             <span className="text-sm font-medium text-surface-200 text-right flex-1">
-                                {match.home_team?.name || 'TBD'}
+                                {match.home_display_name || match.home_team?.name || 'TBD'}
                             </span>
                             <div className="text-center">
                                 {match.status === 'finished' ? (
@@ -441,7 +590,7 @@ function MatchesTab({ matches }) {
                                 )}
                             </div>
                             <span className="text-sm font-medium text-surface-200 text-left flex-1">
-                                {match.away_team?.name || 'TBD'}
+                                {match.away_display_name || match.away_team?.name || 'TBD'}
                             </span>
                         </div>
                         {match.scheduled_at && (
@@ -457,133 +606,98 @@ function MatchesTab({ matches }) {
 }
 
 function BracketTab({ tournament }) {
-    const { auth } = usePage().props;
-    const isAdmin = auth.user?.role === 'admin';
-    const isPoolStage = tournament.status === 'pool_stage' || tournament.status === 'draft' || tournament.status === 'registration';
+    const activeModes = (tournament.modes || []).filter(m => m.is_active).map(m => m.match_mode);
+    const availableModes = activeModes.length > 0
+        ? activeModes
+        : Array.from(new Set((tournament.matches || []).map(m => m.match_mode).filter(Boolean)));
 
-    const poolMatches = tournament.matches?.filter(m => m.stage === 'pool') || [];
-    const unfinishedPoolMatches = poolMatches.filter(m => m.status !== 'finished');
-    const allPoolFinished = poolMatches.length > 0 && unfinishedPoolMatches.length === 0;
+    const [selectedMode, setSelectedMode] = useState(availableModes[0] || 'regu');
 
-    const [processing, setProcessing] = useState(false);
-
-    const handleGenerateBracket = () => {
-        if (!confirm('Apakah Anda yakin ingin mengunci babak penyisihan pool dan mengeluarkan bagan bracket gugur? Tindakan ini akan secara otomatis membuat jadwal pertandingan babak gugur berdasarkan klasemen akhir pool.')) {
-            return;
-        }
-
-        router.post(route('tournaments.generate-bracket', tournament.id), {}, {
-            onStart: () => setProcessing(true),
-            onFinish: () => setProcessing(false),
-        });
+    const modeLabels = {
+        regu:        { label: 'Bagan Regu',        icon: '🏐', color: 'bg-blue-600/20 text-blue-300 border-blue-500/30' },
+        double:      { label: 'Bagan Double',      icon: '👥', color: 'bg-emerald-600/20 text-emerald-300 border-emerald-500/30' },
+        quadrant:    { label: 'Bagan Quadrant',    icon: '⬡', color: 'bg-purple-600/20 text-purple-300 border-purple-500/30' },
+        team_regu:   { label: 'Bagan Team Regu',   icon: '🏆', color: 'bg-amber-600/20 text-amber-300 border-amber-500/30' },
+        team_double: { label: 'Bagan Team Double', icon: '🥇', color: 'bg-red-600/20 text-red-300 border-red-500/30' },
     };
 
-    if (isPoolStage) {
-        return (
-            <div className="rounded-xl border border-surface-700/50 bg-surface-900/50 p-6 text-center max-w-2xl mx-auto my-4">
-                <div className="text-5xl mb-4">🏆</div>
-                <h3 className="text-lg font-bold text-surface-200">Bagan Bracket Belum Terbentuk</h3>
-                
-                <p className="text-sm text-surface-400 mt-2 leading-relaxed">
-                    Bagan pertandingan babak gugur (semifinal dan final) akan dibuat secara otomatis setelah babak penyisihan pool selesai. Sistem akan memasangkan **Juara 1 vs Runner-up 2 secara silang** antar pool.
-                </p>
+    // Filter match bracket berdasarkan mode yang terpilih
+    const bracketMatches = (tournament.matches || []).filter(
+        m => m.stage !== 'pool' && (m.match_mode === selectedMode || !m.match_mode)
+    );
 
-                {poolMatches.length === 0 ? (
-                    <div className="mt-6 p-4 rounded-xl bg-surface-950/40 border border-surface-800 text-sm text-surface-500">
-                        Belum ada pertandingan pool yang dibuat untuk turnamen ini.
-                    </div>
-                ) : !allPoolFinished ? (
-                    <div className="mt-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400 text-left">
-                        <p className="font-semibold flex items-center gap-1.5 mb-1">
-                            ⚠️ Masih Ada Laga Penyisihan Berjalan
-                        </p>
-                        <p className="text-xs text-surface-450">
-                            Terdapat <strong>{unfinishedPoolMatches.length}</strong> pertandingan pool yang belum selesai. Selesaikan semua pertandingan pool terlebih dahulu agar klasemen akhir terbentuk dan bracket dapat dikunci.
-                        </p>
-                    </div>
-                ) : (
-                    <div className="mt-6 space-y-4">
-                        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-450 text-left font-medium">
-                            <p className="font-bold text-emerald-400 flex items-center gap-1.5 mb-1">
-                                ✅ Penyisihan Pool Selesai!
-                            </p>
-                            <p className="text-xs text-surface-400">
-                                Semua pertandingan pool telah selesai dimainkan dan klasemen akhir telah dikalkulasi secara otomatis. Bagan bracket babak gugur siap untuk dikeluarkan.
-                            </p>
-                        </div>
-
-                        {isAdmin && (
-                            <button
-                                onClick={handleGenerateBracket}
-                                disabled={processing}
-                                className="px-6 py-3 rounded-xl bg-primary-600 hover:bg-primary-550 disabled:opacity-50 text-white font-bold text-sm shadow-lg shadow-primary-600/25 hover:shadow-primary-600/35 transition-all duration-250 flex items-center justify-center gap-2 mx-auto"
-                            >
-                                {processing ? 'Memproses...' : '⚔️ Kunci Pool & Keluarkan Bracket'}
-                            </button>
-                        )}
-                    </div>
-                )}
-
-                {!isAdmin && (
-                    <p className="text-xs text-surface-500 mt-6 italic">
-                        *Menunggu Admin untuk mengunci pool dan mengeluarkan bagan pertandingan babak gugur.
-                    </p>
-                )}
-            </div>
-        );
-    }
-
-    // Bracket Stage
-    const bracketMatches = tournament.matches?.filter(m => m.stage !== 'pool') || [];
-    const qfMatches = bracketMatches.filter(m => m.stage === 'quarterfinal').sort((a, b) => a.bracket_position - b.bracket_position);
+    const qfMatches = bracketMatches.filter(m => m.stage === 'quarterfinal' || m.stage === 'round_of_8').sort((a, b) => a.bracket_position - b.bracket_position);
     const sfMatches = bracketMatches.filter(m => m.stage === 'semifinal').sort((a, b) => a.bracket_position - b.bracket_position);
     const finalMatch = bracketMatches.find(m => m.stage === 'final');
     const thirdMatch = bracketMatches.find(m => m.stage === 'third_place');
 
     return (
-        <div className="rounded-xl border border-surface-700/50 bg-surface-900/40 p-6 overflow-x-auto">
-            <div className="min-w-[800px] flex flex-col md:flex-row gap-6 md:gap-12 justify-center items-center py-6">
-                
-                {/* Column 1: Quarterfinals */}
-                {qfMatches.length > 0 && (
-                    <div className="flex flex-col justify-around gap-6 h-[480px] flex-1 max-w-[240px]">
-                        <p className="text-[10px] font-bold text-surface-500 uppercase tracking-widest text-center border-b border-surface-800 pb-2">Perempat Final</p>
-                        {qfMatches.map(match => (
-                            <BracketMatchCard key={match.id} match={match} />
-                        ))}
-                    </div>
-                )}
-
-                {/* Column 2: Semifinals */}
-                {sfMatches.length > 0 && (
-                    <div className="flex flex-col justify-around gap-12 h-[480px] flex-1 max-w-[240px]">
-                        <p className="text-[10px] font-bold text-surface-500 uppercase tracking-widest text-center border-b border-surface-800 pb-2">Semifinal</p>
-                        {sfMatches.map(match => (
-                            <BracketMatchCard key={match.id} match={match} />
-                        ))}
-                    </div>
-                )}
-
-                {/* Column 3: Final & 3rd Place */}
-                <div className="flex flex-col justify-center gap-10 h-[480px] flex-1 max-w-[240px]">
-                    {finalMatch && (
-                        <div className="space-y-2">
-                            <p className="text-[10px] font-extrabold text-amber-400 uppercase tracking-widest text-center border-b border-amber-500/20 pb-2">🏆 Perebutan Juara 1 🏆</p>
-                            <BracketMatchCard match={finalMatch} />
-                        </div>
-                    )}
-                    {thirdMatch && (
-                        <div className="space-y-2">
-                            <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest text-center border-b border-blue-500/20 pb-2">🥉 Perebutan Juara 3</p>
-                            <BracketMatchCard match={thirdMatch} />
-                        </div>
-                    )}
+        <div className="space-y-4">
+            {/* Sub-tabs Per Mode Tanding */}
+            {availableModes.length > 1 && (
+                <div className="flex gap-2 border-b border-surface-800 pb-3 overflow-x-auto">
+                    {availableModes.map(mode => {
+                        const cfg = modeLabels[mode] || { label: mode, icon: '⚽', color: '' };
+                        const isActive = selectedMode === mode;
+                        return (
+                            <button
+                                key={mode}
+                                onClick={() => setSelectedMode(mode)}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                                    isActive
+                                        ? cfg.color
+                                        : 'bg-surface-800/50 text-surface-400 border-surface-700 hover:border-surface-600'
+                                }`}
+                            >
+                                <span>{cfg.icon}</span>
+                                {cfg.label}
+                            </button>
+                        );
+                    })}
                 </div>
+            )}
 
+            <div className="rounded-xl border border-surface-700/50 bg-surface-900/40 p-6 overflow-x-auto">
+                <div className="min-w-[800px] flex flex-col md:flex-row gap-6 md:gap-12 justify-center items-center py-6">
+                    {/* Column 1: Quarterfinals / R8 */}
+                    {qfMatches.length > 0 && (
+                        <div className="flex flex-col justify-around gap-6 h-[480px] flex-1 max-w-[240px]">
+                            <p className="text-[10px] font-bold text-surface-500 uppercase tracking-widest text-center border-b border-surface-800 pb-2">Perempat Final</p>
+                            {qfMatches.map(match => (
+                                <BracketMatchCard key={match.id} match={match} />
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Column 2: Semifinals */}
+                    {sfMatches.length > 0 && (
+                        <div className="flex flex-col justify-around gap-12 h-[480px] flex-1 max-w-[240px]">
+                            <p className="text-[10px] font-bold text-surface-500 uppercase tracking-widest text-center border-b border-surface-800 pb-2">Semifinal</p>
+                            {sfMatches.map(match => (
+                                <BracketMatchCard key={match.id} match={match} />
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Column 3: Final & 3rd Place */}
+                    <div className="flex flex-col justify-center gap-10 h-[480px] flex-1 max-w-[240px]">
+                        {finalMatch ? (
+                            <div className="space-y-2">
+                                <p className="text-[10px] font-extrabold text-amber-400 uppercase tracking-widest text-center border-b border-amber-500/20 pb-2">🏆 Final ({selectedMode})</p>
+                                <BracketMatchCard match={finalMatch} />
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-surface-500 text-xs italic">
+                                Belum ada bagan final untuk mode ini
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );
 }
+
 
 function BracketMatchCard({ match }) {
     const isFinished = match.status === 'finished';
@@ -594,6 +708,18 @@ function BracketMatchCard({ match }) {
 
     const isHomeWinner = isFinished && match.winner_team_id === match.home_team_id;
     const isAwayWinner = isFinished && match.winner_team_id === match.away_team_id;
+
+    const homeName = match.home_display_name
+        || match.home_super_team?.name
+        || match.home_team?.name
+        || match.home_placeholder
+        || 'TBD';
+
+    const awayName = match.away_display_name
+        || match.away_super_team?.name
+        || match.away_team?.name
+        || match.away_placeholder
+        || 'TBD';
 
     return (
         <Link 
@@ -613,8 +739,8 @@ function BracketMatchCard({ match }) {
                             isHomeWinner 
                                 ? 'text-emerald-400 font-bold' 
                                 : (isFinished && match.winner_team_id ? 'text-surface-500 line-through' : 'text-surface-200')
-                        }`}>
-                            {match.home_team?.name || 'TBD'}
+                        }`} title={homeName}>
+                            {homeName}
                         </span>
                     </div>
                     <span className={`text-xs font-mono px-2 py-0.5 rounded font-bold ${
@@ -634,8 +760,8 @@ function BracketMatchCard({ match }) {
                             isAwayWinner 
                                 ? 'text-emerald-400 font-bold' 
                                 : (isFinished && match.winner_team_id ? 'text-surface-500 line-through' : 'text-surface-200')
-                        }`}>
-                            {match.away_team?.name || 'TBD'}
+                        }`} title={awayName}>
+                            {awayName}
                         </span>
                     </div>
                     <span className={`text-xs font-mono px-2 py-0.5 rounded font-bold ${

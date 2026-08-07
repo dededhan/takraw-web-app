@@ -66,8 +66,24 @@ export default function LiveScoring({ match: initialMatch }) {
     const [setupData, setSetupData] = useState({ court_number: matchData.court_number || 1, max_sets: matchData.max_sets || 3 });
     const [processing, setProcessing] = useState(false);
     const [statsCache, setStatsCache] = useState({});
+    const [activeSubRegu, setActiveSubRegu] = useState(0); // 0 = Regu 1, 1 = Regu 2, 2 = Regu 3
 
-    const currentSet = matchData.sets?.find(s => s.status === 'live') || matchData.sets?.[0];
+    const isTeamMode = matchData.match_mode === 'team_regu' || matchData.match_mode === 'team_double';
+
+    const currentHomeTeam = isTeamMode
+        ? matchData.home_super_team?.members?.[activeSubRegu] || matchData.home_team
+        : matchData.home_team;
+
+    const currentAwayTeam = isTeamMode
+        ? matchData.away_super_team?.members?.[activeSubRegu] || matchData.away_team
+        : matchData.away_team;
+
+    const activeSetOffset = isTeamMode ? activeSubRegu * 3 : 0;
+    const activeSets = isTeamMode
+        ? matchData.sets?.filter(s => s.set_number >= activeSetOffset + 1 && s.set_number <= activeSetOffset + 3)
+        : matchData.sets;
+
+    const currentSet = activeSets?.find(s => s.status === 'live') || activeSets?.[0];
     const isLive = matchData.status === 'live';
     const isSetup = matchData.status === 'setup';
 
@@ -144,7 +160,7 @@ export default function LiveScoring({ match: initialMatch }) {
             if (res.set) {
                 setMatchData(prev => ({
                     ...prev,
-                    sets: prev.sets.map(s => s.id === res.set.id ? res.set : s),
+                    sets: prev.sets.map(s => s.id === res.set.id ? { ...s, ...res.set } : s),
                 }));
             }
             // Trigger animation
@@ -327,11 +343,40 @@ export default function LiveScoring({ match: initialMatch }) {
                     <span className="text-[10px] text-surface-500">Set {currentSet?.set_number}/{matchData.max_sets}</span>
                 </div>
 
+                {isTeamMode && (
+                    <div className="flex justify-center gap-2 mb-2">
+                        {[0, 1, 2].map((idx) => {
+                            const subSets = matchData.sets?.filter(s => s.set_number >= idx * 3 + 1 && s.set_number <= (idx + 1) * 3) || [];
+                            const homeWins = subSets.filter(s => s.winner_team_id === matchData.home_super_team?.members?.[idx]?.id).length;
+                            const awayWins = subSets.filter(s => s.winner_team_id === matchData.away_super_team?.members?.[idx]?.id).length;
+
+                            return (
+                                <button
+                                    key={idx}
+                                    onClick={() => setActiveSubRegu(idx)}
+                                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                                        activeSubRegu === idx
+                                            ? 'bg-amber-500 text-surface-950 border-amber-400 shadow-md'
+                                            : 'bg-surface-800 text-surface-400 border-surface-700 hover:border-surface-600'
+                                    }`}
+                                >
+                                    <span>Laga #{idx + 1}</span>
+                                    {(homeWins > 0 || awayWins > 0) && (
+                                        <span className="text-[10px] px-1.5 py-0.2 bg-black/30 rounded font-mono">
+                                            {homeWins}-{awayWins}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
                 {/* Scoreboard */}
                 <div className="flex items-center justify-center gap-2">
                     {/* Home Score */}
                     <div className="flex items-center gap-1.5 flex-1 justify-end">
-                        <span className="text-[11px] font-medium text-primary-300 truncate max-w-[60px]">{matchData.home_team?.name}</span>
+                        <span className="text-[11px] font-bold text-primary-300 truncate max-w-[120px]">{currentHomeTeam?.name}</span>
                         <div className="flex items-center gap-0.5">
                             <button
                                 onClick={() => handleScore('home', 'decrement')}
@@ -372,13 +417,13 @@ export default function LiveScoring({ match: initialMatch }) {
                                 +
                             </button>
                         </div>
-                        <span className="text-[11px] font-medium text-accent-300 truncate max-w-[60px]">{matchData.away_team?.name}</span>
+                        <span className="text-[11px] font-bold text-accent-300 truncate max-w-[120px]">{currentAwayTeam?.name}</span>
                     </div>
                 </div>
 
                 {/* Set Summary */}
                 <div className="flex justify-center gap-1.5 mt-0.5">
-                    {matchData.sets?.map(s => (
+                    {activeSets?.map(s => (
                         <div key={s.id} className={`text-[9px] px-1.5 py-0.5 rounded ${s.status === 'live' ? 'bg-red-500/20 text-red-300' : s.status === 'finished' ? 'bg-surface-700 text-surface-300' : 'bg-surface-800 text-surface-500'}`}>
                             S{s.set_number}: {s.home_score}-{s.away_score}
                         </div>
@@ -390,11 +435,11 @@ export default function LiveScoring({ match: initialMatch }) {
             <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
                 {/* Home Team Side */}
                 <TeamSide
-                    team={matchData.home_team}
-                    athletes={matchData.home_team?.athletes || []}
+                    team={currentHomeTeam}
+                    athletes={currentHomeTeam?.athletes || []}
                     selectedAthlete={selectedAthlete.home}
                     onSelectAthlete={(a) => setSelectedAthlete(prev => ({ ...prev, home: a }))}
-                    onStatChange={(athleteId, stat, action) => handleStat(athleteId, matchData.home_team_id, stat, action)}
+                    onStatChange={(athleteId, stat, action) => handleStat(athleteId, currentHomeTeam?.id, stat, action)}
                     getStats={getAthleteStats}
                     side="home"
                     color="primary"
@@ -406,11 +451,11 @@ export default function LiveScoring({ match: initialMatch }) {
 
                 {/* Away Team Side */}
                 <TeamSide
-                    team={matchData.away_team}
-                    athletes={matchData.away_team?.athletes || []}
+                    team={currentAwayTeam}
+                    athletes={currentAwayTeam?.athletes || []}
                     selectedAthlete={selectedAthlete.away}
                     onSelectAthlete={(a) => setSelectedAthlete(prev => ({ ...prev, away: a }))}
-                    onStatChange={(athleteId, stat, action) => handleStat(athleteId, matchData.away_team_id, stat, action)}
+                    onStatChange={(athleteId, stat, action) => handleStat(athleteId, currentAwayTeam?.id, stat, action)}
                     getStats={getAthleteStats}
                     side="away"
                     color="accent"
@@ -431,58 +476,85 @@ export default function LiveScoring({ match: initialMatch }) {
     );
 }
 
-function TeamSide({ team, athletes, selectedAthlete, onSelectAthlete, onStatChange, getStats, side, color }) {
+function TeamSide({ team, athletes = [], selectedAthlete, onSelectAthlete, onStatChange, getStats, side, color }) {
     const colorClasses = {
         primary: {
             bg: 'bg-primary-500/10',
             border: 'border-primary-500/30',
             text: 'text-primary-300',
-            badge: 'bg-primary-500/20 border-primary-500/30 text-primary-300',
-            activeBadge: 'bg-primary-600 text-white border-primary-500',
+            badge: 'bg-primary-500/20 border-primary-500/30 text-primary-300 hover:bg-primary-500/30',
+            activeBadge: 'bg-primary-600 text-white border-primary-400 shadow-md ring-2 ring-primary-400/40',
         },
         accent: {
             bg: 'bg-accent-500/10',
             border: 'border-accent-500/30',
             text: 'text-accent-300',
-            badge: 'bg-accent-500/20 border-accent-500/30 text-accent-300',
-            activeBadge: 'bg-accent-600 text-white border-accent-500',
+            badge: 'bg-accent-500/20 border-accent-500/30 text-accent-300 hover:bg-accent-500/30',
+            activeBadge: 'bg-accent-600 text-white border-accent-400 shadow-md ring-2 ring-accent-400/40',
         },
     };
 
     const c = colorClasses[color];
     const stats = selectedAthlete ? getStats(selectedAthlete.id) : {};
 
+    const effectiveAthletes = (athletes && athletes.length > 0)
+        ? athletes
+        : [
+            { id: `temp-${team?.id || 1}-1`, name: 'Tekong', jersey_number: 1, position: 'Tekong' },
+            { id: `temp-${team?.id || 1}-2`, name: 'Feeder', jersey_number: 2, position: 'Feeder' },
+            { id: `temp-${team?.id || 1}-3`, name: 'Killer', jersey_number: 3, position: 'Killer' },
+            { id: `temp-${team?.id || 1}-4`, name: 'Cadangan', jersey_number: 4, position: 'Cadangan' },
+        ];
+
+    // Auto select 1st athlete if none selected
+    useEffect(() => {
+        if (!selectedAthlete && effectiveAthletes && effectiveAthletes.length > 0) {
+            onSelectAthlete(effectiveAthletes[0]);
+        }
+    }, [effectiveAthletes, selectedAthlete]);
+
     return (
         <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
             {/* Team Header + Athlete Selector combined */}
             <div className={`px-3 py-2 ${c.bg} border-b ${c.border} flex-shrink-0`}>
-                <h3 className={`text-xs font-bold ${c.text} text-center mb-1.5`}>{team?.name}</h3>
-                {/* Athlete Selector — Jersey Numbers */}
+                <h3 className={`text-xs font-bold ${c.text} text-center mb-1.5`}>{team?.name || 'Tim'}</h3>
+                {/* Athlete Selector — Jersey Numbers & Names */}
                 <div className="flex flex-wrap justify-center gap-1.5">
-                    {athletes.map((a) => (
-                        <button
-                            key={a.id}
-                            onClick={() => onSelectAthlete(a)}
-                            className={`
-                                w-10 h-10 rounded-xl border text-sm font-bold transition-all duration-200 active:scale-90
-                                ${selectedAthlete?.id === a.id ? c.activeBadge : c.badge}
-                            `}
-                            title={a.name}
-                        >
-                            {a.jersey_number}
-                        </button>
-                    ))}
+                    {effectiveAthletes.map((a, idx) => {
+                        const jerseyNo = a.jersey_number || a.number || (idx + 1);
+                        const isSelected = selectedAthlete?.id === a.id;
+                        return (
+                            <button
+                                key={a.id || idx}
+                                onClick={() => onSelectAthlete(a)}
+                                className={`
+                                    px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-200 active:scale-95 flex items-center gap-1.5
+                                    ${isSelected ? c.activeBadge : c.badge}
+                                `}
+                                title={`${a.name} (#${jerseyNo})`}
+                            >
+                                <span className="font-mono text-xs font-black">#{jerseyNo}</span>
+                                <span className="truncate max-w-[80px] text-[11px]">{a.name}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
             {/* Selected Athlete Content */}
             {selectedAthlete ? (
                 <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-3 py-2">
-                    {/* Athlete name */}
-                    <p className="text-xs text-surface-400 text-center mb-2 flex-shrink-0 font-medium">
-                        #{selectedAthlete.jersey_number} {selectedAthlete.name}
-                        {selectedAthlete.position && <span className="text-surface-500"> • {selectedAthlete.position}</span>}
-                    </p>
+                    {/* Athlete info header */}
+                    <div className="text-center mb-2 flex-shrink-0">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-surface-800 border border-surface-700/60 text-xs font-bold text-surface-200">
+                            <span>👕 No. Punggung <strong className="font-mono text-primary-300">#{selectedAthlete.jersey_number || selectedAthlete.number || '—'}</strong></span>
+                            <span>—</span>
+                            <span className="text-surface-100">{selectedAthlete.name}</span>
+                            {selectedAthlete.position && (
+                                <span className="text-surface-400 text-[10px] font-normal">({selectedAthlete.position})</span>
+                            )}
+                        </span>
+                    </div>
 
                     {/* Stats + Zones in a responsive layout */}
                     <div className="flex flex-col md:flex-row gap-2 flex-1 min-h-0">
@@ -610,94 +682,90 @@ function CourtZones({ stats, onZoneChange, color }) {
         setPressedZone(null);
     };
 
+    const zones = [
+        { key: 'zone_1', label: 'ZONA 1', desc: 'Sudut Atas', style: { top: '6%', left: '48%', width: '24%', height: '22%' } },
+        { key: 'zone_2', label: 'ZONA 2', desc: '0.00 - 1.22m', style: { top: '6%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_3', label: 'ZONA 3', desc: '1.22 - 2.44m', style: { top: '23%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_4', label: 'ZONA 4', desc: '2.44 - 3.66m', style: { top: '40%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_5', label: 'ZONA 5', desc: '3.66 - 4.88m', style: { top: '57%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_6', label: 'ZONA 6', desc: '4.88 - 6.10m', style: { top: '74%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_7', label: 'ZONA 7', desc: 'Sudut Bawah', style: { top: '72%', left: '48%', width: '24%', height: '22%' } },
+    ];
+
     return (
-        <div className="rounded-xl bg-surface-800/50 border border-surface-700/30 p-2.5">
-            <p className="text-[10px] font-semibold text-surface-500 uppercase tracking-wider mb-2 text-center">
-                🎯 Zona Jatuh Bola
-            </p>
-
-            {/* Court diagram container */}
-            <div className="relative">
-                {/* Net indicator */}
-                <div className="flex items-center gap-1.5 mb-1.5">
-                    <div className="flex-1 h-px bg-surface-500/50"></div>
-                    <span className="text-[10px] text-surface-500 font-semibold px-1">NET</span>
-                    <div className="flex-1 h-px bg-surface-500/50"></div>
-                </div>
-
-                {/* Zones in trapezoid layout: top row wider (4 zones near net), bottom row narrower (3 zones near tekong) */}
-                <div className="space-y-1.5">
-                    {/* Top row: zones 1, 2, 3, 4 (near net, wider spread) */}
-                    <div className="grid grid-cols-4 gap-1.5">
-                        {ZONE_CONFIG.slice(0, 4).map((zone) => (
-                            <ZoneButton
-                                key={zone.key}
-                                zone={zone}
-                                value={stats[zone.key] || 0}
-                                colorClass={zone.color}
-                                isPressed={pressedZone === zone.key}
-                                onPointerDown={() => handlePointerDown(zone.key)}
-                                onPointerUp={() => handlePointerUp(zone.key)}
-                                onPointerLeave={handlePointerLeave}
-                            />
-                        ))}
-                    </div>
-
-                    {/* Bottom row: zones 5, 6, 7 (near tekong, narrower) */}
-                    <div className="grid grid-cols-3 gap-1.5 px-4 md:px-8">
-                        {ZONE_CONFIG.slice(4, 7).map((zone) => (
-                            <ZoneButton
-                                key={zone.key}
-                                zone={zone}
-                                value={stats[zone.key] || 0}
-                                colorClass={zone.color}
-                                isPressed={pressedZone === zone.key}
-                                onPointerDown={() => handlePointerDown(zone.key)}
-                                onPointerUp={() => handlePointerUp(zone.key)}
-                                onPointerLeave={handlePointerLeave}
-                            />
-                        ))}
-                    </div>
-                </div>
-
-                {/* Striker indicator */}
-                <div className="flex justify-center mt-1.5">
-                    <span className="text-[10px] text-surface-500">⚡ Striker</span>
-                </div>
+        <div className="rounded-xl bg-surface-900 border border-surface-700/50 p-2.5 shadow-xl">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                    🎯 ZONA JATUH BOLA (ZONA 1 - 7)
+                </span>
+                <span className="text-[9px] text-surface-400 font-mono">13.40m x 6.10m</span>
             </div>
 
-            {/* Hint */}
-            <p className="text-[10px] text-surface-600 text-center mt-1.5">
-                Tap = +1 · Tahan = −1
+            {/* Graphic Court Container with Background SVG */}
+            <div className="relative w-full aspect-[2.1/1] rounded-xl border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 overflow-hidden shadow-inner select-none">
+                
+                {/* SVG Court Background Lines */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 190">
+                    {/* Court Outer Boundary */}
+                    <rect x="10" y="10" width="380" height="170" fill="none" stroke="#34d399" strokeWidth="2.5" strokeOpacity="0.8" />
+                    
+                    {/* Center Net Line */}
+                    <line x1="190" y1="10" x2="190" y2="180" stroke="#ffffff" strokeWidth="3" strokeDasharray="5 3" />
+                    <text x="190" y="8" fill="#a7f3d0" fontSize="7" textAnchor="middle" fontWeight="bold">NET</text>
+
+                    {/* Tekong Circle & Service Dot (Left Court Half) */}
+                    <circle cx="85" cy="95" r="20" fill="none" stroke="#fbbf24" strokeWidth="2" strokeDasharray="3 2" />
+                    <circle cx="85" cy="95" r="5" fill="#fbbf24" />
+                    <text x="85" y="125" fill="#fef08a" fontSize="7" textAnchor="middle" fontWeight="bold">TEKONG</text>
+
+                    {/* Zone Fan Lines Radiating from Tekong Circle to Right Boundary */}
+                    <line x1="85" y1="95" x2="390" y2="10" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="44" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="78" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="112" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="146" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="180" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                </svg>
+
+                {/* Interactive Zone Buttons Overlay (ZONA 1 - ZONA 7) */}
+                {zones.map((z) => {
+                    const value = stats[z.key] || 0;
+                    const isPressed = pressedZone === z.key;
+
+                    return (
+                        <button
+                            key={z.key}
+                            style={z.style}
+                            onPointerDown={() => handlePointerDown(z.key)}
+                            onPointerUp={() => handlePointerUp(z.key)}
+                            onPointerLeave={handlePointerLeave}
+                            onContextMenu={(e) => e.preventDefault()}
+                            className={`
+                                absolute rounded-lg border flex flex-col items-center justify-center transition-all duration-150 shadow-md backdrop-blur-xs
+                                ${isPressed ? 'scale-90 bg-amber-500/90 border-amber-300' : 'bg-surface-900/80 hover:bg-emerald-600/70 border-emerald-400/50 hover:border-amber-400'}
+                            `}
+                        >
+                            <span className="text-[9px] md:text-xs font-black text-emerald-200 leading-tight">
+                                {z.label}
+                            </span>
+                            <span className="text-[7px] text-surface-300 font-mono leading-none hidden sm:inline">
+                                {z.desc}
+                            </span>
+
+                            {/* Hit Count Badge */}
+                            {value > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-amber-400 text-surface-950 text-[9px] font-black flex items-center justify-center shadow-lg border border-amber-300 animate-bounce">
+                                    {value}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
+            </div>
+
+            <p className="text-[9px] text-surface-400 text-center mt-1.5 font-medium">
+                💡 Tap zona untuk <span className="text-emerald-400 font-bold">+1</span> · Tahan untuk <span className="text-red-400 font-bold">−1</span>
             </p>
         </div>
-    );
-}
-
-/**
- * Individual zone button with counter badge.
- */
-function ZoneButton({ zone, value, colorClass, isPressed, onPointerDown, onPointerUp, onPointerLeave }) {
-    return (
-        <button
-            onPointerDown={onPointerDown}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerLeave}
-            onContextMenu={(e) => e.preventDefault()}
-            className={`
-                relative rounded-xl border-2 bg-gradient-to-br ${colorClass}
-                h-12 md:h-14
-                flex flex-col items-center justify-center
-                transition-all duration-150 select-none
-                ${isPressed ? 'scale-90 brightness-75' : 'hover:brightness-110 active:scale-95'}
-            `}
-        >
-            <span className="text-base md:text-lg font-black leading-none">{zone.label}</span>
-            {value > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-white/25 backdrop-blur-sm text-[10px] font-bold text-white flex items-center justify-center border border-white/20 shadow-sm">
-                    {value}
-                </span>
-            )}
-        </button>
     );
 }

@@ -17,62 +17,71 @@ const ZONE_CONFIG = [
 ];
 
 function PlayerCourtMiniature({ stats }) {
+    const zones = [
+        { key: 'zone_1', label: 'ZONA 1', desc: 'Sudut Atas', style: { top: '6%', left: '48%', width: '24%', height: '22%' } },
+        { key: 'zone_2', label: 'ZONA 2', desc: '0.00 - 1.22m', style: { top: '6%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_3', label: 'ZONA 3', desc: '1.22 - 2.44m', style: { top: '23%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_4', label: 'ZONA 4', desc: '2.44 - 3.66m', style: { top: '40%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_5', label: 'ZONA 5', desc: '3.66 - 4.88m', style: { top: '57%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_6', label: 'ZONA 6', desc: '4.88 - 6.10m', style: { top: '74%', right: '2%', width: '22%', height: '16%' } },
+        { key: 'zone_7', label: 'ZONA 7', desc: 'Sudut Bawah', style: { top: '72%', left: '48%', width: '24%', height: '22%' } },
+    ];
+
     return (
-        <div className="w-full max-w-[660px] mx-auto bg-surface-950/50 border border-surface-800/80 rounded-2xl p-4 flex flex-col justify-between">
-            {/* NET Header */}
-            <div className="w-full flex items-center gap-1.5 mb-2.5 opacity-60">
-                <div className="flex-1 h-px bg-surface-700"></div>
-                <span className="text-[10px] text-surface-500 font-bold uppercase tracking-wider">NET</span>
-                <div className="flex-1 h-px bg-surface-700"></div>
+        <div className="w-full max-w-[500px] mx-auto bg-surface-900 border border-surface-700/50 rounded-2xl p-3 shadow-xl">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                    🎯 PETA ZONA JATUH BOLA (ZONA 1 - 7)
+                </span>
+                <span className="text-[9px] text-surface-400 font-mono">13.40m x 6.10m</span>
             </div>
 
-            {/* Area Grid Angka */}
-            <div className="w-full max-w-[280px] mx-auto space-y-2">
-                {/* Top Row (Ganjil): 1, 3, 5, 7 */}
-                <div className="grid grid-cols-4 gap-2">
-                    {ZONE_CONFIG.slice(0, 4).map((zone) => {
-                        const count = stats[zone.key] || 0;
-                        const hasCount = count > 0;
-                        const baseStyle = "h-14 border rounded-2xl flex flex-col items-center justify-center relative text-sm font-black transition-all select-none";
-                        const colorStyle = hasCount ? zone.activeColor : zone.color;
-                        return (
-                            <div key={zone.key} className={`${baseStyle} ${colorStyle}`} title={`Zona ${zone.label}: ${count} kali`}>
-                                <span className={hasCount ? "opacity-100 text-white" : "opacity-40"}>{zone.label}</span>
-                                {hasCount && (
-                                    <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-0.5 rounded-full bg-white/25 backdrop-blur-sm text-[9px] font-bold text-white flex items-center justify-center border border-white/20 shadow-sm leading-none">
-                                        {count}
-                                    </span>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
+            {/* Graphic Court Container */}
+            <div className="relative w-full aspect-[2.1/1] rounded-xl border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 overflow-hidden shadow-inner select-none">
+                
+                {/* SVG Court Background Lines */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 190">
+                    <rect x="10" y="10" width="380" height="170" fill="none" stroke="#34d399" strokeWidth="2.5" strokeOpacity="0.8" />
+                    <line x1="190" y1="10" x2="190" y2="180" stroke="#ffffff" strokeWidth="3" strokeDasharray="5 3" />
+                    <text x="190" y="8" fill="#a7f3d0" fontSize="7" textAnchor="middle" fontWeight="bold">NET</text>
 
-                {/* Bottom Row (Genap): 2, 4, 6 */}
-                {/* 2. PERUBAHAN: Menghapus 'px-4' agar lebar grid baris bawah sejajar secara proporsional dengan baris atas */}
-                <div className="grid grid-cols-3 gap-2 px-3">
-                    {ZONE_CONFIG.slice(4, 7).map((zone) => {
-                        const count = stats[zone.key] || 0;
-                        const hasCount = count > 0;
-                        const baseStyle = "h-14 border rounded-2xl flex flex-col items-center justify-center relative text-sm font-black transition-all select-none";
-                        const colorStyle = hasCount ? zone.activeColor : zone.color;
-                        return (
-                            <div key={zone.key} className={`${baseStyle} ${colorStyle}`} title={`Zona ${zone.label}: ${count} kali`}>
-                                <span className={hasCount ? "opacity-100 text-white" : "opacity-40"}>{zone.label}</span>
-                                {hasCount && (
-                                    <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-0.5 rounded-full bg-white/25 backdrop-blur-sm text-[9px] font-bold text-white flex items-center justify-center border border-white/20 shadow-sm leading-none">
-                                        {count}
-                                    </span>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
+                    <circle cx="85" cy="95" r="20" fill="none" stroke="#fbbf24" strokeWidth="2" strokeDasharray="3 2" />
+                    <circle cx="85" cy="95" r="5" fill="#fbbf24" />
+                    <text x="85" y="125" fill="#fef08a" fontSize="7" textAnchor="middle" fontWeight="bold">TEKONG</text>
 
-            {/* Striker Footer */}
-            <div className="mt-2.5 flex justify-center opacity-60">
-                <span className="text-[10px] text-surface-500 font-bold uppercase tracking-wider">⚡ Striker</span>
+                    <line x1="85" y1="95" x2="390" y2="10" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="44" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="78" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="112" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="146" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="180" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                </svg>
+
+                {/* Zone Badges Overlay */}
+                {zones.map((z) => {
+                    const value = stats[z.key] || 0;
+                    const hasValue = value > 0;
+
+                    return (
+                        <div
+                            key={z.key}
+                            style={z.style}
+                            className={`
+                                absolute rounded-lg border flex flex-col items-center justify-center transition-all duration-150 shadow-md backdrop-blur-xs
+                                ${hasValue ? 'bg-emerald-600/90 border-amber-400 ring-2 ring-amber-400/50 shadow-lg' : 'bg-surface-900/60 border-surface-700/50 opacity-60'}
+                            `}
+                        >
+                            <span className="text-[9px] md:text-xs font-black text-emerald-200 leading-tight">
+                                {z.label}
+                            </span>
+                            {hasValue && (
+                                <span className="absolute -top-1 -right-1 min-w-[18px] h-4.5 px-1 rounded-full bg-amber-400 text-surface-950 text-[10px] font-black flex items-center justify-center shadow-lg border border-amber-300 animate-bounce">
+                                    {value}
+                                </span>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -149,13 +158,19 @@ function AthleteStatCard({ athlete, stats, color }) {
 
 export default function MatchShow({ match: m }) {
     const [setFilter, setSetFilter] = useState('all');
+
+    const homeName = m.home_display_name || m.home_team?.name || m.home_super_team?.name || 'TBD';
+    const awayName = m.away_display_name || m.away_team?.name || m.away_super_team?.name || 'TBD';
+
     const finishedSets = m.sets?.filter(s => s.status === 'finished') || [];
-    const setsWonHome = finishedSets.filter(s => s.winner_team_id === m.home_team_id).length;
-    const setsWonAway = finishedSets.filter(s => s.winner_team_id === m.away_team_id).length;
+    const setsWonHome = finishedSets.filter(s => s.winner_team_id === m.home_team_id || s.winner_team_id === m.home_super_team_id).length;
+    const setsWonAway = finishedSets.filter(s => s.winner_team_id === m.away_team_id || s.winner_team_id === m.away_super_team_id).length;
 
     const allAthletes = [
         ...(m.home_team?.athletes || []),
-        ...(m.away_team?.athletes || [])
+        ...(m.away_team?.athletes || []),
+        ...(m.home_super_team?.members?.flatMap(mem => mem.athletes || []) || []),
+        ...(m.away_super_team?.members?.flatMap(mem => mem.athletes || []) || []),
     ];
     const [selectedAthleteId, setSelectedAthleteId] = useState(allAthletes[0]?.id || null);
 
@@ -220,8 +235,8 @@ export default function MatchShow({ match: m }) {
     };
 
     const currentFilter = setFilter === 'all' ? 'all' : parseInt(setFilter);
-    const homeStats = aggregateStats(getTeamStats(m.home_team_id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id));
-    const awayStats = aggregateStats(getTeamStats(m.away_team_id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id));
+    const homeStats = aggregateStats(getTeamStats(m.home_team_id || m.home_super_team_id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id));
+    const awayStats = aggregateStats(getTeamStats(m.away_team_id || m.away_super_team_id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id));
 
     const statRows = [
         { label: 'Servis In', key: 'service_in' },
@@ -239,7 +254,7 @@ export default function MatchShow({ match: m }) {
 
     return (
         <AuthenticatedLayout header="Detail Pertandingan">
-            <Head title={`${m.home_team?.name || 'TBD'} vs ${m.away_team?.name || 'TBD'}`} />
+            <Head title={`${homeName} vs ${awayName}`} />
 
             <div className="mb-4">
                 <Link href={route('matches.index')} className="text-sm text-surface-500 hover:text-surface-300 transition-colors flex items-center gap-1">
@@ -261,17 +276,17 @@ export default function MatchShow({ match: m }) {
                 <div className="flex items-center justify-center gap-8 sm:gap-16">
                     <div className="text-center">
                         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500/30 to-primary-600/20 flex items-center justify-center text-2xl font-bold text-primary-300 mx-auto mb-2">
-                            {m.home_team?.name?.charAt(0)}
+                            {homeName.charAt(0)}
                         </div>
-                        <p className="text-sm font-semibold text-surface-200">{m.home_team?.name || 'TBD'}</p>
+                        <p className="text-sm font-semibold text-surface-200">{homeName}</p>
                         <p className="text-4xl font-black text-primary-400 mt-2">{setsWonHome}</p>
                     </div>
                     <div className="text-surface-600 text-2xl font-black">VS</div>
                     <div className="text-center">
                         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-500/30 to-accent-600/20 flex items-center justify-center text-2xl font-bold text-accent-300 mx-auto mb-2">
-                            {m.away_team?.name?.charAt(0)}
+                            {awayName.charAt(0)}
                         </div>
-                        <p className="text-sm font-semibold text-surface-200">{m.away_team?.name || 'TBD'}</p>
+                        <p className="text-sm font-semibold text-surface-200">{awayName}</p>
                         <p className="text-4xl font-black text-accent-400 mt-2">{setsWonAway}</p>
                     </div>
                 </div>

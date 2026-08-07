@@ -37,9 +37,13 @@ class MatchController extends Controller
         $match->load([
             'homeTeam.athletes',
             'awayTeam.athletes',
+            'homeSuperTeam.members.athletes',
+            'awaySuperTeam.members.athletes',
             'referee',
             'tournament',
             'pool',
+            'court',
+            'timeSlot',
             'sets.stats.athlete',
         ]);
 
