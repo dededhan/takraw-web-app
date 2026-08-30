@@ -4,35 +4,46 @@ import { useState } from 'react';
 
 export default function TournamentAvailable({ tournaments = [], myTeams = [], mySuperTeams = [] }) {
     const [selectedTournament, setSelectedTournament] = useState(null);
+    const [selectedMode, setSelectedMode] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [showKey, setShowKey] = useState(false);
 
     const isSuperTeamMode = (mode) => ['team_regu', 'team_double'].includes(mode);
 
+    const getActiveModes = (tournament) => (tournament.modes || []).filter(m => m.is_active);
+
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         team_id: '',
         super_team_id: '',
+        match_mode: '',
         registration_code: '',
     });
 
-    const openRegisterModal = (tournament) => {
+    const openRegisterModal = (tournament, mode) => {
         clearErrors();
         setSelectedTournament(tournament);
+        setSelectedMode(mode);
 
-        if (isSuperTeamMode(tournament.mode)) {
-            const registeredStIds = (tournament.superTeams || []).map(st => st.id);
-            const availableSt = mySuperTeams.filter(st => st.match_mode === tournament.mode && !registeredStIds.includes(st.id));
+        if (isSuperTeamMode(mode)) {
+            const registeredStIds = (tournament.superTeams || [])
+                .filter(st => st.match_mode === mode)
+                .map(st => st.id);
+            const availableSt = mySuperTeams.filter(st => st.match_mode === mode && !registeredStIds.includes(st.id));
             setData({
                 team_id: '',
                 super_team_id: availableSt.length > 0 ? availableSt[0].id.toString() : '',
+                match_mode: mode,
                 registration_code: '',
             });
         } else {
-            const registeredIds = (tournament.teams || []).map(t => t.id);
+            const registeredIds = (tournament.teams || [])
+                .filter(t => t.pivot?.match_mode === mode)
+                .map(t => t.id);
             const available = myTeams.filter(t => !registeredIds.includes(t.id));
             setData({
                 team_id: available.length > 0 ? available[0].id.toString() : '',
                 super_team_id: '',
+                match_mode: mode,
                 registration_code: '',
             });
         }
@@ -43,14 +54,15 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
     const closeModal = () => {
         setIsModalOpen(false);
         setSelectedTournament(null);
+        setSelectedMode(null);
         reset();
     };
 
     const handleRegister = (e) => {
         e.preventDefault();
-        if (!selectedTournament) return;
+        if (!selectedTournament || !selectedMode) return;
 
-        if (isSuperTeamMode(selectedTournament.mode)) {
+        if (isSuperTeamMode(selectedMode)) {
             if (!data.super_team_id) return;
             post(route('coach.tournaments.register-super-team', selectedTournament.id), {
                 onSuccess: () => closeModal(),
@@ -63,9 +75,10 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
         }
     };
 
-    const handleUnregisterTeam = (tournamentId, teamId, teamName) => {
+    const handleUnregisterTeam = (tournamentId, teamId, teamName, matchMode) => {
         if (confirm(`Apakah Anda yakin ingin membatalkan pendaftaran tim "${teamName}" dari turnamen ini?`)) {
             router.delete(route('coach.tournaments.unregister', [tournamentId, teamId]), {
+                data: { match_mode: matchMode },
                 preserveScroll: true,
             });
         }
@@ -100,37 +113,33 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
     };
 
     return (
-        <AuthenticatedLayout header="Turnamen Yang Tersedia">
-            <Head title="Turnamen Tersedia" />
+        <AuthenticatedLayout header="Turnamen">
+            <Head title="Turnamen" />
 
             {/* Header Banner */}
             <div className="mb-8 p-6 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-500/10 via-surface-900/40 to-transparent">
                 <h2 className="text-base font-bold text-blue-300 flex items-center gap-2">
-                    <span>📢 Informasi Pendaftaran Turnamen</span>
+                    <span>📢 Informasi Turnamen</span>
                 </h2>
                 <p className="text-xs text-surface-400 mt-1 max-w-3xl leading-relaxed">
-                    Daftar kejuaraan yang sedang membuka pendaftaran (*Registration*). Anda dapat mendaftarkan Tim Reguler atau Super Team binaan Anda sebelum masa pendaftaran ditutup oleh Admin.
+                    Daftar turnamen yang sedang membuka pendaftaran maupun yang sedang berjalan. Anda dapat mendaftarkan Tim Reguler atau Super Team binaan Anda selama masa pendaftaran masih dibuka oleh Admin.
                 </p>
             </div>
 
             {tournaments.length === 0 ? (
                 <div className="rounded-2xl border border-surface-700/50 bg-surface-900/30 p-14 text-center">
                     <div className="text-5xl mb-4">🏆</div>
-                    <h3 className="text-base font-bold text-surface-200">Tidak Ada Turnamen Tersedia</h3>
+                    <h3 className="text-base font-bold text-surface-200">Tidak Ada Turnamen</h3>
                     <p className="text-xs text-surface-500 mt-1 max-w-sm mx-auto">
-                        Saat ini tidak ada turnamen dengan status registrasi yang aktif. Silakan cek kembali nanti atau hubungi Admin.
+                        Saat ini tidak ada turnamen yang sedang berjalan atau membuka pendaftaran. Silakan cek kembali nanti atau hubungi Admin.
                     </p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {tournaments.map((tournament) => {
-                        const isSuper = isSuperTeamMode(tournament.mode);
+                        const activeModes = getActiveModes(tournament);
                         const registeredTeams = tournament.teams || [];
                         const registeredSuperTeams = tournament.superTeams || [];
-
-                        const hasAvailable = isSuper
-                            ? mySuperTeams.some(st => st.match_mode === tournament.mode && !registeredSuperTeams.some(r => r.id === st.id))
-                            : myTeams.some(t => !registeredTeams.some(r => r.id === t.id));
 
                         return (
                             <div
@@ -141,25 +150,40 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                     {/* Card Header Badges */}
                                     <div className="flex items-start justify-between gap-2 mb-3 flex-wrap">
                                         <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                                📝 Registrasi
-                                            </span>
-                                            {tournament.has_registration_code ? (
-                                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                                                    🔐 Butuh Kunci
+                                            {tournament.status === 'registration' ? (
+                                                <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                                    📝 Registrasi
                                                 </span>
                                             ) : (
-                                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-surface-800 text-surface-400 border border-surface-700">
-                                                    🔓 Terbuka
+                                                <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                                    ⚡ Berjalan
                                                 </span>
+                                            )}
+                                            {tournament.status === 'registration' && (
+                                                tournament.has_registration_code ? (
+                                                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                                        🔐 Butuh Kunci
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-surface-800 text-surface-400 border border-surface-700">
+                                                        🔓 Terbuka
+                                                    </span>
+                                                )
                                             )}
                                         </div>
 
-                                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg border ${
-                                            isSuper ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-surface-800 text-surface-300 border-surface-700'
-                                        }`}>
-                                            {formatTournamentMode(tournament.mode)}
-                                        </span>
+                                        <div className="flex items-center gap-1 flex-wrap justify-end">
+                                            {activeModes.map((m) => (
+                                                <span
+                                                    key={m.match_mode}
+                                                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg border ${
+                                                        isSuperTeamMode(m.match_mode) ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-surface-800 text-surface-300 border-surface-700'
+                                                    }`}
+                                                >
+                                                    {formatTournamentMode(m.match_mode)}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
 
                                     {/* Tournament Title */}
@@ -179,68 +203,80 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                         </div>
                                     </div>
 
-                                    {/* Registered Teams / Super Teams List */}
-                                    <div className="mt-4 pt-3 border-t border-surface-800">
-                                        <h4 className="text-xs font-bold uppercase tracking-wider text-surface-400 mb-2 flex items-center justify-between">
-                                            <span>👥 Tim Anda Terdaftar:</span>
-                                            <span className="text-primary-400 font-mono">
-                                                {isSuper ? registeredSuperTeams.length : registeredTeams.length}
-                                            </span>
-                                        </h4>
+                                    {/* Per-mode registration sections */}
+                                    <div className="mt-4 pt-3 border-t border-surface-800 space-y-4">
+                                        {activeModes.map((m) => {
+                                            const mode = m.match_mode;
+                                            const isSuper = isSuperTeamMode(mode);
+                                            const modeRegisteredTeams = registeredTeams.filter(t => t.pivot?.match_mode === mode);
+                                            const modeRegisteredSuperTeams = registeredSuperTeams.filter(st => st.match_mode === mode);
 
-                                        {isSuper ? (
-                                            registeredSuperTeams.length === 0 ? (
-                                                <p className="text-xs text-surface-500 italic py-1">Belum ada Super Team Anda yang terdaftar.</p>
-                                            ) : (
-                                                <div className="space-y-1.5">
-                                                    {registeredSuperTeams.map((st) => (
-                                                        <div key={st.id} className="flex items-center justify-between p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs">
-                                                            <span className="font-bold text-purple-200 truncate">{st.name}</span>
-                                                            <button
-                                                                onClick={() => handleUnregisterSuperTeam(tournament.id, st.id, st.name)}
-                                                                className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
-                                                            >
-                                                                ✕ Batal
-                                                            </button>
-                                                        </div>
-                                                    ))}
+                                            const hasAvailable = isSuper
+                                                ? mySuperTeams.some(st => st.match_mode === mode && !modeRegisteredSuperTeams.some(r => r.id === st.id))
+                                                : myTeams.some(t => !modeRegisteredTeams.some(r => r.id === t.id));
+
+                                            return (
+                                                <div key={mode}>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-surface-400 mb-2 flex items-center justify-between">
+                                                        <span>👥 {formatTournamentMode(mode)}:</span>
+                                                        <span className="text-primary-400 font-mono">
+                                                            {isSuper ? modeRegisteredSuperTeams.length : modeRegisteredTeams.length}
+                                                        </span>
+                                                    </h4>
+
+                                                    {isSuper ? (
+                                                        modeRegisteredSuperTeams.length === 0 ? (
+                                                            <p className="text-xs text-surface-500 italic py-1">Belum ada Super Team Anda yang terdaftar.</p>
+                                                        ) : (
+                                                            <div className="space-y-1.5">
+                                                                {modeRegisteredSuperTeams.map((st) => (
+                                                                    <div key={st.id} className="flex items-center justify-between p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs">
+                                                                        <span className="font-bold text-purple-200 truncate">{st.name}</span>
+                                                                        <button
+                                                                            onClick={() => handleUnregisterSuperTeam(tournament.id, st.id, st.name)}
+                                                                            className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
+                                                                        >
+                                                                            ✕ Batal
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )
+                                                    ) : (
+                                                        modeRegisteredTeams.length === 0 ? (
+                                                            <p className="text-xs text-surface-500 italic py-1">Belum ada tim Anda yang terdaftar.</p>
+                                                        ) : (
+                                                            <div className="space-y-1.5">
+                                                                {modeRegisteredTeams.map((team) => (
+                                                                    <div key={team.id} className="flex items-center justify-between p-2 rounded-xl bg-surface-950/40 border border-surface-800 text-xs">
+                                                                        <span className="font-semibold text-surface-200 truncate">{team.name}</span>
+                                                                        <button
+                                                                            onClick={() => handleUnregisterTeam(tournament.id, team.id, team.name, mode)}
+                                                                            className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
+                                                                        >
+                                                                            ✕ Batal
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )
+                                                    )}
+
+                                                    <button
+                                                        onClick={() => openRegisterModal(tournament, mode)}
+                                                        disabled={!hasAvailable}
+                                                        className="mt-2 w-full py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 cursor-pointer"
+                                                    >
+                                                        {hasAvailable ? (
+                                                            tournament.has_registration_code ? '🔐 Daftar (Perlu Kunci)' : `🏆 Daftar ${formatTournamentMode(mode)}`
+                                                        ) : (
+                                                            '✓ Semua Tim Sudah Terdaftar'
+                                                        )}
+                                                    </button>
                                                 </div>
-                                            )
-                                        ) : (
-                                            registeredTeams.length === 0 ? (
-                                                <p className="text-xs text-surface-500 italic py-1">Belum ada tim Anda yang terdaftar.</p>
-                                            ) : (
-                                                <div className="space-y-1.5">
-                                                    {registeredTeams.map((team) => (
-                                                        <div key={team.id} className="flex items-center justify-between p-2 rounded-xl bg-surface-950/40 border border-surface-800 text-xs">
-                                                            <span className="font-semibold text-surface-200 truncate">{team.name}</span>
-                                                            <button
-                                                                onClick={() => handleUnregisterTeam(tournament.id, team.id, team.name)}
-                                                                className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
-                                                            >
-                                                                ✕ Batal
-                                                            </button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )
-                                        )}
+                                            );
+                                        })}
                                     </div>
-                                </div>
-
-                                {/* Register Button */}
-                                <div className="mt-5 pt-3 border-t border-surface-800">
-                                    <button
-                                        onClick={() => openRegisterModal(tournament)}
-                                        disabled={!hasAvailable}
-                                        className="w-full py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 cursor-pointer"
-                                    >
-                                        {hasAvailable ? (
-                                            tournament.has_registration_code ? '🔐 Ikuti Turnamen (Perlu Kunci)' : '🏆 Ikuti Turnamen'
-                                        ) : (
-                                            '✓ Semua Tim Sudah Terdaftar'
-                                        )}
-                                    </button>
                                 </div>
                             </div>
                         );
@@ -268,12 +304,12 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                             <div>
                                 <h4 className="text-sm font-bold text-surface-200">{selectedTournament.name}</h4>
                                 <p className="text-xs text-surface-400 mt-0.5">
-                                    Kategori: <strong className="text-primary-300">{formatTournamentMode(selectedTournament.mode)}</strong>
+                                    Kategori: <strong className="text-primary-300">{formatTournamentMode(selectedMode)}</strong>
                                 </p>
                             </div>
 
                             {/* Pick Team or Super Team */}
-                            {isSuperTeamMode(selectedTournament.mode) ? (
+                            {isSuperTeamMode(selectedMode) ? (
                                 <div>
                                     <label className="block text-xs font-bold uppercase tracking-wider text-purple-300 mb-1.5">
                                         Pilih Super Team Anda <span className="text-red-400">*</span>
@@ -286,7 +322,7 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                     >
                                         <option value="">-- Pilih Super Team --</option>
                                         {mySuperTeams
-                                            .filter(st => st.match_mode === selectedTournament.mode && !(selectedTournament.superTeams || []).some(r => r.id === st.id))
+                                            .filter(st => st.match_mode === selectedMode && !(selectedTournament.superTeams || []).some(r => r.match_mode === selectedMode && r.id === st.id))
                                             .map((st) => (
                                                 <option key={st.id} value={st.id}>
                                                     {st.name} ({st.members?.length || 0}/3 Sub-Tim)
@@ -308,7 +344,7 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                     >
                                         <option value="">-- Pilih Tim --</option>
                                         {myTeams
-                                            .filter(t => !(selectedTournament.teams || []).some(r => r.id === t.id))
+                                            .filter(t => !(selectedTournament.teams || []).some(r => r.pivot?.match_mode === selectedMode && r.id === t.id))
                                             .map((t) => (
                                                 <option key={t.id} value={t.id}>
                                                     {t.name} ({t.region})

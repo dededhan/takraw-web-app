@@ -40,7 +40,10 @@ class MasterScheduleTest extends TestCase
         $team1 = Team::create(['name' => 'PSTG Garuda', 'region' => 'Jakarta']);
         $team2 = Team::create(['name' => 'PSTG Rajawali', 'region' => 'Bandung']);
 
-        $tournament->teams()->attach([$team1->id, $team2->id]);
+        $tournament->teams()->attach([
+            $team1->id => ['match_mode' => 'regu'],
+            $team2->id => ['match_mode' => 'regu'],
+        ]);
 
         $response = $this->actingAs($admin)
             ->get(route('tournaments.master-schedule.index', $tournament));

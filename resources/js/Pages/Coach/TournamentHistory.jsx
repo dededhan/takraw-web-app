@@ -137,9 +137,11 @@ export default function TournamentHistory({ tournaments = [] }) {
                                                 {tournament.name}
                                             </h3>
                                             <StatusBadge status={tournament.status} size="sm" />
-                                            <span className="text-xs px-2.5 py-0.5 rounded-lg bg-surface-800 text-surface-300 border border-surface-700 font-medium">
-                                                {formatTournamentMode(tournament.mode)}
-                                            </span>
+                                            {(tournament.modes || []).filter(m => m.is_active).map(m => (
+                                                <span key={m.match_mode} className="text-xs px-2.5 py-0.5 rounded-lg bg-surface-800 text-surface-300 border border-surface-700 font-medium">
+                                                    {formatTournamentMode(m.match_mode)}
+                                                </span>
+                                            ))}
                                         </div>
                                         <p className="text-xs text-surface-400 mt-1">
                                             📅 Periode Pelaksanaan: {formatDate(tournament.start_date)} — {formatDate(tournament.end_date)}

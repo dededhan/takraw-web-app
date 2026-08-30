@@ -52,7 +52,12 @@ class Tournament extends Model
     public function teams(): BelongsToMany
     {
         return $this->belongsToMany(Team::class, 'tournament_teams')
-                    ->withPivot('registered_at');
+                    ->withPivot(['registered_at', 'match_mode']);
+    }
+
+    public function teamsForMode(string $mode): BelongsToMany
+    {
+        return $this->teams()->wherePivot('match_mode', $mode);
     }
 
     public function pools(): HasMany

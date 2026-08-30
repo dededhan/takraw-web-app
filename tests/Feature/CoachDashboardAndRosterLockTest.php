@@ -74,7 +74,7 @@ class CoachDashboardAndRosterLockTest extends TestCase
             'created_by' => $this->admin->id,
         ]);
 
-        $tournament->teams()->attach($team->id);
+        $tournament->teams()->attach($team->id, ['match_mode' => 'regu']);
 
         $response = $this->actingAs($this->coach)
             ->get(route('dashboard'));
@@ -155,7 +155,7 @@ class CoachDashboardAndRosterLockTest extends TestCase
             'created_by' => $this->admin->id,
         ]);
 
-        $tournament->teams()->attach($team->id);
+        $tournament->teams()->attach($team->id, ['match_mode' => 'regu']);
 
         $this->assertTrue($team->fresh()->isRosterLocked());
 
@@ -215,7 +215,7 @@ class CoachDashboardAndRosterLockTest extends TestCase
             'mode' => 'regu',
             'created_by' => $this->admin->id,
         ]);
-        $tournament->teams()->attach($team->id);
+        $tournament->teams()->attach($team->id, ['match_mode' => 'regu']);
 
         $response = $this->actingAs($this->coach)
             ->get(route('coach.tournaments.history'));

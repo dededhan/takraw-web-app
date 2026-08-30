@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Team;
 use App\Models\Tournament;
+use App\Models\TournamentMode;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -109,8 +110,15 @@ class TournamentRegistrationKeyTest extends TestCase
             'created_by' => $admin->id,
         ]);
 
+        TournamentMode::create([
+            'tournament_id' => $tournament->id,
+            'match_mode' => 'regu',
+            'is_active' => true,
+        ]);
+
         $response = $this->actingAs($coach)->post(route('coach.tournaments.register', $tournament->id), [
             'team_id' => $team->id,
+            'match_mode' => 'regu',
         ]);
 
         $response->assertSessionHas('success');
@@ -151,8 +159,15 @@ class TournamentRegistrationKeyTest extends TestCase
             'created_by' => $admin->id,
         ]);
 
+        TournamentMode::create([
+            'tournament_id' => $tournament->id,
+            'match_mode' => 'regu',
+            'is_active' => true,
+        ]);
+
         $response = $this->actingAs($coach)->post(route('coach.tournaments.register', $tournament->id), [
             'team_id' => $team->id,
+            'match_mode' => 'regu',
         ]);
 
         $response->assertSessionHasErrors(['registration_code']);
@@ -193,8 +208,15 @@ class TournamentRegistrationKeyTest extends TestCase
             'created_by' => $admin->id,
         ]);
 
+        TournamentMode::create([
+            'tournament_id' => $tournament->id,
+            'match_mode' => 'regu',
+            'is_active' => true,
+        ]);
+
         $response = $this->actingAs($coach)->post(route('coach.tournaments.register', $tournament->id), [
             'team_id' => $team->id,
+            'match_mode' => 'regu',
             'registration_code' => 'SALAH-KEY',
         ]);
 
@@ -236,8 +258,15 @@ class TournamentRegistrationKeyTest extends TestCase
             'created_by' => $admin->id,
         ]);
 
+        TournamentMode::create([
+            'tournament_id' => $tournament->id,
+            'match_mode' => 'regu',
+            'is_active' => true,
+        ]);
+
         $response = $this->actingAs($coach)->post(route('coach.tournaments.register', $tournament->id), [
             'team_id' => $team->id,
+            'match_mode' => 'regu',
             'registration_code' => 'PASSOK-2026',
         ]);
 
@@ -281,6 +310,7 @@ class TournamentRegistrationKeyTest extends TestCase
 
         $response = $this->actingAs($coach)->post(route('coach.tournaments.register', $tournament->id), [
             'team_id' => $team->id,
+            'match_mode' => 'regu',
             'registration_code' => 'PASSOK-2026',
         ]);
 

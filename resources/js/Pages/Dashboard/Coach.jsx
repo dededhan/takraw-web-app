@@ -342,7 +342,7 @@ export default function CoachDashboard({
                                             href={route('coach.tournaments.index')}
                                             className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold transition-all shadow-md"
                                         >
-                                            Lihat Turnamen Tersedia →
+                                            Lihat Turnamen →
                                         </Link>
                                     </div>
                                 ) : (
@@ -363,9 +363,13 @@ export default function CoachDashboard({
                                                         📅 {formatDate(t.start_date)} — {formatDate(t.end_date)}
                                                     </p>
                                                 </div>
-                                                <span className="text-[11px] font-semibold text-surface-300 bg-surface-800 px-2.5 py-1 rounded-lg border border-surface-700">
-                                                    {formatTournamentMode(t.mode)}
-                                                </span>
+                                                <div className="flex flex-wrap gap-1 justify-end">
+                                                    {(t.modes || []).filter(m => m.is_active).map(m => (
+                                                        <span key={m.match_mode} className="text-[11px] font-semibold text-surface-300 bg-surface-800 px-2.5 py-1 rounded-lg border border-surface-700">
+                                                            {formatTournamentMode(m.match_mode)}
+                                                        </span>
+                                                    ))}
+                                                </div>
                                             </div>
 
                                             <div className="mt-3 pt-3 border-t border-surface-850 flex items-center justify-between text-xs text-surface-400">

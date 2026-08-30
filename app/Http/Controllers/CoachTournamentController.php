@@ -19,8 +19,8 @@ class CoachTournamentController extends Controller
     {
         $user = $request->user();
 
-        // Get all tournaments in registration phase
-        $tournaments = Tournament::where('status', 'registration')
+        // Get all tournaments in registration phase or currently ongoing
+        $tournaments = Tournament::whereIn('status', ['registration', 'pool_stage', 'bracket_stage'])
             ->with([
                 'modes',
                 'teams' => function ($q) use ($user) {
@@ -107,9 +107,11 @@ class CoachTournamentController extends Controller
     {
         $request->validate([
             'team_id' => 'required|exists:teams,id',
+            'match_mode' => 'required|in:regu,double,quadrant',
         ]);
 
         $teamId = $request->input('team_id');
+        $matchMode = $request->input('match_mode');
         $team = Team::findOrFail($teamId);
 
         // Check if the team is coached by this user
@@ -120,6 +122,11 @@ class CoachTournamentController extends Controller
         // Check if tournament is in registration phase
         if ($tournament->status !== 'registration') {
             return back()->with('error', 'Pendaftaran untuk turnamen ini sudah ditutup.');
+        }
+
+        // Check if the requested mode is configured/active for this tournament
+        if (!$tournament->hasActiveMode($matchMode)) {
+            return back()->with('error', 'Mode pertandingan ini tidak tersedia untuk turnamen ini.');
         }
 
         // Validasi Kunci Pertandingan jika turnamen diproteksi
@@ -137,12 +144,16 @@ class CoachTournamentController extends Controller
             }
         }
 
-        // Check if already registered
-        if ($tournament->teams()->where('team_id', $teamId)->exists()) {
-            return back()->with('error', 'Tim ini sudah terdaftar dalam turnamen.');
+        // Check if already registered to this specific mode
+        if (\DB::table('tournament_teams')
+            ->where('tournament_id', $tournament->id)
+            ->where('team_id', $teamId)
+            ->where('match_mode', $matchMode)
+            ->exists()) {
+            return back()->with('error', 'Tim ini sudah terdaftar pada mode tersebut di turnamen ini.');
         }
 
-        $tournament->teams()->attach($teamId);
+        $tournament->teams()->attach($teamId, ['match_mode' => $matchMode]);
 
         return back()->with('success', 'Tim berhasil didaftarkan ke turnamen.');
     }
@@ -152,6 +163,10 @@ class CoachTournamentController extends Controller
      */
     public function unregister(Request $request, Tournament $tournament, Team $team)
     {
+        $request->validate([
+            'match_mode' => 'required|in:regu,double,quadrant',
+        ]);
+
         // Check if the team is coached by this user
         if ($team->coach_id !== $request->user()->id) {
             return back()->with('error', 'Anda tidak memiliki wewenang untuk membatalkan pendaftaran tim ini.');
@@ -162,7 +177,11 @@ class CoachTournamentController extends Controller
             return back()->with('error', 'Tidak dapat membatalkan pendaftaran karena pendaftaran turnamen sudah ditutup.');
         }
 
-        $tournament->teams()->detach($team->id);
+        \DB::table('tournament_teams')
+            ->where('tournament_id', $tournament->id)
+            ->where('team_id', $team->id)
+            ->where('match_mode', $request->input('match_mode'))
+            ->delete();
 
         return back()->with('success', 'Pendaftaran tim berhasil dibatalkan.');
     }
