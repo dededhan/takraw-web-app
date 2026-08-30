@@ -14,7 +14,7 @@ class TeamController extends Controller
 {
     public function index(Request $request): Response
     {
-        $query = Team::with(['coach', 'athletes'])
+        $query = Team::with(['coach', 'athletes', 'tournaments'])
             ->withCount('athletes');
 
         // If coach, only show their teams
@@ -22,8 +22,19 @@ class TeamController extends Controller
             $query->where('coach_id', $request->user()->id);
         }
 
+        $superTeamsQuery = \App\Models\SuperTeam::with(['members.athletes', 'tournament']);
+        if ($request->user()->isCoach()) {
+            $superTeamsQuery->where('coach_id', $request->user()->id);
+        }
+
+        $allCoachTeams = $request->user()->isCoach()
+            ? Team::where('coach_id', $request->user()->id)->get(['id', 'name', 'region'])
+            : Team::get(['id', 'name', 'region']);
+
         return Inertia::render('Team/Index', [
-            'teams' => $query->latest()->paginate(10),
+            'teams' => $query->latest()->paginate(12),
+            'superTeams' => $superTeamsQuery->latest()->get(),
+            'allCoachTeams' => $allCoachTeams,
         ]);
     }
 
@@ -97,6 +108,10 @@ class TeamController extends Controller
 
     public function update(Request $request, Team $team)
     {
+        if ($team->isRosterLocked()) {
+            return back()->with('error', 'Roster tim ini terkunci karena pernah/sedang mengikuti turnamen. Riwayat tim tidak dapat diubah.');
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'region' => 'required|string|max:100',
@@ -141,6 +156,10 @@ class TeamController extends Controller
 
     public function destroy(Team $team)
     {
+        if ($team->isRosterLocked()) {
+            return back()->with('error', 'Tim ini tidak dapat dihapus karena memiliki riwayat keikutsertaan turnamen.');
+        }
+
         $team->delete();
 
         return redirect()->route('teams.index')
@@ -148,127 +167,101 @@ class TeamController extends Controller
     }
 
     /**
-     * Download the CSV template for athletes.
+     * Download the styled XLSX Excel template for athletes.
      */
-    public function downloadTemplate()
+    public function downloadTemplate(\App\Services\AthleteExcelService $excelService)
     {
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="template_atlet.csv"',
-        ];
-        
-        $callback = function () {
-            $file = fopen('php://output', 'w');
-            // CSV header
-            fputcsv($file, ['nama', 'nomor_punggung', 'posisi']);
-            // CSV samples
-            fputcsv($file, ['Budi Santoso', '10', 'Tekong']);
-            fputcsv($file, ['Andi Wijaya', '7', 'Feeder']);
-            fputcsv($file, ['Candra Saputra', '3', 'Killer']);
-            fputcsv($file, ['Dedi Hermawan', '12', 'Cadangan']);
-            fclose($file);
-        };
-        
-        return response()->stream($callback, 200, $headers);
+        $fileContent = $excelService->generateTemplate();
+
+        return response($fileContent, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="template_import_atlet.xlsx"',
+            'Cache-Control' => 'max-age=0',
+        ]);
     }
 
     /**
-     * Import athletes from a CSV file.
+     * Import athletes from an XLSX, XLS, or CSV file.
      */
-    public function importAthletes(Request $request, Team $team)
+    public function importAthletes(Request $request, Team $team, \App\Services\AthleteExcelService $excelService)
     {
+        if ($team->isRosterLocked()) {
+            return back()->with('error', 'Roster tim ini terkunci karena pernah/sedang mengikuti turnamen. Import atlet tidak diizinkan.');
+        }
+
         $request->validate([
-            'file' => 'required|file|mimes:csv,txt|max:2048',
+            'file' => 'required|file|max:5120',
         ]);
 
         $file = $request->file('file');
         $path = $file->getRealPath();
-        
-        $handle = fopen($path, 'r');
-        if ($handle === false) {
-            return back()->with('error', 'Gagal membuka file.');
+        $ext = strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
+
+        if (!in_array($ext, ['xlsx', 'xls', 'csv', 'txt'])) {
+            return back()->with('error', 'Format file tidak didukung. Harap unggah file .xlsx, .xls, atau .csv');
         }
 
-        // Read header
-        $header = fgetcsv($handle);
-        
-        if (!$header || count($header) < 2) {
-            fclose($handle);
-            return back()->with('error', 'Format file CSV tidak valid. Harus memiliki setidaknya kolom nama dan nomor_punggung.');
+        try {
+            $parsedAthletes = $excelService->parseAthletesFile($path, $ext);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Gagal memproses file: ' . $e->getMessage());
+        }
+
+        if (empty($parsedAthletes)) {
+            return back()->with('error', 'Tidak ditemukan data atlet yang valid dalam file yang diunggah.');
         }
 
         $importedCount = 0;
         $errors = [];
-        $rowNum = 1;
-
-        // Read existing jersey numbers to avoid duplicate entries
         $existingJerseys = $team->athletes()->pluck('jersey_number')->toArray();
 
-        while (($row = fgetcsv($handle)) !== null) {
-            $rowNum++;
-            if (count($row) < 2) {
-                $errors[] = "Baris {$rowNum}: Kolom nama atau nomor punggung tidak lengkap.";
-                continue;
-            }
+        foreach ($parsedAthletes as $index => $row) {
+            $rowNum = $index + 1;
+            $name = trim($row['name'] ?? '');
+            $jerseyNumber = (int)($row['jersey_number'] ?? 0);
+            $position = trim($row['position'] ?? 'Cadangan');
 
-            $name = trim($row[0]);
-            $jerseyNumber = (int) trim($row[1]);
-            $position = isset($row[2]) ? trim($row[2]) : null;
-
-            // Validate fields
             if (empty($name)) {
-                $errors[] = "Baris {$rowNum}: Nama atlet tidak boleh kosong.";
+                $errors[] = "Data #{$rowNum}: Nama atlet kosong.";
                 continue;
             }
 
             if ($jerseyNumber <= 0) {
-                $errors[] = "Baris {$rowNum}: Nomor punggung harus angka positif.";
+                $errors[] = "Data #{$rowNum} ({$name}): Nomor punggung tidak valid.";
                 continue;
             }
 
-            // Check duplicate jersey number
             if (in_array($jerseyNumber, $existingJerseys)) {
-                $errors[] = "Baris {$rowNum}: Nomor punggung {$jerseyNumber} sudah digunakan di tim ini.";
+                $errors[] = "Data #{$rowNum} ({$name}): Nomor punggung {$jerseyNumber} sudah digunakan.";
                 continue;
             }
 
-            // Check position is valid
             $validPositions = ['Tekong', 'Feeder', 'Killer', 'Cadangan'];
-            if (!empty($position)) {
-                $position = ucfirst(strtolower($position));
-                if (!in_array($position, $validPositions)) {
-                    $position = 'Cadangan'; // default fallback or null
-                }
-            } else {
-                $position = null;
+            $posFormatted = ucfirst(strtolower($position));
+            if (!in_array($posFormatted, $validPositions)) {
+                $posFormatted = 'Cadangan';
             }
 
-            // Create athlete
             Athlete::create([
                 'team_id' => $team->id,
                 'name' => $name,
                 'jersey_number' => $jerseyNumber,
-                'position' => $position,
+                'position' => $posFormatted,
             ]);
 
             $existingJerseys[] = $jerseyNumber;
             $importedCount++;
         }
 
-        fclose($handle);
-
         if ($importedCount === 0) {
-            $errorMessage = 'Tidak ada atlet yang diimpor. ' . implode(' ', $errors);
-            return back()->with('error', $errorMessage);
+            return back()->with('error', 'Tidak ada atlet yang berhasil diimpor. ' . implode(' ', $errors));
         }
 
-        $successMessage = "Berhasil mengimpor {$importedCount} atlet.";
+        $msg = "Berhasil mengimpor {$importedCount} atlet dari file Excel!";
         if (count($errors) > 0) {
-            // Concatenate errors for summary but keep it short
-            $errorSummary = count($errors) . " baris bermasalah dilewati.";
-            return back()->with('success', $successMessage . " " . $errorSummary);
+            $msg .= " (" . count($errors) . " baris dilewati karena duplikat/tidak valid).";
         }
 
-        return back()->with('success', $successMessage);
+        return back()->with('success', $msg);
     }
 }

@@ -13,6 +13,8 @@ const NAV_ITEMS = {
     coach: [
         { label: 'Dashboard', route: 'dashboard', icon: '📊' },
         { label: 'Tim Saya', route: 'teams.index', icon: '👥' },
+        { label: 'Turnamen Tersedia', route: 'coach.tournaments.index', icon: '🏆' },
+        { label: 'Riwayat Turnamen', route: 'coach.tournaments.history', icon: '📜' },
     ],
     referee: [
         { label: 'Dashboard', route: 'dashboard', icon: '📊' },

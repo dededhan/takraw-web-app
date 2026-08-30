@@ -137,21 +137,19 @@ export default function MatchIndex({ matches, tournaments, referees }) {
                                             📅 Jadwalkan
                                         </button>
                                     )}
+                                    <button
+                                        onClick={() => setEditModal(match)}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-primary-300 bg-primary-500/10 border border-primary-500/30 hover:bg-primary-500/20 transition-colors"
+                                    >
+                                        ✏️ Edit
+                                    </button>
                                     {match.status === 'scheduled' && (
-                                        <>
-                                            <button
-                                                onClick={() => setEditModal(match)}
-                                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-primary-300 bg-primary-500/10 border border-primary-500/30 hover:bg-primary-500/20 transition-colors"
-                                            >
-                                                ✏️ Edit
-                                            </button>
-                                            <button
-                                                onClick={() => setDeleting(match.id)}
-                                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-red-300 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors"
-                                            >
-                                                🗑️ Hapus
-                                            </button>
-                                        </>
+                                        <button
+                                            onClick={() => setDeleting(match.id)}
+                                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-red-300 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors"
+                                        >
+                                            🗑️ Hapus
+                                        </button>
                                     )}
                                     <Link
                                         href={route('matches.show', match.id)}
@@ -287,7 +285,10 @@ function EditMatchModal({ match, referees, onClose }) {
         scheduled_at: formatDateForInput(match.scheduled_at),
         court_number: match.court_number || '',
         referee_id: match.referee_id || '',
+        status: match.status || 'scheduled',
     });
+
+    const isNonScheduled = match.status !== 'scheduled';
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -300,33 +301,68 @@ function EditMatchModal({ match, referees, onClose }) {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
             <div className="relative bg-surface-800 rounded-2xl border border-surface-700/50 shadow-2xl max-w-lg w-full p-6 animate-slide-up">
-                <h3 className="text-lg font-semibold text-surface-100 mb-1">✏️ Edit Pertandingan</h3>
-                <p className="text-sm text-surface-400 mb-5">
-                    {match.home_team?.name} vs {match.away_team?.name}
+                <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-lg font-bold text-surface-100 flex items-center gap-2">
+                        <span>✏️</span> Edit Jadwal Pertandingan
+                    </h3>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full uppercase font-bold bg-surface-700 text-surface-300">
+                        Status: {match.status}
+                    </span>
+                </div>
+                <p className="text-sm font-semibold text-primary-300 mb-4">
+                    {match.home_team?.name || match.home_display_name || 'TBD'} <span className="text-surface-400 font-normal">vs</span> {match.away_team?.name || match.away_display_name || 'TBD'}
                 </p>
 
+                {/* Warning Alert Banner */}
+                <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs mb-4 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold">
+                        <span>⚠️</span>
+                        <span>Perhatian Pengubahan Jadwal:</span>
+                    </div>
+                    <p className="text-amber-300/90 leading-relaxed">
+                        Mengubah tanggal, jam tanding, atau nomor lapangan akan langsung mengubah jadwal pertandingan turnamen bagi peserta dan wasit terkait.
+                        {isNonScheduled && ' Pertandingan ini sudah dalam status ' + match.status.toUpperCase() + ', pastikan seluruh pihak telah diberi tahu.'}
+                    </p>
+                </div>
+
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    {/* Status Pertandingan */}
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-2">Status Pertandingan</label>
+                        <select
+                            value={data.status}
+                            onChange={(e) => setData('status', e.target.value)}
+                            className="w-full px-4 py-2.5 rounded-xl bg-surface-700 border border-surface-600 text-surface-100 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 font-medium"
+                        >
+                            <option value="scheduled">Dijadwalkan (Scheduled)</option>
+                            <option value="setup">Setup Pertandingan</option>
+                            <option value="live">Sedang Berlangsung (Live)</option>
+                            <option value="finished">Selesai (Finished)</option>
+                        </select>
+                        {errors.status && <p className="text-red-400 text-xs mt-1">{errors.status}</p>}
+                    </div>
+
                     {/* Scheduled At */}
                     <div>
-                        <label className="block text-sm font-medium text-surface-300 mb-2">Tanggal & Waktu</label>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-2">Tanggal & Jam Pertandingan</label>
                         <input
                             type="datetime-local"
                             value={data.scheduled_at}
                             onChange={(e) => setData('scheduled_at', e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl bg-surface-700 border border-surface-600 text-surface-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            className="w-full px-4 py-2.5 rounded-xl bg-surface-700 border border-surface-600 text-surface-100 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 font-mono"
                         />
                         {errors.scheduled_at && <p className="text-red-400 text-xs mt-1">{errors.scheduled_at}</p>}
                     </div>
 
                     {/* Court Number */}
                     <div>
-                        <label className="block text-sm font-medium text-surface-300 mb-2">Nomor Lapangan</label>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-2">Nomor Lapangan</label>
                         <input
                             type="number"
                             min="1"
                             value={data.court_number}
                             onChange={(e) => setData('court_number', e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl bg-surface-700 border border-surface-600 text-surface-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            className="w-full px-4 py-2.5 rounded-xl bg-surface-700 border border-surface-600 text-surface-100 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                             placeholder="Contoh: 1"
                         />
                         {errors.court_number && <p className="text-red-400 text-xs mt-1">{errors.court_number}</p>}
@@ -334,32 +370,26 @@ function EditMatchModal({ match, referees, onClose }) {
 
                     {/* Referee Dropdown */}
                     <div>
-                        <label className="block text-sm font-medium text-surface-300 mb-2">Wasit</label>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-2">Wasit Pertandingan</label>
                         <select
                             value={data.referee_id}
                             onChange={(e) => setData('referee_id', e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl bg-surface-700 border border-surface-600 text-surface-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                            className="w-full px-4 py-2.5 rounded-xl bg-surface-700 border border-surface-600 text-surface-100 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                         >
                             <option value="">— Pilih Wasit —</option>
                             {referees?.map((ref) => (
-                                <option key={ref.id} value={ref.id}>{ref.name}</option>
+                                <option key={ref.id} value={ref.id}>🧑‍⚖️ {ref.name}</option>
                             ))}
                         </select>
                         {errors.referee_id && <p className="text-red-400 text-xs mt-1">{errors.referee_id}</p>}
                     </div>
 
-                    {errors.status && (
-                        <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
-                            ⚠️ {errors.status}
-                        </div>
-                    )}
-
-                    <div className="flex gap-3 pt-2">
-                        <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-sm text-surface-300 bg-surface-700 hover:bg-surface-600 transition-colors">
+                    <div className="flex gap-3 pt-3 border-t border-surface-700">
+                        <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-surface-300 bg-surface-700 hover:bg-surface-600 transition-colors">
                             Batal
                         </button>
-                        <button type="submit" disabled={processing} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 transition-colors">
-                            {processing ? 'Menyimpan...' : '💾 Simpan'}
+                        <button type="submit" disabled={processing} className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 transition-colors shadow-md flex items-center justify-center gap-1.5">
+                            {processing ? 'Menyimpan...' : '💾 Simpan Perubahan Jadwal'}
                         </button>
                     </div>
                 </form>

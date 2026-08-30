@@ -62,6 +62,11 @@ class User extends Authenticatable
         return $this->hasMany(Team::class, 'coach_id');
     }
 
+    public function coachedSuperTeams(): HasMany
+    {
+        return $this->hasMany(SuperTeam::class, 'coach_id');
+    }
+
     public function assignedMatches(): HasMany
     {
         return $this->hasMany(Match_::class, 'referee_id');

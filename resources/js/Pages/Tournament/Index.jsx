@@ -55,9 +55,16 @@ export default function TournamentIndex({ tournaments }) {
                             {tournaments.data.map((t) => (
                                 <tr key={t.id} className="hover:bg-surface-800/50 transition-colors">
                                     <td className="px-5 py-4">
-                                        <Link href={route('tournaments.show', t.id)} className="text-sm font-medium text-surface-200 hover:text-primary-400 transition-colors">
-                                            {t.name}
-                                        </Link>
+                                        <div className="flex items-center gap-1.5">
+                                            <Link href={route('tournaments.show', t.id)} className="text-sm font-medium text-surface-200 hover:text-primary-400 transition-colors">
+                                                {t.name}
+                                            </Link>
+                                            {t.has_registration_code && (
+                                                <span className="text-xs text-amber-400" title="Turnamen diproteksi dengan kunci/password">
+                                                    🔐
+                                                </span>
+                                            )}
+                                        </div>
                                         {t.creator && (
                                             <p className="text-xs text-surface-500 mt-0.5">oleh {t.creator.name}</p>
                                         )}

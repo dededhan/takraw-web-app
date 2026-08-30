@@ -18,10 +18,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'session_duration_minutes', 'break_duration_minutes',
     'ishoma_start_time', 'ishoma_end_time', 'ishoma_duration_minutes',
     'schedule_status',
+    'registration_code',
 ])]
 class Tournament extends Model
 {
     use HasFactory, SoftDeletes;
+
+    protected $appends = ['has_registration_code'];
 
     /**
      * Get the attributes that should be cast.
@@ -119,5 +122,24 @@ class Tournament extends Model
     public function getUnresolvedConflictsCountAttribute(): int
     {
         return $this->scheduleConflicts()->whereNull('resolved_at')->count();
+    }
+
+    public function getHasRegistrationCodeAttribute(): bool
+    {
+        return !empty($this->registration_code);
+    }
+
+    public function hasRegistrationCode(): bool
+    {
+        return !empty($this->registration_code);
+    }
+
+    public function validateRegistrationCode(?string $inputCode): bool
+    {
+        if (empty($this->registration_code)) {
+            return true;
+        }
+
+        return trim((string)$inputCode) === trim((string)$this->registration_code);
     }
 }

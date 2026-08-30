@@ -46,40 +46,92 @@ class DashboardController extends Controller
     private function coachDashboard(User $user): Response
     {
         $teams = $user->coachedTeams()->with(['athletes', 'tournaments'])->get();
+        $superTeams = $user->coachedSuperTeams()->with(['members.athletes', 'tournament'])->get();
         $teamIds = $teams->pluck('id');
+        $superTeamIds = $superTeams->pluck('id');
 
-        $liveMatches = Match_::with(['homeTeam', 'awayTeam', 'tournament', 'sets'])
-            ->whereIn('status', ['live', 'setup'])
-            ->where(function ($q) use ($teamIds) {
-                $q->whereIn('home_team_id', $teamIds)
-                  ->orWhereIn('away_team_id', $teamIds);
-            })
-            ->orderBy('started_at', 'desc')
+        // Turnamen yang sedang atau pernah diikuti oleh tim/super team coach
+        $tournamentIds = \DB::table('tournament_teams')
+            ->whereIn('team_id', $teamIds)
+            ->pluck('tournament_id')
+            ->merge(
+                \App\Models\SuperTeam::where('coach_id', $user->id)
+                    ->whereNotNull('tournament_id')
+                    ->pluck('tournament_id')
+            )
+            ->unique();
+
+        $participatedTournaments = Tournament::whereIn('id', $tournamentIds)
+            ->with(['modes'])
+            ->withCount(['teams', 'matches'])
+            ->latest('start_date')
             ->get();
 
-        $upcomingMatches = Match_::with(['homeTeam', 'awayTeam', 'tournament'])
-            ->where('status', 'scheduled')
-            ->where(function ($q) use ($teamIds) {
+        $activeTournaments = $participatedTournaments->filter(fn($t) => in_array($t->status, ['registration', 'pool_stage', 'bracket_stage']))->values();
+        $completedTournaments = $participatedTournaments->filter(fn($t) => $t->status === 'completed')->values();
+
+        // Jadwal Pertandingan Mendatang
+        $upcomingMatches = Match_::with(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'tournament', 'court', 'timeSlot'])
+            ->whereIn('status', ['scheduled', 'setup'])
+            ->where(function ($q) use ($teamIds, $superTeamIds) {
                 $q->whereIn('home_team_id', $teamIds)
-                  ->orWhereIn('away_team_id', $teamIds);
+                  ->orWhereIn('away_team_id', $teamIds)
+                  ->orWhereIn('home_super_team_id', $superTeamIds)
+                  ->orWhereIn('away_super_team_id', $superTeamIds);
             })
             ->orderBy('scheduled_at', 'asc')
+            ->take(10)
             ->get();
 
-        $pastMatches = Match_::with(['homeTeam', 'awayTeam', 'tournament', 'sets'])
+        // Riwayat Pertandingan Selesai
+        $recentMatches = Match_::with(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'tournament', 'sets'])
             ->where('status', 'finished')
-            ->where(function ($q) use ($teamIds) {
+            ->where(function ($q) use ($teamIds, $superTeamIds) {
                 $q->whereIn('home_team_id', $teamIds)
-                  ->orWhereIn('away_team_id', $teamIds);
+                  ->orWhereIn('away_team_id', $teamIds)
+                  ->orWhereIn('home_super_team_id', $superTeamIds)
+                  ->orWhereIn('away_super_team_id', $superTeamIds);
             })
             ->orderBy('finished_at', 'desc')
+            ->take(10)
             ->get();
+
+        // Hitung statistik kemenangan tim coach
+        $winsCount = 0;
+        $lossCount = 0;
+        foreach ($recentMatches as $m) {
+            $isHome = $teamIds->contains($m->home_team_id) || $superTeamIds->contains($m->home_super_team_id);
+            if ($m->winner_team_id || $m->winner_super_team_id) {
+                $isWinner = ($isHome && ($teamIds->contains($m->winner_team_id) || $superTeamIds->contains($m->winner_super_team_id)))
+                    || (!$isHome && ($teamIds->contains($m->winner_team_id) || $superTeamIds->contains($m->winner_super_team_id)));
+                if ($isWinner) {
+                    $winsCount++;
+                } else {
+                    $lossCount++;
+                }
+            }
+        }
+        $totalFinished = $winsCount + $lossCount;
+        $winRate = $totalFinished > 0 ? round(($winsCount / $totalFinished) * 100) : 0;
 
         return Inertia::render('Dashboard/Coach', [
             'teams' => $teams,
-            'liveMatches' => $liveMatches,
+            'superTeams' => $superTeams,
+            'participatedTournaments' => $participatedTournaments,
+            'activeTournaments' => $activeTournaments,
+            'completedTournaments' => $completedTournaments,
             'upcomingMatches' => $upcomingMatches,
-            'pastMatches' => $pastMatches,
+            'recentMatches' => $recentMatches,
+            'stats' => [
+                'totalTeams' => $teams->count(),
+                'totalSuperTeams' => $superTeams->count(),
+                'totalAthletes' => $teams->sum(fn($t) => $t->athletes->count()),
+                'totalTournaments' => $participatedTournaments->count(),
+                'activeTournamentsCount' => $activeTournaments->count(),
+                'winsCount' => $winsCount,
+                'lossCount' => $lossCount,
+                'winRate' => $winRate,
+            ],
         ]);
     }
 

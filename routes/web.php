@@ -81,6 +81,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 ->name('master-schedule.index');
             Route::post('master-schedule/publish', [MasterScheduleController::class, 'publish'])
                 ->name('master-schedule.publish');
+            Route::post('master-schedule/unpublish', [MasterScheduleController::class, 'unpublish'])
+                ->name('master-schedule.unpublish');
             Route::get('master-schedule/conflicts', [MasterScheduleController::class, 'conflicts'])
                 ->name('master-schedule.conflicts');
             Route::post('master-schedule/assign-referee-bulk', [MasterScheduleController::class, 'bulkAssignReferee'])
@@ -123,8 +125,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // ─── Coach Routes ───────────────────────────────
     Route::middleware('role:coach')->group(function () {
         Route::get('/coach/tournaments', [CoachTournamentController::class, 'index'])->name('coach.tournaments.index');
+        Route::get('/coach/tournaments/history', [CoachTournamentController::class, 'history'])->name('coach.tournaments.history');
         Route::post('/coach/tournaments/{tournament}/register', [CoachTournamentController::class, 'register'])->name('coach.tournaments.register');
         Route::delete('/coach/tournaments/{tournament}/teams/{team}', [CoachTournamentController::class, 'unregister'])->name('coach.tournaments.unregister');
+        
+        // Coach Super Teams
+        Route::post('/coach/super-teams', [CoachTournamentController::class, 'storeSuperTeam'])->name('coach.super-teams.store');
+        Route::delete('/coach/super-teams/{superTeam}', [CoachTournamentController::class, 'destroySuperTeam'])->name('coach.super-teams.destroy');
+        Route::post('/coach/tournaments/{tournament}/register-super-team', [CoachTournamentController::class, 'registerSuperTeam'])->name('coach.tournaments.register-super-team');
+        Route::delete('/coach/tournaments/{tournament}/super-teams/{superTeam}', [CoachTournamentController::class, 'unregisterSuperTeam'])->name('coach.tournaments.unregister-super-team');
     });
 
     // ─── Admin & Coach Routes ───────────────────────

@@ -90,19 +90,15 @@ class MatchController extends Controller
     }
 
     /**
-     * Update a scheduled match (datetime, court_number, referee).
-     * Only allowed when match status is 'scheduled'.
+     * Update match details (datetime, court_number, referee, status).
      */
     public function update(Request $request, Match_ $match)
     {
-        if ($match->status !== 'scheduled') {
-            return back()->withErrors(['status' => 'Hanya pertandingan berstatus "scheduled" yang dapat diedit.']);
-        }
-
         $validated = $request->validate([
             'scheduled_at' => 'nullable|date',
             'court_number' => 'nullable|integer|min:1',
-            'referee_id' => 'nullable|exists:users,id',
+            'referee_id'   => 'nullable|exists:users,id',
+            'status'       => 'nullable|in:scheduled,setup,live,finished',
         ]);
 
         // Verify referee is active if provided
@@ -118,7 +114,7 @@ class MatchController extends Controller
 
         $match->update($validated);
 
-        return back()->with('success', 'Pertandingan berhasil diperbarui!');
+        return back()->with('success', 'Jadwal dan data pertandingan berhasil diperbarui!');
     }
 
     /**

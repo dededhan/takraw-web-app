@@ -15,16 +15,23 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * Satu Super Team terdiri dari 3 tim regu biasa yang bergabung.
  * Contoh: "TRA (Team Regu Putra)" = 1 super team yang berisi 3 tim regu.
  */
-#[Fillable(['tournament_id', 'pool_id', 'name', 'match_mode', 'created_by'])]
+#[Fillable(['tournament_id', 'pool_id', 'name', 'match_mode', 'created_by', 'coach_id'])]
 class SuperTeam extends Model
 {
     use HasFactory, SoftDeletes;
+
+    protected $appends = ['is_locked'];
 
     // ─── Relationships ──────────────────────────────
 
     public function tournament(): BelongsTo
     {
         return $this->belongsTo(Tournament::class);
+    }
+
+    public function coach(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'coach_id');
     }
 
     public function pool(): BelongsTo
@@ -35,6 +42,20 @@ class SuperTeam extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function getIsLockedAttribute(): bool
+    {
+        return $this->isRosterLocked();
+    }
+
+    public function isRosterLocked(): bool
+    {
+        if ($this->tournament_id !== null) {
+            return true;
+        }
+
+        return $this->homeMatches()->exists() || $this->awayMatches()->exists();
     }
 
     /**

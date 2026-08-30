@@ -13,6 +13,7 @@ const TABS = [
 
 export default function TournamentShow({ tournament, availableTeams = [] }) {
     const [activeTab, setActiveTab] = useState('overview');
+    const [copiedKey, setCopiedKey] = useState(false);
     const modeLabels = {
         regu:        'Regu (3v3)',
         double:      'Double (2v2)',
@@ -39,9 +40,33 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
             <div className="rounded-xl border border-surface-700/50 bg-gradient-to-r from-surface-900/80 to-surface-800/50 backdrop-blur-sm p-6 mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div>
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
                             <h1 className="text-2xl font-bold text-surface-100">{tournament.name}</h1>
                             <StatusBadge status={tournament.status} size="md" />
+                            {tournament.registration_code ? (
+                                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+                                    <span>🔐 Kunci:</span>
+                                    <span className="font-mono font-bold text-amber-200 tracking-wider bg-black/40 px-2 py-0.5 rounded">
+                                        {tournament.registration_code}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(tournament.registration_code);
+                                            setCopiedKey(true);
+                                            setTimeout(() => setCopiedKey(false), 2000);
+                                        }}
+                                        className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-medium transition-colors text-[11px] cursor-pointer"
+                                        title="Salin Kunci untuk Pelatih"
+                                    >
+                                        {copiedKey ? '✓ Disalin!' : '📋 Salin'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-surface-800/80 border border-surface-700/50 text-surface-400 text-xs">
+                                    <span>🔓 Terbuka Tanpa Kunci</span>
+                                </div>
+                            )}
                         </div>
                         <div className="flex flex-wrap gap-4 text-sm text-surface-400">
                             <span>📅 {new Date(tournament.start_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} — {new Date(tournament.end_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>

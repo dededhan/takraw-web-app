@@ -2,24 +2,41 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, router } from '@inertiajs/react';
 import { useState } from 'react';
 
-export default function TournamentAvailable({ tournaments, myTeams }) {
+export default function TournamentAvailable({ tournaments = [], myTeams = [], mySuperTeams = [] }) {
     const [selectedTournament, setSelectedTournament] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    
+    const [showKey, setShowKey] = useState(false);
+
+    const isSuperTeamMode = (mode) => ['team_regu', 'team_double'].includes(mode);
+
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         team_id: '',
+        super_team_id: '',
+        registration_code: '',
     });
 
     const openRegisterModal = (tournament) => {
         clearErrors();
         setSelectedTournament(tournament);
-        
-        // Find teams that are NOT registered yet in this tournament
-        const registeredIds = tournament.teams.map(t => t.id);
-        const available = myTeams.filter(t => !registeredIds.includes(t.id));
-        
-        // Auto-select the first available team if any
-        setData('team_id', available.length > 0 ? available[0].id.toString() : '');
+
+        if (isSuperTeamMode(tournament.mode)) {
+            const registeredStIds = (tournament.superTeams || []).map(st => st.id);
+            const availableSt = mySuperTeams.filter(st => st.match_mode === tournament.mode && !registeredStIds.includes(st.id));
+            setData({
+                team_id: '',
+                super_team_id: availableSt.length > 0 ? availableSt[0].id.toString() : '',
+                registration_code: '',
+            });
+        } else {
+            const registeredIds = (tournament.teams || []).map(t => t.id);
+            const available = myTeams.filter(t => !registeredIds.includes(t.id));
+            setData({
+                team_id: available.length > 0 ? available[0].id.toString() : '',
+                super_team_id: '',
+                registration_code: '',
+            });
+        }
+
         setIsModalOpen(true);
     };
 
@@ -31,16 +48,22 @@ export default function TournamentAvailable({ tournaments, myTeams }) {
 
     const handleRegister = (e) => {
         e.preventDefault();
-        if (!data.team_id) return;
-        
-        post(route('coach.tournaments.register', selectedTournament.id), {
-            onSuccess: () => {
-                closeModal();
-            },
-        });
+        if (!selectedTournament) return;
+
+        if (isSuperTeamMode(selectedTournament.mode)) {
+            if (!data.super_team_id) return;
+            post(route('coach.tournaments.register-super-team', selectedTournament.id), {
+                onSuccess: () => closeModal(),
+            });
+        } else {
+            if (!data.team_id) return;
+            post(route('coach.tournaments.register', selectedTournament.id), {
+                onSuccess: () => closeModal(),
+            });
+        }
     };
 
-    const handleUnregister = (tournamentId, teamId, teamName) => {
+    const handleUnregisterTeam = (tournamentId, teamId, teamName) => {
         if (confirm(`Apakah Anda yakin ingin membatalkan pendaftaran tim "${teamName}" dari turnamen ini?`)) {
             router.delete(route('coach.tournaments.unregister', [tournamentId, teamId]), {
                 preserveScroll: true,
@@ -48,23 +71,27 @@ export default function TournamentAvailable({ tournaments, myTeams }) {
         }
     };
 
-    // Helper to filter available teams for the modal
-    const getAvailableTeamsForSelected = () => {
-        if (!selectedTournament) return [];
-        const registeredIds = selectedTournament.teams.map(t => t.id);
-        return myTeams.filter(t => !registeredIds.includes(t.id));
+    const handleUnregisterSuperTeam = (tournamentId, superTeamId, superTeamName) => {
+        if (confirm(`Apakah Anda yakin ingin membatalkan pendaftaran Super Team "${superTeamName}" dari turnamen ini?`)) {
+            router.delete(route('coach.tournaments.unregister-super-team', [tournamentId, superTeamId]), {
+                preserveScroll: true,
+            });
+        }
     };
 
     const formatTournamentMode = (mode) => {
         switch (mode) {
             case 'regu': return 'Regu (3 vs 3)';
             case 'double': return 'Double (2 vs 2)';
-            case 'quarter': return 'Quarter (4 vs 4)';
+            case 'quadrant': return 'Quadrant (4 vs 4)';
+            case 'team_regu': return 'Team Regu (Super Team 3x3)';
+            case 'team_double': return 'Team Double (Super Team 3x2)';
             default: return mode;
         }
     };
 
     const formatDate = (dateStr) => {
+        if (!dateStr) return '—';
         return new Date(dateStr).toLocaleDateString('id-ID', {
             day: 'numeric',
             month: 'short',
@@ -76,115 +103,144 @@ export default function TournamentAvailable({ tournaments, myTeams }) {
         <AuthenticatedLayout header="Turnamen Yang Tersedia">
             <Head title="Turnamen Tersedia" />
 
-            {/* Header Description */}
-            <div className="mb-8 p-5 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-500/10 to-transparent">
-                <h2 className="text-base font-semibold text-blue-300 flex items-center gap-2">
-                    📢 Informasi Pendaftaran Turnamen
+            {/* Header Banner */}
+            <div className="mb-8 p-6 rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-500/10 via-surface-900/40 to-transparent">
+                <h2 className="text-base font-bold text-blue-300 flex items-center gap-2">
+                    <span>📢 Informasi Pendaftaran Turnamen</span>
                 </h2>
-                <p className="text-sm text-surface-400 mt-1 max-w-3xl">
-                    Berikut adalah daftar turnamen yang sedang dalam masa pendaftaran (*Registration*). Anda dapat mendaftarkan tim binaan Anda atau membatalkan keikutsertaan sebelum masa pendaftaran ditutup oleh Admin.
+                <p className="text-xs text-surface-400 mt-1 max-w-3xl leading-relaxed">
+                    Daftar kejuaraan yang sedang membuka pendaftaran (*Registration*). Anda dapat mendaftarkan Tim Reguler atau Super Team binaan Anda sebelum masa pendaftaran ditutup oleh Admin.
                 </p>
             </div>
 
             {tournaments.length === 0 ? (
-                <div className="rounded-xl border border-surface-700/50 bg-surface-900/30 p-12 text-center">
+                <div className="rounded-2xl border border-surface-700/50 bg-surface-900/30 p-14 text-center">
                     <div className="text-5xl mb-4">🏆</div>
-                    <h3 className="text-lg font-semibold text-surface-200">Tidak Ada Turnamen Tersedia</h3>
-                    <p className="text-sm text-surface-500 mt-1">
-                        Saat ini tidak ada turnamen dengan status registrasi yang aktif. Hubungi Admin jika ada pertanyaan.
+                    <h3 className="text-base font-bold text-surface-200">Tidak Ada Turnamen Tersedia</h3>
+                    <p className="text-xs text-surface-500 mt-1 max-w-sm mx-auto">
+                        Saat ini tidak ada turnamen dengan status registrasi yang aktif. Silakan cek kembali nanti atau hubungi Admin.
                     </p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {tournaments.map((tournament) => {
-                        const registeredIds = tournament.teams.map(t => t.id);
-                        const hasAvailableTeams = myTeams.some(t => !registeredIds.includes(t.id));
-                        const isFullyRegistered = myTeams.length > 0 && registeredIds.length === myTeams.length;
+                        const isSuper = isSuperTeamMode(tournament.mode);
+                        const registeredTeams = tournament.teams || [];
+                        const registeredSuperTeams = tournament.superTeams || [];
+
+                        const hasAvailable = isSuper
+                            ? mySuperTeams.some(st => st.match_mode === tournament.mode && !registeredSuperTeams.some(r => r.id === st.id))
+                            : myTeams.some(t => !registeredTeams.some(r => r.id === t.id));
 
                         return (
-                            <div 
-                                key={tournament.id} 
-                                className="rounded-2xl border border-surface-700/50 bg-surface-900/50 backdrop-blur-sm p-5 flex flex-col justify-between hover:border-primary-500/30 transition-all duration-300 hover:shadow-glow-primary hover:-translate-y-1 group"
+                            <div
+                                key={tournament.id}
+                                className="rounded-2xl border border-surface-700/50 bg-surface-900/60 backdrop-blur-sm p-5 flex flex-col justify-between hover:border-primary-500/40 transition-all duration-200 shadow-lg group"
                             >
                                 <div>
-                                    {/* Card Header */}
-                                    <div className="flex items-start justify-between gap-2 mb-4">
-                                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                            📝 Registrasi
-                                        </span>
-                                        <span className="text-[11px] font-medium text-surface-400 bg-surface-800 px-2.5 py-1 rounded-lg">
+                                    {/* Card Header Badges */}
+                                    <div className="flex items-start justify-between gap-2 mb-3 flex-wrap">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                                📝 Registrasi
+                                            </span>
+                                            {tournament.has_registration_code ? (
+                                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                                    🔐 Butuh Kunci
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-surface-800 text-surface-400 border border-surface-700">
+                                                    🔓 Terbuka
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-lg border ${
+                                            isSuper ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-surface-800 text-surface-300 border-surface-700'
+                                        }`}>
                                             {formatTournamentMode(tournament.mode)}
                                         </span>
                                     </div>
 
                                     {/* Tournament Title */}
-                                    <h3 className="text-lg font-bold text-surface-100 group-hover:text-primary-300 transition-colors line-clamp-2">
+                                    <h3 className="text-base font-bold text-surface-100 group-hover:text-primary-300 transition-colors line-clamp-2">
                                         {tournament.name}
                                     </h3>
 
                                     {/* Dates */}
-                                    <div className="mt-3 text-xs text-surface-400 flex flex-col gap-1 font-mono bg-surface-950/20 p-2.5 rounded-xl border border-surface-850">
+                                    <div className="mt-3 text-xs text-surface-400 flex flex-col gap-1 bg-surface-950/40 p-2.5 rounded-xl border border-surface-850">
                                         <div className="flex justify-between">
                                             <span className="text-surface-500">Mulai:</span>
-                                            <span>📅 {formatDate(tournament.start_date)}</span>
+                                            <span className="font-semibold text-surface-300">📅 {formatDate(tournament.start_date)}</span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="text-surface-500">Selesai:</span>
-                                            <span>🏁 {formatDate(tournament.end_date)}</span>
+                                            <span className="font-semibold text-surface-300">🏁 {formatDate(tournament.end_date)}</span>
                                         </div>
                                     </div>
 
-                                    {/* Registered Teams List */}
-                                    <div className="mt-5 pt-4 border-t border-surface-800">
-                                        <h4 className="text-xs font-semibold uppercase tracking-wider text-surface-500 mb-3 flex items-center gap-1.5">
-                                            👥 Tim Anda Yang Terdaftar ({tournament.teams.length})
+                                    {/* Registered Teams / Super Teams List */}
+                                    <div className="mt-4 pt-3 border-t border-surface-800">
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-surface-400 mb-2 flex items-center justify-between">
+                                            <span>👥 Tim Anda Terdaftar:</span>
+                                            <span className="text-primary-400 font-mono">
+                                                {isSuper ? registeredSuperTeams.length : registeredTeams.length}
+                                            </span>
                                         </h4>
-                                        {tournament.teams.length === 0 ? (
-                                            <p className="text-xs text-surface-650 italic py-1">Belum ada tim Anda yang terdaftar.</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {tournament.teams.map((team) => (
-                                                    <div 
-                                                        key={team.id} 
-                                                        className="flex items-center justify-between p-2.5 rounded-xl bg-surface-950/30 border border-surface-850 text-xs"
-                                                    >
-                                                        <div className="min-w-0">
-                                                            <p className="font-semibold text-surface-200 truncate">{team.name}</p>
-                                                            <p className="text-[10px] text-surface-500">{team.region}</p>
+
+                                        {isSuper ? (
+                                            registeredSuperTeams.length === 0 ? (
+                                                <p className="text-xs text-surface-500 italic py-1">Belum ada Super Team Anda yang terdaftar.</p>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    {registeredSuperTeams.map((st) => (
+                                                        <div key={st.id} className="flex items-center justify-between p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs">
+                                                            <span className="font-bold text-purple-200 truncate">{st.name}</span>
+                                                            <button
+                                                                onClick={() => handleUnregisterSuperTeam(tournament.id, st.id, st.name)}
+                                                                className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
+                                                            >
+                                                                ✕ Batal
+                                                            </button>
                                                         </div>
-                                                        <button
-                                                            onClick={() => handleUnregister(tournament.id, team.id, team.name)}
-                                                            className="px-2 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 font-medium transition-all text-[10px] flex items-center gap-0.5"
-                                                            title="Batalkan Pendaftaran"
-                                                        >
-                                                            ✕ Batalkan
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                                    ))}
+                                                </div>
+                                            )
+                                        ) : (
+                                            registeredTeams.length === 0 ? (
+                                                <p className="text-xs text-surface-500 italic py-1">Belum ada tim Anda yang terdaftar.</p>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    {registeredTeams.map((team) => (
+                                                        <div key={team.id} className="flex items-center justify-between p-2 rounded-xl bg-surface-950/40 border border-surface-800 text-xs">
+                                                            <span className="font-semibold text-surface-200 truncate">{team.name}</span>
+                                                            <button
+                                                                onClick={() => handleUnregisterTeam(tournament.id, team.id, team.name)}
+                                                                className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
+                                                            >
+                                                                ✕ Batal
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Bottom Registration Action */}
-                                <div className="mt-6">
-                                    {myTeams.length === 0 ? (
-                                        <div className="text-center p-3 rounded-xl bg-surface-950/40 text-xs text-surface-500">
-                                            Silakan buat tim terlebih dahulu untuk berpartisipasi.
-                                        </div>
-                                    ) : isFullyRegistered ? (
-                                        <div className="w-full py-2.5 rounded-xl bg-surface-800/40 text-surface-500 border border-surface-700/30 font-medium text-xs text-center flex items-center justify-center gap-1.5">
-                                            ✓ Semua Tim Anda Terdaftar
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => openRegisterModal(tournament)}
-                                            disabled={!hasAvailableTeams}
-                                            className="w-full py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-medium text-xs transition-all duration-200 shadow-md shadow-primary-600/10 hover:shadow-primary-600/20 flex items-center justify-center gap-1.5"
-                                        >
-                                            🏆 Ikuti Turnamen
-                                        </button>
-                                    )}
+                                {/* Register Button */}
+                                <div className="mt-5 pt-3 border-t border-surface-800">
+                                    <button
+                                        onClick={() => openRegisterModal(tournament)}
+                                        disabled={!hasAvailable}
+                                        className="w-full py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                        {hasAvailable ? (
+                                            tournament.has_registration_code ? '🔐 Ikuti Turnamen (Perlu Kunci)' : '🏆 Ikuti Turnamen'
+                                        ) : (
+                                            '✓ Semua Tim Sudah Terdaftar'
+                                        )}
+                                    </button>
                                 </div>
                             </div>
                         );
@@ -194,78 +250,116 @@ export default function TournamentAvailable({ tournaments, myTeams }) {
 
             {/* Registration Modal */}
             {isModalOpen && selectedTournament && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/80 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-surface-900 border border-surface-700/60 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        {/* Modal Header */}
-                        <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/20">
-                            <h3 className="text-base font-semibold text-surface-100">
-                                🏆 Daftarkan Tim Ikuti Turnamen
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="w-full max-w-md bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/30">
+                            <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
+                                <span>🏆 Pendaftaran Turnamen</span>
                             </h3>
                             <button
                                 onClick={closeModal}
-                                className="text-surface-500 hover:text-surface-300 p-1 rounded-lg hover:bg-surface-800 transition-colors"
+                                className="text-surface-400 hover:text-surface-200 p-1 rounded-lg hover:bg-surface-800 transition-colors"
                             >
                                 ✕
                             </button>
                         </div>
 
-                        {/* Modal Body */}
                         <form onSubmit={handleRegister} className="p-6 space-y-4">
                             <div>
-                                <h4 className="text-sm font-semibold text-surface-200 mb-1">{selectedTournament.name}</h4>
-                                <p className="text-xs text-surface-500">Mode turnamen: {formatTournamentMode(selectedTournament.mode)}</p>
+                                <h4 className="text-sm font-bold text-surface-200">{selectedTournament.name}</h4>
+                                <p className="text-xs text-surface-400 mt-0.5">
+                                    Kategori: <strong className="text-primary-300">{formatTournamentMode(selectedTournament.mode)}</strong>
+                                </p>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wider text-surface-400 mb-1.5">
-                                    Pilih Tim Anda
-                                </label>
-                                {getAvailableTeamsForSelected().length === 0 ? (
-                                    <div className="p-3 rounded-xl bg-red-500/10 text-red-400 text-xs border border-red-500/20">
-                                        Semua tim Anda sudah terdaftar di turnamen ini.
-                                    </div>
-                                ) : (
+                            {/* Pick Team or Super Team */}
+                            {isSuperTeamMode(selectedTournament.mode) ? (
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-purple-300 mb-1.5">
+                                        Pilih Super Team Anda <span className="text-red-400">*</span>
+                                    </label>
+                                    <select
+                                        value={data.super_team_id}
+                                        onChange={(e) => setData('super_team_id', e.target.value)}
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500"
+                                        required
+                                    >
+                                        <option value="">-- Pilih Super Team --</option>
+                                        {mySuperTeams
+                                            .filter(st => st.match_mode === selectedTournament.mode && !(selectedTournament.superTeams || []).some(r => r.id === st.id))
+                                            .map((st) => (
+                                                <option key={st.id} value={st.id}>
+                                                    {st.name} ({st.members?.length || 0}/3 Sub-Tim)
+                                                </option>
+                                            ))}
+                                    </select>
+                                    {errors.super_team_id && <p className="text-red-400 text-xs mt-1">{errors.super_team_id}</p>}
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
+                                        Pilih Tim Binaan <span className="text-red-400">*</span>
+                                    </label>
                                     <select
                                         value={data.team_id}
                                         onChange={(e) => setData('team_id', e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl border border-surface-700/60 bg-surface-950/50 text-surface-200 focus:outline-none focus:border-primary-500 transition-colors text-sm"
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-primary-500"
                                         required
                                     >
-                                        {getAvailableTeamsForSelected().map((team) => (
-                                            <option key={team.id} value={team.id} className="bg-surface-900 text-surface-200">
-                                                {team.name} ({team.region} • {team.athletes?.length || 0} atlet)
-                                            </option>
-                                        ))}
+                                        <option value="">-- Pilih Tim --</option>
+                                        {myTeams
+                                            .filter(t => !(selectedTournament.teams || []).some(r => r.id === t.id))
+                                            .map((t) => (
+                                                <option key={t.id} value={t.id}>
+                                                    {t.name} ({t.region})
+                                                </option>
+                                            ))}
                                     </select>
-                                )}
-                                {errors.team_id && <p className="text-red-400 text-xs mt-1">{errors.team_id}</p>}
-                            </div>
+                                    {errors.team_id && <p className="text-red-400 text-xs mt-1">{errors.team_id}</p>}
+                                </div>
+                            )}
 
-                            {/* Modal Footer Actions */}
+                            {/* Registration Code Input if Protected */}
+                            {selectedTournament.has_registration_code && (
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-amber-300 mb-1.5 flex items-center justify-between">
+                                        <span>🔐 Kunci Pendaftaran Turnamen <span className="text-red-400">*</span></span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowKey(!showKey)}
+                                            className="text-[10px] text-surface-400 hover:text-surface-200 lowercase font-normal"
+                                        >
+                                            {showKey ? 'sembunyikan' : 'tampilkan'}
+                                        </button>
+                                    </label>
+                                    <input
+                                        type={showKey ? 'text' : 'password'}
+                                        value={data.registration_code}
+                                        onChange={(e) => setData('registration_code', e.target.value)}
+                                        placeholder="Masukkan kunci yang diberikan Admin"
+                                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-950/60 border border-amber-500/40 text-amber-200 placeholder-surface-600 text-xs focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                                        required
+                                    />
+                                    {errors.registration_code && (
+                                        <p className="text-red-400 text-xs mt-1">{errors.registration_code}</p>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="pt-4 border-t border-surface-800 flex justify-end gap-3">
                                 <button
                                     type="button"
                                     onClick={closeModal}
-                                    className="px-4 py-2.5 rounded-xl border border-surface-700 text-surface-400 hover:text-surface-200 hover:bg-surface-800 transition-all text-sm font-medium"
+                                    className="px-4 py-2 rounded-xl border border-surface-700 text-surface-400 text-xs font-semibold hover:bg-surface-800"
                                 >
                                     Batal
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={processing || getAvailableTeamsForSelected().length === 0}
-                                    className="px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-medium text-sm shadow-lg shadow-primary-600/20 hover:shadow-primary-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                    disabled={processing}
+                                    className="px-5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold shadow-md disabled:opacity-50 cursor-pointer"
                                 >
-                                    {processing ? (
-                                        <>
-                                            <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                            </svg>
-                                            Mendaftarkan...
-                                        </>
-                                    ) : (
-                                        'Daftarkan Sekarang'
-                                    )}
+                                    {processing ? 'Mendaftarkan...' : 'Daftarkan Sekarang'}
                                 </button>
                             </div>
                         </form>

@@ -28,19 +28,22 @@ class TournamentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name'       => 'required|string|max:150',
-            'start_date' => 'required|date',
-            'end_date'   => 'required|date|after_or_equal:start_date',
-            'modes'      => 'required|array|min:1',
-            'modes.*'    => 'in:regu,double,quadrant,team_regu,team_double',
+            'name'              => 'required|string|max:150',
+            'start_date'        => 'required|date',
+            'end_date'          => 'required|date|after_or_equal:start_date',
+            'modes'             => 'required|array|min:1',
+            'modes.*'           => 'in:regu,double,quadrant,team_regu,team_double',
+            'registration_code' => 'nullable|string|max:100',
         ]);
 
         $tournament = Tournament::create([
-            'name'       => $validated['name'],
-            'start_date' => $validated['start_date'],
-            'end_date'   => $validated['end_date'],
-            'mode'       => $validated['modes'][0], // Mode utama untuk kompatibilitas
-            'created_by' => $request->user()->id,
+            'name'              => $validated['name'],
+            'start_date'        => $validated['start_date'],
+            'end_date'          => $validated['end_date'],
+            'mode'              => $validated['modes'][0], // Mode utama untuk kompatibilitas
+            'status'            => 'draft', // Default selalu draft saat pembuatan
+            'registration_code' => !empty($validated['registration_code']) ? trim($validated['registration_code']) : null,
+            'created_by'        => $request->user()->id,
         ]);
 
         // Simpan semua mode yang dipilih ke tabel tournament_modes
@@ -93,20 +96,22 @@ class TournamentController extends Controller
     public function update(Request $request, Tournament $tournament)
     {
         $validated = $request->validate([
-            'name'       => 'required|string|max:150',
-            'start_date' => 'required|date',
-            'end_date'   => 'required|date|after_or_equal:start_date',
-            'modes'      => 'required|array|min:1',
-            'modes.*'    => 'in:regu,double,quadrant,team_regu,team_double',
-            'status'     => 'sometimes|in:draft,registration,pool_stage,bracket_stage,completed',
+            'name'              => 'required|string|max:150',
+            'start_date'        => 'required|date',
+            'end_date'          => 'required|date|after_or_equal:start_date',
+            'modes'             => 'required|array|min:1',
+            'modes.*'           => 'in:regu,double,quadrant,team_regu,team_double',
+            'status'            => 'sometimes|in:draft,registration,pool_stage,bracket_stage,completed',
+            'registration_code' => 'nullable|string|max:100',
         ]);
 
         $tournament->update([
-            'name'       => $validated['name'],
-            'start_date' => $validated['start_date'],
-            'end_date'   => $validated['end_date'],
-            'mode'       => $validated['modes'][0],
-            'status'     => $validated['status'] ?? $tournament->status,
+            'name'              => $validated['name'],
+            'start_date'        => $validated['start_date'],
+            'end_date'          => $validated['end_date'],
+            'mode'              => $validated['modes'][0],
+            'status'            => $validated['status'] ?? $tournament->status,
+            'registration_code' => !empty($validated['registration_code']) ? trim($validated['registration_code']) : null,
         ]);
 
         // Re-sync tournament_modes

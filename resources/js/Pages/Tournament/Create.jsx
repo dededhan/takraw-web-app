@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, Link } from '@inertiajs/react';
+import { useState } from 'react';
 
 const MODES = [
     { value: 'regu',        label: 'Regu',        desc: '3 pemain per tim (standar)', icon: '🏐', color: 'border-blue-500' },
@@ -10,11 +11,14 @@ const MODES = [
 ];
 
 export default function TournamentCreate() {
+    const [showPassword, setShowPassword] = useState(false);
+
     const { data, setData, post, processing, errors } = useForm({
         name: '',
         start_date: '',
         end_date: '',
         modes: ['regu'], // Array multi-select
+        registration_code: '', // Kunci / Password Pendaftaran Turnamen
     });
 
     const toggleMode = (value) => {
@@ -24,6 +28,15 @@ export default function TournamentCreate() {
         } else {
             setData('modes', [...data.modes, value]);
         }
+    };
+
+    const generateRandomCode = () => {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let randomStr = '';
+        for (let i = 0; i < 6; i++) {
+            randomStr += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        setData('registration_code', `TKW-${randomStr}`);
     };
 
     const handleSubmit = (e) => {
@@ -46,7 +59,21 @@ export default function TournamentCreate() {
                 </div>
 
                 <div className="rounded-xl border border-surface-700/50 bg-surface-900/50 backdrop-blur-sm p-6">
-                    <h2 className="text-xl font-bold text-surface-100 mb-6">🏆 Turnamen Baru</h2>
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold text-surface-100">🏆 Turnamen Baru</h2>
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-surface-800 text-surface-300 border border-surface-700 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                            Status Awal: Draft
+                        </span>
+                    </div>
+
+                    <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2.5">
+                        <span className="text-base shrink-0">💡</span>
+                        <div>
+                            <p className="font-semibold text-amber-200">Status Default Turnamen adalah Draft</p>
+                            <p className="text-amber-300/80 mt-0.5">Setelah dibuat, turnamen akan berstatus <strong>Draft</strong> agar Admin dapat menyusun Pool dan Master Schedule terlebih dahulu. Status dapat diubah ke <strong>Registrasi</strong> melalui menu Edit Turnamen saat pendaftaran dibuka.</p>
+                        </div>
+                    </div>
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         {/* Name */}
@@ -134,6 +161,55 @@ export default function TournamentCreate() {
                             {errors.modes && <p className="text-red-400 text-xs mt-1">{errors.modes}</p>}
                         </div>
 
+                        {/* Kunci Pertandingan / Password Pendaftaran (Opsional) */}
+                        <div className="pt-2 border-t border-surface-700/40">
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-sm font-medium text-surface-200 flex items-center gap-1.5">
+                                    <span>🔐 Kunci Pendaftaran / Password Pertandingan</span>
+                                    <span className="text-[11px] text-surface-400 font-normal">(Opsional)</span>
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={generateRandomCode}
+                                    className="text-xs text-primary-400 hover:text-primary-300 bg-primary-500/10 hover:bg-primary-500/20 border border-primary-500/30 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                    🎲 Buat Kunci Acak
+                                </button>
+                            </div>
+                            <p className="text-xs text-surface-400 mb-2.5">
+                                Jika diisi, pelatih (coach) wajib memasukkan kunci ini untuk mendaftarkan timnya. Kosongkan jika turnamen terbuka tanpa kunci.
+                            </p>
+                            <div className="relative">
+                                <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    value={data.registration_code}
+                                    onChange={(e) => setData('registration_code', e.target.value)}
+                                    className="w-full pl-4 pr-24 py-3 rounded-xl bg-surface-800 border border-surface-700 text-surface-100 font-mono text-sm placeholder-surface-600 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors"
+                                    placeholder="Contoh: TAKRAW-2026 atau kosongkan"
+                                />
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                    {data.registration_code && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setData('registration_code', '')}
+                                            className="p-1.5 text-xs text-surface-400 hover:text-surface-200 hover:bg-surface-700 rounded-lg transition-colors"
+                                            title="Hapus Kunci"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="p-1.5 text-xs text-surface-400 hover:text-surface-200 hover:bg-surface-700 rounded-lg transition-colors"
+                                        title={showPassword ? 'Sembunyikan Kunci' : 'Tampilkan Kunci'}
+                                    >
+                                        {showPassword ? '🙈' : '👁️'}
+                                    </button>
+                                </div>
+                            </div>
+                            {errors.registration_code && <p className="text-red-400 text-xs mt-1">{errors.registration_code}</p>}
+                        </div>
 
                         {/* Submit */}
                         <div className="flex items-center justify-end gap-3 pt-4 border-t border-surface-700/50">
