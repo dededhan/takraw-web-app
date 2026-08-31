@@ -592,7 +592,7 @@ class MasterScheduleController extends Controller
         $conflicts = ScheduleConflict::where('tournament_id', $tournament->id)
             ->whereNull('resolved_at')
             ->with(['match.court', 'match.timeSlot', 'conflictingMatch'])
-            ->orderByRaw("FIELD(severity, 'error', 'warning')")
+            ->orderByRaw("CASE severity WHEN 'error' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END")
             ->orderBy('conflict_type')
             ->get();
 

@@ -144,7 +144,7 @@ class DashboardController extends Controller
             ])
             ->where('referee_id', $user->id)
             ->whereIn('status', ['scheduled', 'setup', 'live'])
-            ->orderByRaw("FIELD(status, 'live', 'setup', 'scheduled')")
+            ->orderByRaw("CASE status WHEN 'live' THEN 1 WHEN 'setup' THEN 2 WHEN 'scheduled' THEN 3 ELSE 4 END")
             ->orderBy('day_number', 'asc')
             ->orderBy('time_slot_id', 'asc')
             ->orderBy('scheduled_at', 'asc')

@@ -320,7 +320,7 @@ class MasterScheduleGeneratorService
         // Ambil semua konfigurasi bracket matrix per mode yang baru
         $matrices = BracketMatrix::where('tournament_id', $tournament->id)
             ->orderBy('match_mode')
-            ->orderByRaw("FIELD(bracket_stage, 'round_of_16', 'round_of_8', 'semifinal', 'third_place', 'final')")
+            ->orderByRaw("CASE bracket_stage WHEN 'round_of_16' THEN 1 WHEN 'round_of_8' THEN 2 WHEN 'semifinal' THEN 3 WHEN 'third_place' THEN 4 WHEN 'final' THEN 5 ELSE 6 END")
             ->orderBy('bracket_position')
             ->get();
 
