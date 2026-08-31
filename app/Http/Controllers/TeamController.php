@@ -57,6 +57,7 @@ class TeamController extends Controller
             'athletes.*.name' => 'required|string|max:100',
             'athletes.*.jersey_number' => 'required|integer|min:1',
             'athletes.*.position' => 'nullable|string|max:50',
+            'athletes.*.photo' => 'nullable|image|max:2048',
         ]);
 
         // Auto-assign coach if user is a coach
@@ -70,10 +71,17 @@ class TeamController extends Controller
             'coach_id' => $validated['coach_id'] ?? null,
         ]);
 
-        foreach ($validated['athletes'] as $athleteData) {
+        foreach ($validated['athletes'] as $index => $athleteData) {
+            $photoPath = $request->hasFile("athletes.{$index}.photo")
+                ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
+                : null;
+
             Athlete::create([
                 'team_id' => $team->id,
-                ...$athleteData,
+                'name' => $athleteData['name'],
+                'jersey_number' => $athleteData['jersey_number'],
+                'position' => $athleteData['position'] ?? null,
+                'photo' => $photoPath,
             ]);
         }
 
@@ -121,6 +129,7 @@ class TeamController extends Controller
             'athletes.*.name' => 'required|string|max:100',
             'athletes.*.jersey_number' => 'required|integer|min:1',
             'athletes.*.position' => 'nullable|string|max:50',
+            'athletes.*.photo' => 'nullable|image|max:2048',
         ]);
 
         $team->update([
@@ -132,15 +141,27 @@ class TeamController extends Controller
         // Sync athletes if provided
         if (isset($validated['athletes'])) {
             $existingIds = [];
-            foreach ($validated['athletes'] as $athleteData) {
+            foreach ($validated['athletes'] as $index => $athleteData) {
+                $photoPath = $request->hasFile("athletes.{$index}.photo")
+                    ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
+                    : null;
+
                 if (!empty($athleteData['id'])) {
                     $athlete = Athlete::findOrFail($athleteData['id']);
-                    $athlete->update($athleteData);
+                    $athlete->update([
+                        'name' => $athleteData['name'],
+                        'jersey_number' => $athleteData['jersey_number'],
+                        'position' => $athleteData['position'] ?? null,
+                        'photo' => $photoPath ?? $athlete->photo,
+                    ]);
                     $existingIds[] = $athlete->id;
                 } else {
                     $athlete = Athlete::create([
                         'team_id' => $team->id,
-                        ...$athleteData,
+                        'name' => $athleteData['name'],
+                        'jersey_number' => $athleteData['jersey_number'],
+                        'position' => $athleteData['position'] ?? null,
+                        'photo' => $photoPath,
                     ]);
                     $existingIds[] = $athlete->id;
                 }
@@ -176,6 +197,20 @@ class TeamController extends Controller
         return response($fileContent, 200, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="template_import_atlet.xlsx"',
+            'Cache-Control' => 'max-age=0',
+        ]);
+    }
+
+    /**
+     * Download a clean CSV athlete template (header + sample rows only).
+     */
+    public function downloadCsvTemplate(\App\Services\AthleteExcelService $excelService)
+    {
+        $fileContent = $excelService->generateCsvTemplate();
+
+        return response($fileContent, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="template_import_atlet.csv"',
             'Cache-Control' => 'max-age=0',
         ]);
     }

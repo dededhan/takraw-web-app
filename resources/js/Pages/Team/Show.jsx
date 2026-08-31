@@ -134,7 +134,18 @@ export default function TeamShow({ team }) {
                                                 {athlete.jersey_number}
                                             </div>
                                         </td>
-                                        <td className="px-5 py-3 text-sm font-semibold text-surface-200">{athlete.name}</td>
+                                        <td className="px-5 py-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-surface-700 flex items-center justify-center text-xs font-bold text-surface-400 overflow-hidden border border-surface-600 shrink-0">
+                                                    {athlete.photo_url ? (
+                                                        <img src={athlete.photo_url} alt={athlete.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span>{athlete.name?.charAt(0)?.toUpperCase() || '?'}</span>
+                                                    )}
+                                                </div>
+                                                <span className="text-sm font-semibold text-surface-200">{athlete.name}</span>
+                                            </div>
+                                        </td>
                                         <td className="px-5 py-3">
                                             {athlete.position ? (
                                                 <span className={`inline-block text-xs px-2.5 py-0.5 rounded-full border font-medium ${positionColors[athlete.position] || 'bg-surface-600/30 text-surface-300 border-surface-500/30'}`}>
@@ -220,20 +231,29 @@ export default function TeamShow({ team }) {
                         {/* Modal Body */}
                         <form onSubmit={handleImportSubmit} className="p-6 space-y-4">
                             <div className="p-3.5 rounded-xl bg-blue-500/10 text-blue-300 text-xs border border-blue-500/20 leading-relaxed">
-                                <p className="font-bold mb-1.5 flex items-center justify-between">
-                                    <span>💡 Gunakan Template Resmi (.xlsx):</span>
+                                <p className="font-bold mb-1.5">💡 Gunakan Template Resmi:</p>
+                                <div className="flex items-center gap-2 mb-2">
                                     <a
                                         href={route('templates.athletes')}
                                         download="template_import_atlet.xlsx"
                                         className="text-primary-400 hover:underline font-bold text-[11px]"
                                     >
-                                        📥 Unduh Template
+                                        📥 Template .xlsx
                                     </a>
-                                </p>
+                                    <span className="text-surface-600">•</span>
+                                    <a
+                                        href={route('templates.athletes-csv')}
+                                        download="template_import_atlet.csv"
+                                        className="text-primary-400 hover:underline font-bold text-[11px]"
+                                    >
+                                        📥 Template .csv
+                                    </a>
+                                </div>
                                 <ul className="list-disc list-inside space-y-1 text-[11px] text-surface-400">
                                     <li>Mendukung file Excel <strong>.xlsx, .xls</strong> dan file <strong>.csv</strong></li>
                                     <li>Kolom wajib: <strong>Nama Lengkap</strong> dan <strong>Nomor Punggung</strong></li>
                                     <li>Posisi valid: <strong>Tekong, Feeder, Killer, Cadangan</strong></li>
+                                    <li>Untuk CSV, gunakan template CSV di atas — jangan simpan template .xlsx sebagai .csv karena akan merusak format.</li>
                                 </ul>
                             </div>
 

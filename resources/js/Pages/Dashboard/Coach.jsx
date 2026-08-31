@@ -255,17 +255,26 @@ export default function CoachDashboard({
 
                         <div className="mt-4 pt-3 border-t border-emerald-500/20 flex flex-col sm:flex-row items-center justify-between gap-3">
                             <div className="text-[11px] text-surface-400 flex items-center gap-1.5">
-                                <span className="text-emerald-400">✓</span> Format `.xlsx` terstruktur
+                                <span className="text-emerald-400">✓</span> Format terstruktur
                                 <span className="text-surface-600">•</span>
                                 <span>Anti-Duplikat</span>
                             </div>
-                            <a
-                                href={route('templates.athletes')}
-                                download="template_import_atlet.xlsx"
-                                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
-                            >
-                                <span>📥 Download Template (.xlsx)</span>
-                            </a>
+                            <div className="w-full sm:w-auto flex items-center gap-2">
+                                <a
+                                    href={route('templates.athletes')}
+                                    download="template_import_atlet.xlsx"
+                                    className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    <span>📥 .xlsx</span>
+                                </a>
+                                <a
+                                    href={route('templates.athletes-csv')}
+                                    download="template_import_atlet.csv"
+                                    className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-200 border border-surface-700 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    <span>📥 .csv</span>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>

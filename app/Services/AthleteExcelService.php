@@ -145,6 +145,32 @@ class AthleteExcelService
     }
 
     /**
+     * Generate a clean CSV athlete template (header + sample rows only).
+     * Kept separate from the XLSX template because the XLSX version has
+     * banner/instruction rows that don't translate cleanly to plain CSV.
+     */
+    public function generateCsvTemplate(): string
+    {
+        $rows = [
+            ['Nama Lengkap', 'Nomor Punggung', 'Posisi'],
+            ['Budi Santoso', 10, 'Tekong'],
+            ['Andi Wijaya', 7, 'Feeder'],
+            ['Candra Saputra', 3, 'Killer'],
+            ['Dedi Hermawan', 12, 'Cadangan'],
+        ];
+
+        $handle = fopen('php://temp', 'r+');
+        foreach ($rows as $row) {
+            fputcsv($handle, $row);
+        }
+        rewind($handle);
+        $content = stream_get_contents($handle);
+        fclose($handle);
+
+        return $content;
+    }
+
+    /**
      * Parse uploaded file (XLSX, XLS, or CSV) into athlete rows array.
      */
     public function parseAthletesFile(string $filePath, string $extension): array

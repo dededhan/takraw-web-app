@@ -1,5 +1,55 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, Link } from '@inertiajs/react';
+import { useState, useEffect } from 'react';
+
+function AthleteAvatarUpload({ index, photoFile, existingUrl, onChange }) {
+    const [previewUrl, setPreviewUrl] = useState(null);
+
+    useEffect(() => {
+        if (photoFile) {
+            const url = URL.createObjectURL(photoFile);
+            setPreviewUrl(url);
+            return () => URL.revokeObjectURL(url);
+        }
+        setPreviewUrl(null);
+    }, [photoFile]);
+
+    const displayUrl = previewUrl || existingUrl;
+    const inputId = `athlete-photo-edit-${index}`;
+
+    return (
+        <div className="relative shrink-0 mt-1">
+            <input
+                type="file"
+                id={inputId}
+                accept="image/*"
+                onChange={(e) => onChange(e.target.files[0] || null)}
+                className="hidden"
+            />
+            <label
+                htmlFor={inputId}
+                className="w-8 h-8 rounded-lg bg-surface-700 flex items-center justify-center text-xs font-bold text-surface-400 cursor-pointer overflow-hidden border border-surface-600 hover:border-primary-500 transition-colors block"
+                title="Unggah foto atlet"
+            >
+                {displayUrl ? (
+                    <img src={displayUrl} alt="Preview foto atlet" className="w-full h-full object-cover" />
+                ) : (
+                    <span>{index + 1}</span>
+                )}
+            </label>
+            {displayUrl && (
+                <button
+                    type="button"
+                    onClick={() => onChange(null)}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-600"
+                    title="Hapus foto"
+                >
+                    ×
+                </button>
+            )}
+        </div>
+    );
+}
 
 export default function TeamEdit({ team, coaches }) {
     const { data, setData, patch, processing, errors } = useForm({
@@ -11,11 +61,13 @@ export default function TeamEdit({ team, coaches }) {
             name: a.name,
             jersey_number: a.jersey_number,
             position: a.position || '',
+            photo: null,
+            photo_url: a.photo_url || null,
         })),
     });
 
     const addAthlete = () => {
-        setData('athletes', [...data.athletes, { id: null, name: '', jersey_number: '', position: '' }]);
+        setData('athletes', [...data.athletes, { id: null, name: '', jersey_number: '', position: '', photo: null, photo_url: null }]);
     };
 
     const removeAthlete = (index) => {
@@ -77,7 +129,9 @@ export default function TeamEdit({ team, coaches }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        patch(route('teams.update', team.id));
+        patch(route('teams.update', team.id), {
+            forceFormData: true,
+        });
     };
 
     return (
@@ -187,9 +241,12 @@ export default function TeamEdit({ team, coaches }) {
                             <div className="space-y-3">
                                 {data.athletes.map((athlete, index) => (
                                     <div key={index} className="flex items-start gap-3 p-4 rounded-xl bg-surface-800/50 border border-surface-700/30">
-                                        <div className="w-8 h-8 rounded-lg bg-surface-700 flex items-center justify-center text-xs font-bold text-surface-400 shrink-0 mt-1">
-                                            {index + 1}
-                                        </div>
+                                        <AthleteAvatarUpload
+                                            index={index}
+                                            photoFile={athlete.photo}
+                                            existingUrl={athlete.photo_url}
+                                            onChange={(file) => updateAthlete(index, 'photo', file)}
+                                        />
                                         <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-3">
                                             <input
                                                 type="text"

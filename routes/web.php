@@ -141,6 +141,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Teams
         Route::resource('teams', TeamController::class);
         Route::get('/templates/athletes', [TeamController::class, 'downloadTemplate'])->name('templates.athletes');
+        Route::get('/templates/athletes-csv', [TeamController::class, 'downloadCsvTemplate'])->name('templates.athletes-csv');
         Route::post('/teams/{team}/import-athletes', [TeamController::class, 'importAthletes'])->name('teams.import-athletes');
     });
 
