@@ -6,7 +6,9 @@ use App\Models\Tournament;
 use App\Models\Team;
 use App\Models\SuperTeam;
 use App\Models\Match_;
+use App\Models\Athlete;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -255,46 +257,79 @@ class CoachTournamentController extends Controller
 
     /**
      * Coach creates a new Super Team (Team Regu or Team Double).
+     * Setiap Sub-Tim dibuat independen (baris teams baru, is_super_sub=true)
+     * lengkap dengan daftar atletnya (input manual atau hasil parse CSV).
      */
     public function storeSuperTeam(Request $request)
     {
         $validated = $request->validate([
-            'name'       => 'required|string|max:100',
-            'match_mode' => 'required|in:team_regu,team_double',
-            'team_ids'   => 'required|array|size:3',
-            'team_ids.*' => 'required|exists:teams,id',
+            'name'                        => 'required|string|max:100',
+            'match_mode'                  => 'required|in:team_regu,team_double',
+            'sub_teams'                   => 'required|array|size:3',
+            'sub_teams.*.name'            => 'required|string|max:100',
+            'sub_teams.*.region'          => 'required|string|max:100',
+            'sub_teams.*.athletes'        => 'required|array|min:1',
+            'sub_teams.*.athletes.*.name' => 'required|string|max:100',
+            'sub_teams.*.athletes.*.jersey_number' => 'required|integer|min:1',
+            'sub_teams.*.athletes.*.position'      => 'nullable|string|max:50',
+            'sub_teams.*.athletes.*.photo'         => 'nullable|image|max:2048',
         ], [
-            'team_ids.size' => 'Super Team harus terdiri dari tepat 3 Sub-Tim.',
+            'sub_teams.size'                       => 'Super Team harus terdiri dari tepat 3 Sub-Tim.',
+            'sub_teams.*.name.required'            => 'Nama setiap Sub-Tim wajib diisi.',
+            'sub_teams.*.region.required'          => 'Daerah setiap Sub-Tim wajib diisi.',
+            'sub_teams.*.athletes.min'             => 'Setiap Sub-Tim harus memiliki minimal 1 atlet.',
+            'sub_teams.*.athletes.*.name.required' => 'Nama atlet wajib diisi.',
+            'sub_teams.*.athletes.*.jersey_number.required' => 'Nomor punggung atlet wajib diisi.',
         ]);
 
-        // Verifikasi semua tim milik coach ini
-        $coachTeamsCount = Team::where('coach_id', $request->user()->id)
-            ->whereIn('id', $validated['team_ids'])
-            ->count();
+        $coachId = $request->user()->id;
 
-        if ($coachTeamsCount !== 3) {
-            return back()->with('error', 'Ketiga sub-tim harus merupakan tim binaan Anda.');
-        }
+        $superTeam = DB::transaction(function () use ($validated, $request, $coachId) {
+            $superTeam = SuperTeam::create([
+                'name'       => $validated['name'],
+                'match_mode' => $validated['match_mode'],
+                'coach_id'   => $coachId,
+                'created_by' => $coachId,
+            ]);
 
-        // Cek apakah ada duplikasi tim dalam 3 pilihan
-        if (count(array_unique($validated['team_ids'])) !== 3) {
-            return back()->with('error', 'Ketiga sub-tim harus berbeda (tidak boleh sama).');
-        }
+            $subTeamIds = [];
+            foreach ($validated['sub_teams'] as $subIdx => $subData) {
+                $subTeam = Team::create([
+                    'name'                 => $subData['name'],
+                    'region'               => $subData['region'],
+                    'coach_id'             => $coachId,
+                    'is_super_sub'         => true,
+                    'parent_super_team_id' => $superTeam->id,
+                ]);
 
-        $superTeam = SuperTeam::create([
-            'name'       => $validated['name'],
-            'match_mode' => $validated['match_mode'],
-            'coach_id'   => $request->user()->id,
-            'created_by' => $request->user()->id,
-        ]);
+                foreach ($subData['athletes'] as $athleteIdx => $athleteData) {
+                    $photoPath = $request->hasFile("sub_teams.{$subIdx}.athletes.{$athleteIdx}.photo")
+                        ? $request->file("sub_teams.{$subIdx}.athletes.{$athleteIdx}.photo")->store('athletes', 'public')
+                        : null;
 
-        $superTeam->members()->attach($validated['team_ids']);
+                    Athlete::create([
+                        'team_id'       => $subTeam->id,
+                        'name'          => $athleteData['name'],
+                        'jersey_number' => $athleteData['jersey_number'],
+                        'position'      => $athleteData['position'] ?? null,
+                        'photo'         => $photoPath,
+                    ]);
+                }
 
-        return back()->with('success', "Super Team \"{$superTeam->name}\" berhasil dibuat dengan 3 Sub-Tim!");
+                $subTeamIds[] = $subTeam->id;
+            }
+
+            $superTeam->members()->attach($subTeamIds);
+
+            return $superTeam;
+        });
+
+        return back()->with('success', "Super Team \"{$superTeam->name}\" berhasil dibuat dengan 3 Sub-Tim independen baru!");
     }
 
     /**
      * Coach deletes a Super Team.
+     * Sub-tim anggota yang sebelumnya dibuat otomatis akan ikut terhapus.
      */
     public function destroySuperTeam(Request $request, SuperTeam $superTeam)
     {
@@ -306,9 +341,18 @@ class CoachTournamentController extends Controller
             return back()->with('error', 'Super Team ini terkunci karena pernah/sedang mengikuti turnamen dan tidak dapat dihapus.');
         }
 
-        $superTeam->members()->detach();
-        $superTeam->delete();
+        DB::transaction(function () use ($superTeam) {
+            $subTeamIds = $superTeam->members()->pluck('teams.id')->all();
+            $superTeam->members()->detach();
+            $superTeam->delete();
 
-        return back()->with('success', "Super Team \"{$superTeam->name}\" berhasil dihapus.");
+            if (!empty($subTeamIds)) {
+                Team::whereIn('id', $subTeamIds)
+                    ->where('is_super_sub', true)
+                    ->delete();
+            }
+        });
+
+        return back()->with('success', "Super Team \"{$superTeam->name}\" dan 3 Sub-Tim anggotanya berhasil dihapus.");
     }
 }

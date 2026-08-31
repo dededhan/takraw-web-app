@@ -10,14 +10,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['name', 'region', 'coach_id'])]
+#[Fillable(['name', 'region', 'coach_id', 'is_super_sub', 'parent_super_team_id'])]
 class Team extends Model
 {
     use HasFactory, SoftDeletes;
 
     protected $appends = ['is_locked', 'tournaments_count'];
 
+    protected $casts = [
+        'is_super_sub' => 'boolean',
+    ];
+
     // ─── Helpers ────────────────────────────────────
+
+    public function parentSuperTeam(): BelongsTo
+    {
+        return $this->belongsTo(SuperTeam::class, 'parent_super_team_id');
+    }
 
     public function getIsLockedAttribute(): bool
     {

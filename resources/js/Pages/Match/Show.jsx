@@ -2,38 +2,58 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import StatusBadge from '@/Components/StatusBadge';
 import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
+import { exportMatchReportPdf } from '@/Utils/matchPdfExport';
 
 const ZONE_CONFIG = [
-    // Top Row (Ganjil): 1, 3, 5, 7
-    { key: 'zone_1', label: '1', color: 'from-blue-500/10 to-blue-600/5 border-blue-500/20 text-blue-300', activeColor: 'from-blue-500/40 to-blue-600/30 border-blue-500/60 text-blue-200 shadow-sm' },
-    { key: 'zone_2', label: '3', color: 'from-cyan-400/10 to-teal-500/5 border-cyan-400/20 text-cyan-200', activeColor: 'from-cyan-400/40 to-teal-500/30 border-cyan-400/50 text-cyan-100 shadow-sm' },
-    { key: 'zone_3', label: '5', color: 'from-yellow-400/10 to-amber-500/5 border-yellow-400/20 text-yellow-200', activeColor: 'from-yellow-400/40 to-amber-500/30 border-yellow-400/50 text-yellow-100 shadow-sm' },
-    { key: 'zone_4', label: '7', color: 'from-orange-500/10 to-red-500/5 border-orange-500/20 text-orange-300', activeColor: 'from-orange-500/40 to-red-500/30 border-orange-500/60 text-orange-200 shadow-sm' },
-
-    // Bottom Row (Genap): 2, 4, 6
-    { key: 'zone_5', label: '2', color: 'from-blue-400/10 to-cyan-500/5 border-blue-400/20 text-blue-200', activeColor: 'from-blue-400/40 to-cyan-500/30 border-blue-400/50 text-blue-100 shadow-sm' },
-    { key: 'zone_6', label: '4', color: 'from-emerald-400/10 to-green-500/5 border-emerald-400/20 text-emerald-200', activeColor: 'from-emerald-400/40 to-green-500/30 border-emerald-400/50 text-emerald-100 shadow-sm' },
-    { key: 'zone_7', label: '6', color: 'from-orange-400/10 to-amber-500/5 border-orange-400/20 text-orange-200', activeColor: 'from-orange-400/40 to-amber-500/30 border-orange-400/50 text-orange-100 shadow-sm' },
+    // Right side zones (Zona 1-7)
+    { key: 'zone_1', label: 'Z1', desc: 'Sudut Atas' },
+    { key: 'zone_2', label: 'Z2', desc: '0 - 1.22m' },
+    { key: 'zone_3', label: 'Z3', desc: '1.22 - 2.44m' },
+    { key: 'zone_4', label: 'Z4', desc: '2.44 - 3.66m' },
+    { key: 'zone_5', label: 'Z5', desc: '3.66 - 4.88m' },
+    { key: 'zone_6', label: 'Z6', desc: '4.88 - 6.10m' },
+    { key: 'zone_7', label: 'Z7', desc: 'Sudut Bawah' },
+    // Left/Center zones (Zona 8-10)
+    { key: 'zone_8', label: 'Z8', desc: 'Bawah Tengah' },
+    { key: 'zone_9', label: 'Z9', desc: 'Tengah Lapangan' },
+    { key: 'zone_10', label: 'Z10', desc: 'Atas Tengah' },
 ];
 
 function PlayerCourtMiniature({ stats }) {
     const zones = [
-        { key: 'zone_1', label: 'ZONA 1', desc: 'Sudut Atas', style: { top: '6%', left: '48%', width: '24%', height: '22%' } },
-        { key: 'zone_2', label: 'ZONA 2', desc: '0.00 - 1.22m', style: { top: '6%', right: '2%', width: '22%', height: '16%' } },
-        { key: 'zone_3', label: 'ZONA 3', desc: '1.22 - 2.44m', style: { top: '23%', right: '2%', width: '22%', height: '16%' } },
-        { key: 'zone_4', label: 'ZONA 4', desc: '2.44 - 3.66m', style: { top: '40%', right: '2%', width: '22%', height: '16%' } },
-        { key: 'zone_5', label: 'ZONA 5', desc: '3.66 - 4.88m', style: { top: '57%', right: '2%', width: '22%', height: '16%' } },
-        { key: 'zone_6', label: 'ZONA 6', desc: '4.88 - 6.10m', style: { top: '74%', right: '2%', width: '22%', height: '16%' } },
-        { key: 'zone_7', label: 'ZONA 7', desc: 'Sudut Bawah', style: { top: '72%', left: '48%', width: '24%', height: '22%' } },
+        // Zona 1: Sudut atas kanan (corner triangle)
+        { key: 'zone_1', label: 'Z1', desc: 'Sudut Atas', style: { top: '3%', left: '64%', width: '13%', height: '14%' } },
+
+        // Zona 2-6: Strip kecil di tepi kanan (each 1.22m, stacked vertically)
+        { key: 'zone_2', label: 'Z2', desc: '0-1.22m', style: { top: '4%', right: '2%', width: '12%', height: '15%' } },
+        { key: 'zone_3', label: 'Z3', desc: '1.22-2.44m', style: { top: '21%', right: '2%', width: '12%', height: '15%' } },
+        { key: 'zone_4', label: 'Z4', desc: '2.44-3.66m', style: { top: '38%', right: '2%', width: '12%', height: '15%' } },
+        { key: 'zone_5', label: 'Z5', desc: '3.66-4.88m', style: { top: '55%', right: '2%', width: '12%', height: '15%' } },
+        { key: 'zone_6', label: 'Z6', desc: '4.88-6.10m', style: { top: '72%', right: '2%', width: '12%', height: '15%' } },
+
+        // Zona 7: Sudut bawah kanan (corner triangle)
+        { key: 'zone_7', label: 'Z7', desc: 'Sudut Bawah', style: { top: '83%', left: '64%', width: '13%', height: '14%' } },
+
+        // Zona 8, 9, 10: Area interior, tepat di kanan NET (besar)
+        { key: 'zone_8', label: 'Z8', desc: 'Bawah', style: { top: '68%', left: '49%', width: '14%', height: '26%' } },
+        { key: 'zone_9', label: 'Z9', desc: 'Tengah', style: { top: '32%', left: '49%', width: '14%', height: '34%' } },
+        { key: 'zone_10', label: 'Z10', desc: 'Atas', style: { top: '4%', left: '49%', width: '14%', height: '26%' } },
     ];
 
+    // Calculate total zone hits for percentage
+    const totalZoneHits = zones.reduce((sum, z) => {
+        const ace = stats[`${z.key}_ace`] || 0;
+        const inC = stats[`${z.key}_in`] || (ace === 0 ? stats[z.key] || 0 : 0);
+        return sum + (ace + inC);
+    }, 0);
+
     return (
-        <div className="w-full max-w-[500px] mx-auto bg-surface-900 border border-surface-700/50 rounded-2xl p-3 shadow-xl">
+        <div className="w-full max-w-[520px] mx-auto bg-surface-900 border border-surface-700/50 rounded-2xl p-3 shadow-xl">
             <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                    🎯 PETA ZONA JATUH BOLA (ZONA 1 - 7)
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🎯 PETA ZONA JATUH SERVIS (10 ZONA)</span>
                 </span>
-                <span className="text-[9px] text-surface-400 font-mono">13.40m x 6.10m</span>
+                <span className="text-[9px] text-surface-400 font-mono">Format: % (ACE/IN)</span>
             </div>
 
             {/* Graphic Court Container */}
@@ -49,39 +69,59 @@ function PlayerCourtMiniature({ stats }) {
                     <circle cx="85" cy="95" r="5" fill="#fbbf24" />
                     <text x="85" y="125" fill="#fef08a" fontSize="7" textAnchor="middle" fontWeight="bold">TEKONG</text>
 
+                    {/* Zone Fan Lines Radiating from Tekong Circle to Right Boundary */}
                     <line x1="85" y1="95" x2="390" y2="10" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="44" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="78" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="112" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="146" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="34" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="58" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="82" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="106" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="130" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="154" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
                     <line x1="85" y1="95" x2="390" y2="180" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+
+                    {/* Horizontal dividers between Zona 8/9/10 (right side of net) */}
+                    <line x1="190" y1="68" x2="280" y2="42" stroke="#a78bfa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+                    <line x1="190" y1="122" x2="280" y2="148" stroke="#a78bfa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
                 </svg>
 
-                {/* Zone Badges Overlay */}
+                {/* Zone Badges Overlay with % and (ACE/IN) */}
                 {zones.map((z) => {
-                    const value = stats[z.key] || 0;
-                    const hasValue = value > 0;
+                    const ace = stats[`${z.key}_ace`] || 0;
+                    const inC = stats[`${z.key}_in`] || (ace === 0 ? stats[z.key] || 0 : 0);
+                    const hits = ace + inC;
+                    const hasValue = hits > 0;
+                    const pct = totalZoneHits > 0 ? ((hits / totalZoneHits) * 100).toFixed(1) : '0.0';
 
                     return (
                         <div
                             key={z.key}
                             style={z.style}
+                            title={`${z.label} (${z.desc}): ${pct}% — Ace: ${ace}, In: ${inC}`}
                             className={`
-                                absolute rounded-lg border flex flex-col items-center justify-center transition-all duration-150 shadow-md backdrop-blur-xs
-                                ${hasValue ? 'bg-emerald-600/90 border-amber-400 ring-2 ring-amber-400/50 shadow-lg' : 'bg-surface-900/60 border-surface-700/50 opacity-60'}
+                                absolute rounded-lg border flex flex-col items-center justify-center transition-all duration-150 shadow-md backdrop-blur-xs p-0.5
+                                ${hasValue 
+                                    ? 'bg-emerald-800/90 border-amber-400 ring-1 ring-amber-400/50 shadow-lg' 
+                                    : 'bg-surface-900/60 border-surface-700/50 opacity-50'}
                             `}
                         >
-                            <span className="text-[9px] md:text-xs font-black text-emerald-200 leading-tight">
-                                {z.label}
+                            {/* Percentage (Top) */}
+                            <span className={`text-[8px] sm:text-[10px] font-black leading-none ${hasValue ? 'text-amber-300' : 'text-emerald-200/70'}`}>
+                                {pct}%
                             </span>
-                            {hasValue && (
-                                <span className="absolute -top-1 -right-1 min-w-[18px] h-4.5 px-1 rounded-full bg-amber-400 text-surface-950 text-[10px] font-black flex items-center justify-center shadow-lg border border-amber-300 animate-bounce">
-                                    {value}
-                                </span>
-                            )}
+
+                            {/* ACE/IN numbers (Bottom) */}
+                            <span className={`text-[7px] sm:text-[8px] font-bold font-mono leading-tight mt-0.5 ${hasValue ? 'text-white' : 'text-surface-400'}`}>
+                                ({ace}/{inC})
+                            </span>
                         </div>
                     );
                 })}
+            </div>
+
+            {/* Legend: Total servis & explanation */}
+            <div className="flex items-center justify-between mt-2 pt-1 border-t border-surface-800 text-[9px] text-surface-400 font-medium">
+                <span>Keterangan: <strong className="text-amber-300">% (ACE / IN)</strong></span>
+                <span>Total Servis Masuk: <strong className="text-emerald-400 font-bold">{totalZoneHits}</strong></span>
             </div>
         </div>
     );
@@ -222,8 +262,13 @@ export default function MatchShow({ match: m }) {
             feeding_success: 0, feeding_fail: 0,
             strike_success: 0, strike_fail: 0,
             block_success: 0, block_fail: 0,
-            zone_1: 0, zone_2: 0, zone_3: 0, zone_4: 0, zone_5: 0, zone_6: 0, zone_7: 0,
         };
+
+        for (let i = 1; i <= 10; i++) {
+            agg[`zone_${i}`] = 0;
+            agg[`zone_${i}_ace`] = 0;
+            agg[`zone_${i}_in`] = 0;
+        }
 
         stats.forEach(s => {
             Object.keys(agg).forEach(k => {
@@ -256,13 +301,21 @@ export default function MatchShow({ match: m }) {
         <AuthenticatedLayout header="Detail Pertandingan">
             <Head title={`${homeName} vs ${awayName}`} />
 
-            <div className="mb-4">
+            <div className="mb-4 flex items-center justify-between">
                 <Link href={route('matches.index')} className="text-sm text-surface-500 hover:text-surface-300 transition-colors flex items-center gap-1">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                     </svg>
                     Kembali
                 </Link>
+
+                <button
+                    onClick={() => exportMatchReportPdf(m)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 transition-all active:scale-95"
+                >
+                    <span>📥</span>
+                    <span>Download Laporan PDF</span>
+                </button>
             </div>
 
             {/* Scoreboard */}

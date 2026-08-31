@@ -14,7 +14,8 @@ class TeamController extends Controller
 {
     public function index(Request $request): Response
     {
-        $query = Team::with(['coach', 'athletes', 'tournaments'])
+        $query = Team::where('is_super_sub', false)
+            ->with(['coach', 'athletes', 'tournaments'])
             ->withCount('athletes');
 
         // If coach, only show their teams

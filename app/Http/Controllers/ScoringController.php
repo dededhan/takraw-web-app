@@ -18,6 +18,8 @@ class ScoringController extends Controller
      */
     public function show(Match_ $match): Response
     {
+        $this->ensureMatchAthletes($match);
+
         $match->load([
             'homeTeam.athletes',
             'awayTeam.athletes',
@@ -28,6 +30,13 @@ class ScoringController extends Controller
             'timeSlot',
             'sets.stats.athlete',
         ]);
+
+        // If a set is live or pending, ensure set_stats rows exist for all athletes
+        $liveSet = $match->sets()->where('status', 'live')->first() ?: $match->sets()->first();
+        if ($liveSet) {
+            $this->initializeSetStats($liveSet, $match);
+            $match->load('sets.stats.athlete');
+        }
 
         return Inertia::render('Scoring/Live', [
             'match' => $match,
@@ -68,6 +77,8 @@ class ScoringController extends Controller
      */
     public function start(Match_ $match)
     {
+        $this->ensureMatchAthletes($match);
+
         $match->update([
             'status' => 'live',
             'started_at' => now(),
@@ -96,30 +107,76 @@ class ScoringController extends Controller
     {
         $validated = $request->validate([
             'match_set_id' => 'required|exists:match_sets,id',
-            'athlete_id' => 'required|exists:athletes,id',
-            'stat' => 'required|in:' . implode(',', SetStat::STAT_COLUMNS),
-            'action' => 'required|in:increment,decrement',
+            'athlete_id'   => 'required',
+            'stat'         => 'required|in:' . implode(',', SetStat::STAT_COLUMNS),
+            'action'       => 'required|in:increment,decrement',
+            'zone'         => 'nullable|string',
+            'team_id'      => 'nullable|integer',
         ]);
 
+        $athleteId = $validated['athlete_id'];
+
+        // If athlete_id is a temporary string (e.g. 'temp-1-1') or not found, resolve or create real athlete
+        if (!is_numeric($athleteId) || !\App\Models\Athlete::where('id', $athleteId)->exists()) {
+            $teamId = $request->input('team_id') ?: $match->home_team_id;
+            $team = \App\Models\Team::find($teamId);
+            if ($team) {
+                $this->ensureTeamAthletes($team);
+                $firstAthlete = $team->athletes()->first();
+                $athleteId = $firstAthlete ? $firstAthlete->id : null;
+            }
+        }
+
+        if (!$athleteId) {
+            return response()->json(['error' => 'Athlete not found'], 422);
+        }
+
         $stat = SetStat::where('match_set_id', $validated['match_set_id'])
-            ->where('athlete_id', $validated['athlete_id'])
+            ->where('athlete_id', $athleteId)
             ->first();
 
         if (!$stat) {
             // Auto-create if not exists
+            $athlete = \App\Models\Athlete::find($athleteId);
             $stat = SetStat::create([
                 'match_set_id' => $validated['match_set_id'],
-                'athlete_id' => $validated['athlete_id'],
-                'team_id' => $request->input('team_id'),
+                'athlete_id'   => $athleteId,
+                'team_id'      => $request->input('team_id') ?: ($athlete ? $athlete->team_id : null),
             ]);
         }
 
         $column = $validated['stat'];
-        if ($validated['action'] === 'increment') {
+        $action = $validated['action'];
+        $zone = $validated['zone'] ?? null;
+
+        if ($action === 'increment') {
             $stat->increment($column);
+
+            // If zone is specified (e.g. 'zone_1') for service_in or service_ace
+            if ($zone && in_array($zone, ['zone_1', 'zone_2', 'zone_3', 'zone_4', 'zone_5', 'zone_6', 'zone_7', 'zone_8', 'zone_9', 'zone_10'])) {
+                $suffix = $column === 'service_ace' ? '_ace' : '_in';
+                $zoneSpecificCol = $zone . $suffix;
+                if (in_array($zoneSpecificCol, SetStat::STAT_COLUMNS)) {
+                    $stat->increment($zoneSpecificCol);
+                }
+                if (in_array($zone, SetStat::STAT_COLUMNS)) {
+                    $stat->increment($zone);
+                }
+            }
         } else {
             if ($stat->$column > 0) {
                 $stat->decrement($column);
+            }
+
+            if ($zone && in_array($zone, ['zone_1', 'zone_2', 'zone_3', 'zone_4', 'zone_5', 'zone_6', 'zone_7', 'zone_8', 'zone_9', 'zone_10'])) {
+                $suffix = $column === 'service_ace' ? '_ace' : '_in';
+                $zoneSpecificCol = $zone . $suffix;
+                if (in_array($zoneSpecificCol, SetStat::STAT_COLUMNS) && $stat->$zoneSpecificCol > 0) {
+                    $stat->decrement($zoneSpecificCol);
+                }
+                if (in_array($zone, SetStat::STAT_COLUMNS) && $stat->$zone > 0) {
+                    $stat->decrement($zone);
+                }
             }
         }
 
@@ -279,6 +336,53 @@ class ScoringController extends Controller
             ], [
                 'team_id'      => $athlete->team_id,
             ]);
+        }
+    }
+
+    /**
+     * Ensure all teams in the match have athletes created in the database.
+     */
+    private function ensureMatchAthletes(Match_ $match): void
+    {
+        if ($match->homeTeam) {
+            $this->ensureTeamAthletes($match->homeTeam);
+        }
+        if ($match->awayTeam) {
+            $this->ensureTeamAthletes($match->awayTeam);
+        }
+        if ($match->homeSuperTeam) {
+            foreach ($match->homeSuperTeam->members as $subTeam) {
+                $this->ensureTeamAthletes($subTeam);
+            }
+        }
+        if ($match->awaySuperTeam) {
+            foreach ($match->awaySuperTeam->members as $subTeam) {
+                $this->ensureTeamAthletes($subTeam);
+            }
+        }
+    }
+
+    /**
+     * Ensure a team has standard default athletes if none exist.
+     */
+    private function ensureTeamAthletes(\App\Models\Team $team): void
+    {
+        if ($team->athletes()->count() === 0) {
+            $defaults = [
+                ['name' => 'Tekong ' . $team->name, 'jersey_number' => 1, 'position' => 'Tekong'],
+                ['name' => 'Feeder ' . $team->name, 'jersey_number' => 2, 'position' => 'Feeder'],
+                ['name' => 'Killer ' . $team->name, 'jersey_number' => 3, 'position' => 'Killer'],
+                ['name' => 'Cadangan ' . $team->name, 'jersey_number' => 4, 'position' => 'Cadangan'],
+            ];
+
+            foreach ($defaults as $data) {
+                \App\Models\Athlete::create([
+                    'team_id'       => $team->id,
+                    'name'          => $data['name'],
+                    'jersey_number' => $data['jersey_number'],
+                    'position'      => $data['position'],
+                ]);
+            }
         }
     }
 }

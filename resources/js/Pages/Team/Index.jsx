@@ -14,11 +14,79 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
     const [isSuperTeamModalOpen, setIsSuperTeamModalOpen] = useState(false);
 
     // Form for creating Super Team
+    const emptyAthlete = () => ({ name: '', jersey_number: '', position: '', photo: null });
+    const emptySubTeam = () => ({ name: '', region: '', athletes: [emptyAthlete()] });
+
     const { data: stData, setData: setStData, post: postSt, processing: stProcessing, errors: stErrors, reset: resetSt } = useForm({
         name: '',
         match_mode: 'team_regu',
-        team_ids: ['', '', ''],
+        sub_teams: [emptySubTeam(), emptySubTeam(), emptySubTeam()],
     });
+
+    const updateSubTeam = (subIdx, field, value) => {
+        const updated = [...stData.sub_teams];
+        updated[subIdx] = { ...updated[subIdx], [field]: value };
+        setStData('sub_teams', updated);
+    };
+
+    const addSubTeamAthlete = (subIdx) => {
+        const updated = [...stData.sub_teams];
+        updated[subIdx] = { ...updated[subIdx], athletes: [...updated[subIdx].athletes, emptyAthlete()] };
+        setStData('sub_teams', updated);
+    };
+
+    const removeSubTeamAthlete = (subIdx, athleteIdx) => {
+        const updated = [...stData.sub_teams];
+        if (updated[subIdx].athletes.length <= 1) return;
+        updated[subIdx] = {
+            ...updated[subIdx],
+            athletes: updated[subIdx].athletes.filter((_, i) => i !== athleteIdx),
+        };
+        setStData('sub_teams', updated);
+    };
+
+    const updateSubTeamAthlete = (subIdx, athleteIdx, field, value) => {
+        const updated = [...stData.sub_teams];
+        const athletes = [...updated[subIdx].athletes];
+        athletes[athleteIdx] = { ...athletes[athleteIdx], [field]: value };
+        updated[subIdx] = { ...updated[subIdx], athletes };
+        setStData('sub_teams', updated);
+    };
+
+    const parseCsvForAthletes = (text) => {
+        const lines = text.split(/\r?\n/);
+        if (lines.length <= 1) return [];
+        const out = [];
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            const cols = line.split(',').map((c) => c.replace(/^["']|["']$/g, '').trim());
+            if (cols.length < 2) continue;
+            const name = cols[0];
+            const jersey = parseInt(cols[1], 10);
+            const position = cols[2] || '';
+            if (name && !isNaN(jersey)) {
+                out.push({ name, jersey_number: jersey, position, photo: null });
+            }
+        }
+        return out;
+    };
+
+    const handleSubTeamCsvUpload = (subIdx, file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const imported = parseCsvForAthletes(event.target.result);
+            if (imported.length === 0) {
+                alert('File CSV kosong atau format tidak valid. Pastikan header: name,jersey_number,position');
+                return;
+            }
+            const updated = [...stData.sub_teams];
+            updated[subIdx] = { ...updated[subIdx], athletes: [...updated[subIdx].athletes, ...imported] };
+            setStData('sub_teams', updated);
+        };
+        reader.readAsText(file);
+    };
 
     const handleDeleteTeam = () => {
         if (!deletingTeamId) return;
@@ -373,7 +441,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
             {/* Modal Create Super Team */}
             {isSuperTeamModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="w-full max-w-lg bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="w-full max-w-3xl bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
                         <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/30">
                             <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
                                 <span>🏆 Buat Super Team Baru</span>
@@ -386,7 +454,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                             </button>
                         </div>
 
-                        <form onSubmit={handleCreateSuperTeam} className="p-6 space-y-4">
+                        <form onSubmit={handleCreateSuperTeam} className="p-6 space-y-4 flex flex-col flex-1 overflow-hidden" encType="multipart/form-data">
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
                                     Nama Super Team <span className="text-red-400">*</span>
@@ -435,43 +503,155 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                                 </div>
                             </div>
 
-                            {/* 3 Sub-Teams Pickers */}
-                            <div className="pt-2 border-t border-surface-800 space-y-3">
-                                <label className="block text-xs font-bold uppercase tracking-wider text-purple-300">
-                                    Pilih 3 Sub-Tim Binaan Anda:
-                                </label>
+                            {/* 3 Sub-Teams independen (buat sendiri + atlet) */}
+                            <div className="space-y-4 overflow-y-auto pr-1">
+                                <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/20 text-[11px] text-purple-200/90">
+                                    💡 Setiap Sub-Tim dibuat <strong>independen</strong> (bukan memakai tim reguler yang sudah ada).
+                                    Isi nama, daerah, dan daftar atlet masing-masing — bisa lewat <strong>input manual</strong> atau <strong>Import CSV</strong>.
+                                </div>
 
-                                {allCoachTeams.length < 3 ? (
-                                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
-                                        ⚠️ Anda memerlukan minimal 3 tim binaan untuk membentuk 1 Super Team. Silakan daftarkan tim baru terlebih dahulu.
-                                    </div>
-                                ) : (
-                                    [0, 1, 2].map((idx) => (
-                                        <div key={idx}>
-                                            <label className="block text-[11px] font-semibold text-surface-400 mb-1">
-                                                Sub-Tim #{idx + 1} (Regu {idx + 1}) <span className="text-red-400">*</span>
+                                {stData.sub_teams.map((sub, subIdx) => (
+                                    <div key={subIdx} className="rounded-xl border border-surface-700 bg-surface-950/40 p-4 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <label className="block text-xs font-bold uppercase tracking-wider text-purple-300">
+                                                Sub-Tim #{subIdx + 1} (Regu {subIdx + 1}) <span className="text-red-400">*</span>
                                             </label>
-                                            <select
-                                                value={stData.team_ids[idx] || ''}
-                                                onChange={(e) => {
-                                                    const updated = [...stData.team_ids];
-                                                    updated[idx] = e.target.value;
-                                                    setStData('team_ids', updated);
-                                                }}
-                                                className="w-full px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-200 text-xs focus:border-purple-500"
-                                                required
-                                            >
-                                                <option value="">-- Pilih Sub-Tim {idx + 1} --</option>
-                                                {allCoachTeams.map((t) => (
-                                                    <option key={t.id} value={t.id}>
-                                                        {t.name} ({t.region})
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            {stErrors[`sub_teams.${subIdx}.name`] && (
+                                                <p className="text-red-400 text-[11px]">{stErrors[`sub_teams.${subIdx}.name`]}</p>
+                                            )}
                                         </div>
-                                    ))
-                                )}
-                                {stErrors.team_ids && <p className="text-red-400 text-xs mt-1">{stErrors.team_ids}</p>}
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-surface-400 mb-1">Nama Sub-Tim</label>
+                                                <input
+                                                    type="text"
+                                                    value={sub.name}
+                                                    onChange={(e) => updateSubTeam(subIdx, 'name', e.target.value)}
+                                                    placeholder={`Contoh: ${stData.name || 'Super Team'} - Regu ${subIdx + 1}`}
+                                                    className="w-full px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                                                    required
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-surface-400 mb-1">Daerah</label>
+                                                <input
+                                                    type="text"
+                                                    value={sub.region}
+                                                    onChange={(e) => updateSubTeam(subIdx, 'region', e.target.value)}
+                                                    placeholder="Contoh: Kab. Bandung"
+                                                    className="w-full px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Athletes of this sub-team */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-[11px] font-semibold text-surface-400">
+                                                    Daftar Atlet <span className="text-red-400">*</span>
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => document.getElementById(`sub-csv-${subIdx}`).click()}
+                                                        className="text-[11px] px-2.5 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all font-semibold"
+                                                        title="Import daftar atlet dari file CSV"
+                                                    >
+                                                        📥 Import CSV
+                                                    </button>
+                                                    <input
+                                                        type="file"
+                                                        id={`sub-csv-${subIdx}`}
+                                                        accept=".csv,text/csv"
+                                                        onChange={(e) => {
+                                                            handleSubTeamCsvUpload(subIdx, e.target.files[0]);
+                                                            e.target.value = '';
+                                                        }}
+                                                        className="hidden"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => addSubTeamAthlete(subIdx)}
+                                                        className="text-[11px] px-2.5 py-1.5 rounded-lg bg-primary-600/20 text-primary-300 border border-primary-500/30 hover:bg-primary-600/30 transition-all font-semibold"
+                                                    >
+                                                        + Tambah Atlet
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                {sub.athletes.map((athlete, athleteIdx) => (
+                                                    <div key={athleteIdx} className="flex items-center gap-2">
+                                                        {/* Photo */}
+                                                        <div className="relative shrink-0 mt-1">
+                                                            <input
+                                                                type="file"
+                                                                id={`sub-photo-${subIdx}-${athleteIdx}`}
+                                                                accept="image/*"
+                                                                onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'photo', e.target.files[0] || null)}
+                                                                className="hidden"
+                                                            />
+                                                            <label
+                                                                htmlFor={`sub-photo-${subIdx}-${athleteIdx}`}
+                                                                className="w-9 h-9 rounded-lg bg-surface-800 flex items-center justify-center text-xs font-bold text-surface-400 cursor-pointer overflow-hidden border border-surface-600 hover:border-purple-500 transition-colors block"
+                                                                title="Unggah foto atlet"
+                                                            >
+                                                                {athlete.photo ? (
+                                                                    <img
+                                                                        src={URL.createObjectURL(athlete.photo)}
+                                                                        alt="Preview"
+                                                                        className="w-full h-full object-cover"
+                                                                    />
+                                                                ) : (
+                                                                    <span>{athleteIdx + 1}</span>
+                                                                )}
+                                                            </label>
+                                                        </div>
+
+                                                        <input
+                                                            type="text"
+                                                            value={athlete.name}
+                                                            onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'name', e.target.value)}
+                                                            placeholder="Nama atlet"
+                                                            className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
+                                                            required
+                                                        />
+                                                        <input
+                                                            type="number"
+                                                            value={athlete.jersey_number}
+                                                            onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'jersey_number', e.target.value)}
+                                                            placeholder="No"
+                                                            min="1"
+                                                            className="w-16 px-2 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs text-center focus:border-purple-500 transition-colors"
+                                                            required
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            value={athlete.position}
+                                                            onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'position', e.target.value)}
+                                                            placeholder="Posisi"
+                                                            className="w-24 min-w-0 px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeSubTeamAthlete(subIdx, athleteIdx)}
+                                                            disabled={sub.athletes.length <= 1}
+                                                            className="shrink-0 w-8 h-8 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                            title="Hapus atlet"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {stErrors[`sub_teams.${subIdx}.athletes`] && (
+                                                <p className="text-red-400 text-[11px] mt-1">{stErrors[`sub_teams.${subIdx}.athletes`]}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
 
                             <div className="pt-4 border-t border-surface-800 flex justify-end gap-3">
@@ -484,7 +664,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={stProcessing || allCoachTeams.length < 3}
+                                    disabled={stProcessing}
                                     className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md disabled:opacity-50 cursor-pointer"
                                 >
                                     {stProcessing ? 'Menyimpan...' : '✨ Buat Super Team'}
@@ -509,7 +689,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                 onClose={() => setDeletingSuperTeamId(null)}
                 onConfirm={handleDeleteSuperTeam}
                 title="Hapus Super Team"
-                message="Super Team ini akan dihapus. Ketiga sub-tim anggota tetap aman dan tidak akan terhapus."
+                message="Super Team beserta ketiga Sub-Tim anggotanya dan seluruh data atletnya akan dihapus. Aksi ini hanya dapat dilakukan jika Super Team belum pernah mengikuti turnamen."
             />
         </AuthenticatedLayout>
     );

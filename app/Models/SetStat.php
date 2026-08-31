@@ -16,6 +16,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'block_success', 'block_fail',
     'zone_1', 'zone_2', 'zone_3', 'zone_4',
     'zone_5', 'zone_6', 'zone_7',
+    'zone_8', 'zone_9', 'zone_10',
+    'zone_1_ace', 'zone_2_ace', 'zone_3_ace', 'zone_4_ace', 'zone_5_ace',
+    'zone_6_ace', 'zone_7_ace', 'zone_8_ace', 'zone_9_ace', 'zone_10_ace',
+    'zone_1_in', 'zone_2_in', 'zone_3_in', 'zone_4_in', 'zone_5_in',
+    'zone_6_in', 'zone_7_in', 'zone_8_in', 'zone_9_in', 'zone_10_in',
 ])]
 class SetStat extends Model
 {
@@ -32,6 +37,11 @@ class SetStat extends Model
         'block_success', 'block_fail',
         'zone_1', 'zone_2', 'zone_3', 'zone_4',
         'zone_5', 'zone_6', 'zone_7',
+        'zone_8', 'zone_9', 'zone_10',
+        'zone_1_ace', 'zone_2_ace', 'zone_3_ace', 'zone_4_ace', 'zone_5_ace',
+        'zone_6_ace', 'zone_7_ace', 'zone_8_ace', 'zone_9_ace', 'zone_10_ace',
+        'zone_1_in', 'zone_2_in', 'zone_3_in', 'zone_4_in', 'zone_5_in',
+        'zone_6_in', 'zone_7_in', 'zone_8_in', 'zone_9_in', 'zone_10_in',
     ];
 
     // ─── Relationships ──────────────────────────────
