@@ -8,12 +8,68 @@ use App\Models\TimeSlot;
 use App\Models\Tournament;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\MasterScheduleGeneratorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class MasterScheduleTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_generator_keeps_team_out_of_same_and_next_session(): void
+    {
+        $admin = User::create([
+            'name' => 'Admin Rest Rule',
+            'email' => 'admin_rest_rule@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $tournament = Tournament::create([
+            'name' => 'Rest Rule Cup',
+            'start_date' => now(),
+            'end_date' => now()->addDay(),
+            'mode' => 'regu',
+            'created_by' => $admin->id,
+        ]);
+
+        $court1 = Court::create(['tournament_id' => $tournament->id, 'court_number' => 1, 'name' => 'Lapangan 1', 'is_active' => true]);
+        Court::create(['tournament_id' => $tournament->id, 'court_number' => 2, 'name' => 'Lapangan 2', 'is_active' => true]);
+
+        collect([1, 2, 3, 4])->each(function (int $number) use ($tournament): void {
+            TimeSlot::create([
+                'tournament_id' => $tournament->id,
+                'day_number' => 1,
+                'slot_number' => $number,
+                'slot_type' => 'match',
+                'start_time' => sprintf('%02d:00:00', 7 + $number),
+                'end_time' => sprintf('%02d:50:00', 7 + $number),
+                'label' => "Sesi {$number}",
+            ]);
+        });
+
+        $service = app(MasterScheduleGeneratorService::class);
+        $serviceReflection = new \ReflectionClass($service);
+        $matchSlots = $serviceReflection->getProperty('matchSlots');
+        $matchSlots->setValue($service, TimeSlot::where('tournament_id', $tournament->id)->orderBy('slot_number')->get());
+
+        $markOccupied = $serviceReflection->getMethod('markOccupied');
+        $markOccupied->invoke($service, $court1->id, [1], 10, 11, false);
+
+        $findSlot = $serviceReflection->getMethod('findNextAvailableSlot');
+        $nextSlot = $findSlot->invoke(
+            $service,
+            Court::where('tournament_id', $tournament->id)->get(),
+            1,
+            10,
+            12,
+            false
+        );
+
+        $this->assertNotNull($nextSlot);
+        $this->assertSame(3, TimeSlot::find($nextSlot['slot_id'])->slot_number);
+    }
 
     public function test_master_schedule_index_loads_teams_and_contenders(): void
     {
@@ -49,7 +105,8 @@ class MasterScheduleTest extends TestCase
             ->get(route('tournaments.master-schedule.index', $tournament));
 
         $response->assertStatus(200);
-        $response->assertInertia(fn ($page) =>
+        $response->assertInertia(
+            fn($page) =>
             $page->component('Tournament/MasterSchedule/Grid')
                 ->has('tournament.teams', 2)
                 ->where('tournament.schedule_status', 'published')

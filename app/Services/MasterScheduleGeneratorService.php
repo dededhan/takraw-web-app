@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  * FASE 4 — Plot Bracket Placeholder Matches (dengan dependency chain)
  *
  * Cross-Mode Rest Time: Tim yang baru bertanding di slot N
- * tidak boleh bermain lagi di slot N+1 (mode apapun).
+ * tidak boleh bermain lagi di slot N atau N+1 (mode apapun).
  *
  * Swap Tim (Drag & Drop): Dihandle oleh MasterScheduleController::reschedule()
  * dengan validasi rest time di ConflictDetectorService.
@@ -395,8 +395,9 @@ class MasterScheduleGeneratorService
                             'scheduled_at' => $slot['start_time'],
                         ]);
                         $this->markSlotOccupied($slot['court_id'], $slot['slot_ids']);
-                        if ($slot['slot_id'] > $maxSlotIdInStage) {
-                            $maxSlotIdInStage = $slot['slot_id'];
+                        $stageEndSlotId = $slot['slot_ids'][array_key_last($slot['slot_ids'])];
+                        if (!$maxSlotIdInStage || $stageEndSlotId > $maxSlotIdInStage) {
+                            $maxSlotIdInStage = $stageEndSlotId;
                         }
                     }
                 }
@@ -500,11 +501,11 @@ class MasterScheduleGeneratorService
         $courtIds = $courts->pluck('id')->toArray();
 
         foreach ($this->matchSlots as $i => $slot) {
-            // Harus setelah slot pool terakhir
+            // Sisakan satu sesi jeda setelah stage sebelumnya.
             if ($slot->day_number < $afterDayNumber) {
                 continue;
             }
-            if ($slot->day_number === $afterDayNumber && $slot->slot_number <= $afterSlotNumber) {
+            if ($slot->day_number === $afterDayNumber && $slot->slot_number <= $afterSlotNumber + 1) {
                 continue;
             }
 
@@ -536,9 +537,8 @@ class MasterScheduleGeneratorService
     }
 
     /**
-     * Cek apakah ini rest violation:
-     * Tim sudah bermain di slot N, tidak boleh bermain di slot N+1.
-     * (Cek 1 slot sebelum slotId dalam urutan matchSlots)
+     * Cek apakah slot kandidat masih memberi satu sesi jeda.
+     * Tim tidak boleh bermain di sesi yang sama atau sesi berikutnya.
      */
     protected function isRestViolation(string $teamKey, int $slotId): bool
     {
@@ -551,13 +551,18 @@ class MasterScheduleGeneratorService
             return false;
         }
 
+        // Slot yang sama harus diblokir agar tim tidak bermain di lapangan lain.
+        if (in_array($slotId, $occupied)) {
+            return true;
+        }
+
         // Cari posisi slot ini dalam daftar semua slot
         $slotIndex = $this->matchSlots->search(fn($s) => $s->id === $slotId);
         if ($slotIndex === false || $slotIndex === 0) {
             return false;
         }
 
-        // Cek apakah slot sebelumnya dipakai oleh tim ini
+        // Slot berikutnya juga harus diblokir untuk memberi satu sesi jeda.
         $prevSlot = $this->matchSlots[$slotIndex - 1];
         return in_array($prevSlot->id, $occupied);
     }
@@ -652,7 +657,17 @@ class MasterScheduleGeneratorService
             ->orderByDesc('time_slot_id')
             ->first();
 
-        return $lastMatch?->timeSlot;
+        if (!$lastMatch?->timeSlot) {
+            return null;
+        }
+
+        $startIndex = $this->matchSlots->search(fn($slot) => $slot->id === $lastMatch->time_slot_id);
+        if ($startIndex === false) {
+            return $lastMatch->timeSlot;
+        }
+
+        return $this->matchSlots[$startIndex + max(0, ($lastMatch->slot_span ?? 1) - 1)]
+            ?? $lastMatch->timeSlot;
     }
 
     protected function resolveNextMatchId(string $stage, int $position, array $previousStageMatches): ?int
