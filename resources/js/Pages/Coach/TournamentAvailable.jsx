@@ -25,7 +25,7 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
         setSelectedMode(mode);
 
         if (isSuperTeamMode(mode)) {
-            const registeredStIds = (tournament.superTeams || [])
+            const registeredStIds = (tournament.super_teams || tournament.superTeams || [])
                 .filter(st => st.match_mode === mode)
                 .map(st => st.id);
             const availableSt = mySuperTeams.filter(st => st.match_mode === mode && !registeredStIds.includes(st.id));
@@ -139,7 +139,7 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                     {tournaments.map((tournament) => {
                         const activeModes = getActiveModes(tournament);
                         const registeredTeams = tournament.teams || [];
-                        const registeredSuperTeams = tournament.superTeams || [];
+                        const registeredSuperTeams = tournament.super_teams || tournament.superTeams || [];
 
                         return (
                             <div
@@ -322,7 +322,7 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                     >
                                         <option value="">-- Pilih Super Team --</option>
                                         {mySuperTeams
-                                            .filter(st => st.match_mode === selectedMode && !(selectedTournament.superTeams || []).some(r => r.match_mode === selectedMode && r.id === st.id))
+                                            .filter(st => st.match_mode === selectedMode && !(selectedTournament.super_teams || selectedTournament.superTeams || []).some(r => r.match_mode === selectedMode && r.id === st.id))
                                             .map((st) => (
                                                 <option key={st.id} value={st.id}>
                                                     {st.name} ({st.members?.length || 0}/3 Sub-Tim)

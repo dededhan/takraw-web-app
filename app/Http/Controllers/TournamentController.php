@@ -64,8 +64,12 @@ class TournamentController extends Controller
         $tournament->load([
             'creator',
             'modes',
+            'teams.coach',
             'teams.athletes',
-            'superTeams.members',
+            'superTeams.coach',
+            'superTeams.creator',
+            'superTeams.members.coach',
+            'superTeams.members.athletes',
             'pools.teams',
             'pools.superTeams.members',
             'pools.standings' => fn($q) => $q->with('team')->orderBy('rank'),

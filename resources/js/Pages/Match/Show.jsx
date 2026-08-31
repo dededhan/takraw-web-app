@@ -1,11 +1,10 @@
+import React, { useState } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import StatusBadge from '@/Components/StatusBadge';
 import { Head, Link } from '@inertiajs/react';
-import { useState } from 'react';
+import StatusBadge from '@/Components/StatusBadge';
 import { exportMatchReportPdf } from '@/Utils/matchPdfExport';
 
 const ZONE_CONFIG = [
-    // Right side zones (Zona 1-7)
     { key: 'zone_1', label: 'Z1', desc: 'Sudut Atas' },
     { key: 'zone_2', label: 'Z2', desc: '0 - 1.22m' },
     { key: 'zone_3', label: 'Z3', desc: '1.22 - 2.44m' },
@@ -13,51 +12,103 @@ const ZONE_CONFIG = [
     { key: 'zone_5', label: 'Z5', desc: '3.66 - 4.88m' },
     { key: 'zone_6', label: 'Z6', desc: '4.88 - 6.10m' },
     { key: 'zone_7', label: 'Z7', desc: 'Sudut Bawah' },
-    // Left/Center zones (Zona 8-10)
     { key: 'zone_8', label: 'Z8', desc: 'Bawah Tengah' },
     { key: 'zone_9', label: 'Z9', desc: 'Tengah Lapangan' },
     { key: 'zone_10', label: 'Z10', desc: 'Atas Tengah' },
 ];
 
 function PlayerCourtMiniature({ stats }) {
+    const [actionFilter, setActionFilter] = useState('all');
+
+    const actionPills = [
+        { key: 'all', label: 'Semua Aksi' },
+        { key: 'service', label: '🏐 Servis' },
+        { key: 'strike', label: '⚡ Strike' },
+        { key: 'blocking', label: '🛡️ Blocking' },
+        { key: 'freeball', label: '🔄 Freeball' },
+        { key: 'firstball', label: '🤲 Firstball' },
+        { key: 'feeding', label: '🎯 Feeding' },
+    ];
+
+    const getZoneStats = (zoneKey) => {
+        if (actionFilter === 'all') {
+            const ace = stats[`${zoneKey}_ace`] || 0;
+            const inC = stats[`${zoneKey}_in`] || (ace === 0 ? stats[zoneKey] || 0 : 0);
+            return { ace, inC, total: ace + inC };
+        }
+
+        const az = stats.action_zones?.[actionFilter];
+        const hasSpecificActionData = az && Object.keys(az).length > 0;
+
+        if (hasSpecificActionData) {
+            const ace = az[`${zoneKey}_ace`] || 0;
+            const inC = az[`${zoneKey}_in`] || (ace === 0 ? az[zoneKey] || 0 : 0);
+            return { ace, inC, total: ace + inC };
+        }
+
+        // Fallback for legacy match records where action_zones is not yet populated
+        if (actionFilter === 'service') {
+            const ace = stats[`${zoneKey}_ace`] || 0;
+            const inC = stats[`${zoneKey}_in`] || (ace === 0 ? stats[zoneKey] || 0 : 0);
+            return { ace, inC, total: ace + inC };
+        }
+
+        return { ace: 0, inC: 0, total: 0 };
+    };
+
     const zones = [
         // Zona 1: Sudut atas kanan (corner triangle)
-        { key: 'zone_1', label: 'Z1', desc: 'Sudut Atas', style: { top: '3%', left: '64%', width: '13%', height: '14%' } },
+        { key: 'zone_1', label: 'Z1', desc: 'Sudut Atas', style: { top: '3%', left: '62%', width: '13%', height: '16%' } },
 
-        // Zona 2-6: Strip kecil di tepi kanan (each 1.22m, stacked vertically)
-        { key: 'zone_2', label: 'Z2', desc: '0-1.22m', style: { top: '4%', right: '2%', width: '12%', height: '15%' } },
-        { key: 'zone_3', label: 'Z3', desc: '1.22-2.44m', style: { top: '21%', right: '2%', width: '12%', height: '15%' } },
-        { key: 'zone_4', label: 'Z4', desc: '2.44-3.66m', style: { top: '38%', right: '2%', width: '12%', height: '15%' } },
-        { key: 'zone_5', label: 'Z5', desc: '3.66-4.88m', style: { top: '55%', right: '2%', width: '12%', height: '15%' } },
-        { key: 'zone_6', label: 'Z6', desc: '4.88-6.10m', style: { top: '72%', right: '2%', width: '12%', height: '15%' } },
+        // Zona 2-6: Strip di tepi kanan (5 bagian sama rata @1.22m)
+        { key: 'zone_2', label: 'Z2', desc: '0-1.22m', style: { top: '4%', right: '2%', width: '13%', height: '16%' } },
+        { key: 'zone_3', label: 'Z3', desc: '1.22-2.44m', style: { top: '22%', right: '2%', width: '13%', height: '16%' } },
+        { key: 'zone_4', label: 'Z4', desc: '2.44-3.66m', style: { top: '41%', right: '2%', width: '13%', height: '16%' } },
+        { key: 'zone_5', label: 'Z5', desc: '3.66-4.88m', style: { top: '59%', right: '2%', width: '13%', height: '16%' } },
+        { key: 'zone_6', label: 'Z6', desc: '4.88-6.10m', style: { top: '78%', right: '2%', width: '13%', height: '16%' } },
 
         // Zona 7: Sudut bawah kanan (corner triangle)
-        { key: 'zone_7', label: 'Z7', desc: 'Sudut Bawah', style: { top: '83%', left: '64%', width: '13%', height: '14%' } },
+        { key: 'zone_7', label: 'Z7', desc: 'Sudut Bawah', style: { top: '78%', left: '62%', width: '13%', height: '16%' } },
 
-        // Zona 8, 9, 10: Area interior, tepat di kanan NET (besar)
-        { key: 'zone_8', label: 'Z8', desc: 'Bawah', style: { top: '68%', left: '49%', width: '14%', height: '26%' } },
-        { key: 'zone_9', label: 'Z9', desc: 'Tengah', style: { top: '32%', left: '49%', width: '14%', height: '34%' } },
-        { key: 'zone_10', label: 'Z10', desc: 'Atas', style: { top: '4%', left: '49%', width: '14%', height: '26%' } },
+        // Zona 8, 9, 10: Area interior, tepat di kanan NET
+        { key: 'zone_8', label: 'Z8', desc: 'Bawah', style: { top: '68%', left: '49%', width: '12%', height: '26%' } },
+        { key: 'zone_9', label: 'Z9', desc: 'Tengah', style: { top: '34%', left: '49%', width: '12%', height: '32%' } },
+        { key: 'zone_10', label: 'Z10', desc: 'Atas', style: { top: '4%', left: '49%', width: '12%', height: '26%' } },
     ];
 
     // Calculate total zone hits for percentage
-    const totalZoneHits = zones.reduce((sum, z) => {
-        const ace = stats[`${z.key}_ace`] || 0;
-        const inC = stats[`${z.key}_in`] || (ace === 0 ? stats[z.key] || 0 : 0);
-        return sum + (ace + inC);
-    }, 0);
+    const totalZoneHits = zones.reduce((sum, z) => sum + getZoneStats(z.key).total, 0);
 
     return (
-        <div className="w-full max-w-[520px] mx-auto bg-surface-900 border border-surface-700/50 rounded-2xl p-3 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
+        <div className="w-full bg-surface-950/40 border border-surface-800 rounded-2xl p-3 shadow-inner space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-1">
                 <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <span>🎯 PETA ZONA JATUH SERVIS (10 ZONA)</span>
+                    <span>🎯 PETA 10 ZONA TITIK JATUH BOLA</span>
                 </span>
-                <span className="text-[9px] text-surface-400 font-mono">Format: % (ACE/IN)</span>
+                <span className="text-[9px] text-surface-400 font-mono">Format: % (ACE / IN)</span>
+            </div>
+
+            {/* Filter Jenis Aksi Lapangan */}
+            <div className="flex flex-wrap items-center gap-1 pb-2 border-b border-surface-800/60">
+                <span className="text-[9px] text-surface-400 font-bold mr-1">Tampilkan Aksi:</span>
+                {actionPills.map(p => (
+                    <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => setActionFilter(p.key)}
+                        className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                            actionFilter === p.key
+                                ? 'bg-emerald-500 text-white shadow-xs scale-105'
+                                : 'bg-surface-800/80 text-surface-400 hover:text-surface-200 border border-surface-700/50'
+                        }`}
+                    >
+                        {p.label}
+                    </button>
+                ))}
             </div>
 
             {/* Graphic Court Container */}
-            <div className="relative w-full aspect-[2.1/1] rounded-xl border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 overflow-hidden shadow-inner select-none">
+            <div className="relative w-full aspect-[2.2/1] rounded-xl border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 overflow-hidden shadow-inner select-none">
                 
                 {/* SVG Court Background Lines */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 190">
@@ -67,17 +118,15 @@ function PlayerCourtMiniature({ stats }) {
 
                     <circle cx="85" cy="95" r="20" fill="none" stroke="#fbbf24" strokeWidth="2" strokeDasharray="3 2" />
                     <circle cx="85" cy="95" r="5" fill="#fbbf24" />
-                    <text x="85" y="125" fill="#fef08a" fontSize="7" textAnchor="middle" fontWeight="bold">TEKONG</text>
+                    <text x="85" y="125" fill="#fef08a" fontSize="7" textAnchor="middle" fontWeight="bold">POSISI AWAL</text>
 
-                    {/* Zone Fan Lines Radiating from Tekong Circle to Right Boundary */}
-                    <line x1="85" y1="95" x2="390" y2="10" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="34" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="58" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="82" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="106" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="130" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="154" stroke="#60a5fa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
-                    <line x1="85" y1="95" x2="390" y2="180" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    {/* Exactly 6 Zone Fan Lines Radiating from Circle to Right Boundary */}
+                    <line x1="85" y1="95" x2="390" y2="10" stroke="#fbbf24" strokeWidth="1.5" strokeOpacity="0.8" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="44" stroke="#60a5fa" strokeWidth="1.2" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="78" stroke="#60a5fa" strokeWidth="1.2" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="112" stroke="#60a5fa" strokeWidth="1.2" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="146" stroke="#60a5fa" strokeWidth="1.2" strokeOpacity="0.6" strokeDasharray="3 3" />
+                    <line x1="85" y1="95" x2="390" y2="180" stroke="#fbbf24" strokeWidth="1.5" strokeOpacity="0.8" strokeDasharray="3 3" />
 
                     {/* Horizontal dividers between Zona 8/9/10 (right side of net) */}
                     <line x1="190" y1="68" x2="280" y2="42" stroke="#a78bfa" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
@@ -86,9 +135,7 @@ function PlayerCourtMiniature({ stats }) {
 
                 {/* Zone Badges Overlay with % and (ACE/IN) */}
                 {zones.map((z) => {
-                    const ace = stats[`${z.key}_ace`] || 0;
-                    const inC = stats[`${z.key}_in`] || (ace === 0 ? stats[z.key] || 0 : 0);
-                    const hits = ace + inC;
+                    const { ace, inC, total: hits } = getZoneStats(z.key);
                     const hasValue = hits > 0;
                     const pct = totalZoneHits > 0 ? ((hits / totalZoneHits) * 100).toFixed(1) : '0.0';
 
@@ -98,132 +145,70 @@ function PlayerCourtMiniature({ stats }) {
                             style={z.style}
                             title={`${z.label} (${z.desc}): ${pct}% — Ace: ${ace}, In: ${inC}`}
                             className={`
-                                absolute rounded-lg border flex flex-col items-center justify-center transition-all duration-150 shadow-md backdrop-blur-xs p-0.5
+                                absolute rounded-md border flex flex-col items-center justify-center transition-all duration-150 p-0.5
                                 ${hasValue 
-                                    ? 'bg-emerald-800/90 border-amber-400 ring-1 ring-amber-400/50 shadow-lg' 
-                                    : 'bg-surface-900/60 border-surface-700/50 opacity-50'}
+                                    ? 'bg-emerald-900/95 border-amber-400 ring-1.5 ring-amber-400 shadow-xl z-10 scale-105' 
+                                    : 'bg-surface-900/70 border-surface-700/60 opacity-60'}
                             `}
                         >
-                            {/* Percentage (Top) */}
-                            <span className={`text-[8px] sm:text-[10px] font-black leading-none ${hasValue ? 'text-amber-300' : 'text-emerald-200/70'}`}>
+                            {/* Zone Label & Percentage */}
+                            <span className={`text-[7.5px] sm:text-[9px] font-black leading-tight ${hasValue ? 'text-amber-300' : 'text-emerald-200/70'}`}>
                                 {pct}%
                             </span>
 
-                            {/* ACE/IN numbers (Bottom) */}
-                            <span className={`text-[7px] sm:text-[8px] font-bold font-mono leading-tight mt-0.5 ${hasValue ? 'text-white' : 'text-surface-400'}`}>
-                                ({ace}/{inC})
-                            </span>
+                            {/* ACE / IN numbers */}
+                            <div className="flex items-center gap-0.5 text-[6.5px] sm:text-[7.5px] font-bold font-mono leading-none mt-0.5">
+                                <span className={ace > 0 ? 'text-amber-400 font-black' : 'text-surface-400'}>{ace}A</span>
+                                <span className="text-surface-500">/</span>
+                                <span className={inC > 0 ? 'text-emerald-300 font-black' : 'text-surface-400'}>{inC}In</span>
+                            </div>
                         </div>
                     );
                 })}
             </div>
 
-            {/* Legend: Total servis & explanation */}
-            <div className="flex items-center justify-between mt-2 pt-1 border-t border-surface-800 text-[9px] text-surface-400 font-medium">
-                <span>Keterangan: <strong className="text-amber-300">% (ACE / IN)</strong></span>
-                <span>Total Servis Masuk: <strong className="text-emerald-400 font-bold">{totalZoneHits}</strong></span>
+            {/* Legend */}
+            <div className="flex items-center justify-between pt-1 border-t border-surface-800 text-[9px] text-surface-400 font-medium">
+                <span>Format: <strong className="text-amber-300">% (ACE / IN)</strong></span>
+                <span>Total Poin Masuk: <strong className="text-emerald-400 font-bold">{totalZoneHits}</strong></span>
             </div>
-        </div>
-    );
-}
-
-function AthleteStatCard({ athlete, stats, color }) {
-    const c = color === 'primary'
-        ? { text: 'text-primary-300', border: 'border-primary-500/20' }
-        : { text: 'text-accent-300', border: 'border-accent-500/20' };
-
-    const totalActions = Object.values(stats).reduce((a, b) => a + b, 0);
-
-    return (
-        <div className="rounded-xl border p-3 bg-surface-800/10 border-surface-700/30 flex flex-col sm:flex-row gap-3 items-center sm:items-start">
-            <div className="flex-1 w-full">
-                <div className="flex items-center gap-2 mb-2">
-                    <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black bg-surface-800 border border-surface-700 ${c.text}`}>
-                        {athlete.jersey_number}
-                    </span>
-                    <div>
-                        <h4 className="text-xs font-bold text-surface-100 leading-tight">{athlete.name}</h4>
-                        <p className="text-[9px] text-surface-500 font-medium uppercase tracking-wider leading-none mt-0.5">{athlete.position || 'Pemain'}</p>
-                    </div>
-                </div>
-
-                {totalActions === 0 ? (
-                    <p className="text-[10px] text-surface-500 italic mt-1">Tidak ada data statistik pada set ini.</p>
-                ) : (
-                    <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-                        <div className="bg-surface-900/40 rounded-lg p-1.5 border border-surface-800/40">
-                            <span className="text-[8px] text-surface-500 block uppercase font-bold tracking-wider leading-none">🏐 Servis</span>
-                            <div className="text-[10px] font-semibold text-surface-300 mt-1 flex gap-1">
-                                <span className="text-primary-400">In:{stats.service_in}</span>
-                                <span className="text-accent-400">Ace:{stats.service_ace}</span>
-                                <span className="text-red-400">Err:{stats.service_error}</span>
-                            </div>
-                        </div>
-
-                        <div className="bg-surface-900/40 rounded-lg p-1.5 border border-surface-800/40">
-                            <span className="text-[8px] text-surface-500 block uppercase font-bold tracking-wider leading-none">⚡ Strike</span>
-                            <div className="text-[10px] font-semibold text-surface-300 mt-1 flex gap-1">
-                                <span className="text-primary-400">✓:{stats.strike_success}</span>
-                                <span className="text-red-400">✗:{stats.strike_fail}</span>
-                            </div>
-                        </div>
-
-                        <div className="bg-surface-900/40 rounded-lg p-1.5 border border-surface-800/40">
-                            <span className="text-[8px] text-surface-500 block uppercase font-bold tracking-wider leading-none">🤲 Receive</span>
-                            <div className="text-[10px] font-semibold text-surface-300 mt-1 flex gap-1">
-                                <span className="text-primary-400">✓:{stats.receive_success}</span>
-                                <span className="text-red-400">✗:{stats.receive_fail}</span>
-                            </div>
-                        </div>
-
-                        <div className="bg-surface-900/40 rounded-lg p-1.5 border border-surface-800/40">
-                            <span className="text-[8px] text-surface-500 block uppercase font-bold tracking-wider leading-none">🎯 Feeding</span>
-                            <div className="text-[10px] font-semibold text-surface-300 mt-1 flex gap-1">
-                                <span className="text-primary-400">✓:{stats.feeding_success}</span>
-                                <span className="text-red-400">✗:{stats.feeding_fail}</span>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {totalActions > 0 && (
-                <div className="flex-shrink-0 w-full sm:w-auto">
-                    <PlayerCourtMiniature stats={stats} />
-                </div>
-            )}
         </div>
     );
 }
 
 export default function MatchShow({ match: m }) {
-    const [setFilter, setSetFilter] = useState('all');
+    // Individual set filter for Home Team and Away Team
+    const [homeSetFilter, setHomeSetFilter] = useState('all');
+    const [awaySetFilter, setAwaySetFilter] = useState('all');
 
-    const homeName = m.home_display_name || m.home_team?.name || m.home_super_team?.name || 'TBD';
-    const awayName = m.away_display_name || m.away_team?.name || m.away_super_team?.name || 'TBD';
+    const homeName = m.home_display_name || m.home_team?.name || m.home_super_team?.name || 'Tim Tuan Rumah';
+    const awayName = m.away_display_name || m.away_team?.name || m.away_super_team?.name || 'Tim Tamu';
+
+    const homeTeamId = m.home_team_id || m.home_super_team_id;
+    const awayTeamId = m.away_team_id || m.away_super_team_id;
 
     const finishedSets = m.sets?.filter(s => s.status === 'finished') || [];
     const setsWonHome = finishedSets.filter(s => s.winner_team_id === m.home_team_id || s.winner_team_id === m.home_super_team_id).length;
     const setsWonAway = finishedSets.filter(s => s.winner_team_id === m.away_team_id || s.winner_team_id === m.away_super_team_id).length;
 
-    const allAthletes = [
-        ...(m.home_team?.athletes || []),
-        ...(m.away_team?.athletes || []),
-        ...(m.home_super_team?.members?.flatMap(mem => mem.athletes || []) || []),
-        ...(m.away_super_team?.members?.flatMap(mem => mem.athletes || []) || []),
-    ];
-    const [selectedAthleteId, setSelectedAthleteId] = useState(allAthletes[0]?.id || null);
+    const homeAthletes = m.home_team?.athletes || m.home_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
+    const awayAthletes = m.away_team?.athletes || m.away_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
 
-    const getTeamStats = (teamId, setId = null) => {
+    const [selectedHomeAthleteId, setSelectedHomeAthleteId] = useState('all');
+    const [selectedAwayAthleteId, setSelectedAwayAthleteId] = useState('all');
+
+    // Helpers to retrieve team stats
+    const getTeamStats = (teamId, setFilterVal) => {
         let stats = [];
-        if (setId === 'all') {
+        if (setFilterVal === 'all') {
             m.sets?.forEach(s => {
                 s.stats?.forEach(st => {
                     if (st.team_id === teamId) stats.push(st);
                 });
             });
         } else {
-            const set = m.sets?.find(s => s.id === setId);
+            const setNum = parseInt(setFilterVal);
+            const set = m.sets?.find(s => s.set_number === setNum || s.id === setFilterVal);
             stats = set?.stats?.filter(st => st.team_id === teamId) || [];
         }
         return stats;
@@ -232,230 +217,237 @@ export default function MatchShow({ match: m }) {
     const aggregateStats = (stats) => {
         const agg = {
             service_in: 0, service_ace: 0, service_error: 0,
+            strike_in: 0, strike_ace: 0, strike_error: 0,
+            freeball_in: 0, freeball_ace: 0, freeball_error: 0,
+            firstball_in: 0, firstball_ace: 0, firstball_error: 0,
+            feeding_in: 0, feeding_ace: 0, feeding_error: 0,
+            blocking_in: 0, blocking_ace: 0, blocking_error: 0,
+            opponent_mistake: 0,
+            action_zones: {
+                service: {}, strike: {}, blocking: {},
+                freeball: {}, firstball: {}, feeding: {},
+            },
+            // Backwards compatibility mappings:
+            strike_success: 0, strike_fail: 0,
             receive_success: 0, receive_fail: 0,
             feeding_success: 0, feeding_fail: 0,
-            strike_success: 0, strike_fail: 0,
             block_success: 0, block_fail: 0,
         };
+        for (let i = 1; i <= 10; i++) {
+            agg[`zone_${i}`] = 0;
+            agg[`zone_${i}_ace`] = 0;
+            agg[`zone_${i}_in`] = 0;
+        }
         stats.forEach(s => {
-            Object.keys(agg).forEach(k => { agg[k] += s[k] || 0; });
+            Object.keys(agg).forEach(k => {
+                if (k !== 'action_zones') {
+                    agg[k] += s[k] || 0;
+                }
+            });
+            if (s.action_zones && typeof s.action_zones === 'object') {
+                Object.keys(s.action_zones).forEach(act => {
+                    if (!agg.action_zones[act]) agg.action_zones[act] = {};
+                    Object.keys(s.action_zones[act]).forEach(zk => {
+                        agg.action_zones[act][zk] = (agg.action_zones[act][zk] || 0) + (s.action_zones[act][zk] || 0);
+                    });
+                });
+            }
         });
         return agg;
     };
 
-    const getAthleteStats = (athleteId, setId = null) => {
+    const getAthleteStats = (athleteId, setFilterVal) => {
         let stats = [];
-        if (setId === 'all') {
+        if (setFilterVal === 'all') {
             m.sets?.forEach(s => {
                 s.stats?.forEach(st => {
                     if (st.athlete_id === athleteId) stats.push(st);
                 });
             });
         } else {
-            const set = m.sets?.find(s => s.id === setId);
+            const setNum = parseInt(setFilterVal);
+            const set = m.sets?.find(s => s.set_number === setNum || s.id === setFilterVal);
             stats = set?.stats?.filter(st => st.athlete_id === athleteId) || [];
         }
-
-        const agg = {
-            service_in: 0, service_ace: 0, service_error: 0,
-            receive_success: 0, receive_fail: 0,
-            feeding_success: 0, feeding_fail: 0,
-            strike_success: 0, strike_fail: 0,
-            block_success: 0, block_fail: 0,
-        };
-
-        for (let i = 1; i <= 10; i++) {
-            agg[`zone_${i}`] = 0;
-            agg[`zone_${i}_ace`] = 0;
-            agg[`zone_${i}_in`] = 0;
-        }
-
-        stats.forEach(s => {
-            Object.keys(agg).forEach(k => {
-                agg[k] += s[k] || 0;
-            });
-        });
-
-        return agg;
+        return aggregateStats(stats);
     };
 
-    const currentFilter = setFilter === 'all' ? 'all' : parseInt(setFilter);
-    const homeStats = aggregateStats(getTeamStats(m.home_team_id || m.home_super_team_id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id));
-    const awayStats = aggregateStats(getTeamStats(m.away_team_id || m.away_super_team_id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id));
-
-    const statRows = [
-        { label: 'Servis In', key: 'service_in' },
-        { label: 'Servis Ace', key: 'service_ace' },
-        { label: 'Servis Error', key: 'service_error' },
-        { label: 'Receive ✓', key: 'receive_success' },
-        { label: 'Receive ✗', key: 'receive_fail' },
-        { label: 'Feeding ✓', key: 'feeding_success' },
-        { label: 'Feeding ✗', key: 'feeding_fail' },
-        { label: 'Strike ✓', key: 'strike_success' },
-        { label: 'Strike ✗', key: 'strike_fail' },
-        { label: 'Block ✓', key: 'block_success' },
-        { label: 'Block ✗', key: 'block_fail' },
-    ];
+    // Calculate aggregated team stats for selected filter
+    const homeTeamAggStats = aggregateStats(getTeamStats(homeTeamId, homeSetFilter));
+    const awayTeamAggStats = aggregateStats(getTeamStats(awayTeamId, awaySetFilter));
 
     return (
         <AuthenticatedLayout header="Detail Pertandingan">
             <Head title={`${homeName} vs ${awayName}`} />
 
-            <div className="mb-4 flex items-center justify-between">
-                <Link href={route('matches.index')} className="text-sm text-surface-500 hover:text-surface-300 transition-colors flex items-center gap-1">
+            {/* Top Toolbar */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <Link href={route('matches.index')} className="text-sm text-surface-400 hover:text-surface-200 transition-colors flex items-center gap-1 font-semibold">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                     </svg>
-                    Kembali
+                    Kembali ke Daftar Pertandingan
                 </Link>
 
-                <button
-                    onClick={() => exportMatchReportPdf(m)}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 transition-all active:scale-95"
-                >
-                    <span>📥</span>
-                    <span>Download Laporan PDF</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        onClick={() => exportMatchReportPdf(m, 'home')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary-500/20 border border-primary-500/40 text-primary-300 hover:bg-primary-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
+                        title={`Download Laporan PDF Khusus ${homeName}`}
+                    >
+                        <span>📄 PDF {homeName}</span>
+                    </button>
+                    <button
+                        onClick={() => exportMatchReportPdf(m, 'away')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
+                        title={`Download Laporan PDF Khusus ${awayName}`}
+                    >
+                        <span>📄 PDF {awayName}</span>
+                    </button>
+                    <button
+                        onClick={() => exportMatchReportPdf(m, 'all')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-surface-700 text-surface-200 text-xs font-bold transition-all active:scale-95 shadow-sm"
+                        title="Download Laporan PDF Lengkap (Kedua Tim)"
+                    >
+                        <span>📥 PDF Lengkap</span>
+                    </button>
+                </div>
             </div>
 
-            {/* Scoreboard */}
-            <div className="rounded-2xl border border-surface-700/50 bg-gradient-to-b from-surface-900 to-surface-800 p-6 mb-6 text-center">
-                <div className="flex items-center gap-2 justify-center mb-4">
+            {/* Scoreboard Header */}
+            <div className="rounded-2xl border border-surface-700/50 bg-gradient-to-b from-surface-900 to-surface-800/80 p-5 sm:p-6 mb-6 text-center shadow-xl backdrop-blur-md">
+                <div className="flex items-center gap-2 justify-center mb-3">
                     <StatusBadge status={m.status} size="md" />
                     <StatusBadge status={m.stage} size="md" />
                 </div>
-                <p className="text-xs text-surface-500 mb-4">{m.tournament?.name}</p>
+                <p className="text-xs text-surface-400 font-medium mb-3">{m.tournament?.name}</p>
 
-                <div className="flex items-center justify-center gap-8 sm:gap-16">
-                    <div className="text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-500/30 to-primary-600/20 flex items-center justify-center text-2xl font-bold text-primary-300 mx-auto mb-2">
+                <div className="flex items-center justify-center gap-6 sm:gap-16 my-2">
+                    {/* Home Side */}
+                    <div className="text-center flex-1 max-w-[200px]">
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-primary-500/30 to-primary-600/20 border border-primary-500/40 flex items-center justify-center text-xl sm:text-2xl font-black text-primary-300 mx-auto mb-2 shadow-lg">
                             {homeName.charAt(0)}
                         </div>
-                        <p className="text-sm font-semibold text-surface-200">{homeName}</p>
-                        <p className="text-4xl font-black text-primary-400 mt-2">{setsWonHome}</p>
+                        <p className="text-sm font-bold text-surface-100 truncate">{homeName}</p>
+                        <p className="text-3xl sm:text-4xl font-black text-primary-400 mt-1 font-mono">{setsWonHome}</p>
                     </div>
-                    <div className="text-surface-600 text-2xl font-black">VS</div>
-                    <div className="text-center">
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-500/30 to-accent-600/20 flex items-center justify-center text-2xl font-bold text-accent-300 mx-auto mb-2">
+
+                    <div className="text-surface-600 text-xl sm:text-2xl font-black">VS</div>
+
+                    {/* Away Side */}
+                    <div className="text-center flex-1 max-w-[200px]">
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-amber-500/30 to-amber-600/20 border border-amber-500/40 flex items-center justify-center text-xl sm:text-2xl font-black text-amber-300 mx-auto mb-2 shadow-lg">
                             {awayName.charAt(0)}
                         </div>
-                        <p className="text-sm font-semibold text-surface-200">{awayName}</p>
-                        <p className="text-4xl font-black text-accent-400 mt-2">{setsWonAway}</p>
+                        <p className="text-sm font-bold text-surface-100 truncate">{awayName}</p>
+                        <p className="text-3xl sm:text-4xl font-black text-amber-400 mt-1 font-mono">{setsWonAway}</p>
                     </div>
                 </div>
 
-                {/* Set Scores */}
+                {/* Set Scores breakdown */}
                 {finishedSets.length > 0 && (
-                    <div className="flex justify-center gap-3 mt-6">
-                        {m.sets?.map((set) => (
-                            <div key={set.id} className={`px-4 py-2 rounded-xl border text-center ${set.status === 'finished' ? 'border-surface-600/50 bg-surface-800/50' : 'border-surface-700/30 bg-surface-900/30'}`}>
-                                <p className="text-[10px] text-surface-500 mb-1">Set {set.set_number}</p>
-                                <p className="text-sm font-bold">
-                                    <span className={set.winner_team_id === m.home_team_id ? 'text-primary-400' : 'text-surface-400'}>{set.home_score}</span>
+                    <div className="flex flex-wrap justify-center gap-2 mt-4 pt-3 border-t border-surface-800">
+                        {m.sets?.filter(s => s.status === 'finished').map((set) => (
+                            <div key={set.id} className="px-3 py-1.5 rounded-xl border border-surface-700/60 bg-surface-900/80 text-center shadow-xs">
+                                <p className="text-[10px] text-surface-400 uppercase font-bold">Set {set.set_number}</p>
+                                <p className="text-xs sm:text-sm font-bold mt-0.5 font-mono">
+                                    <span className={set.winner_team_id === m.home_team_id ? 'text-primary-400 font-black' : 'text-surface-300'}>{set.home_score}</span>
                                     <span className="text-surface-600 mx-1">-</span>
-                                    <span className={set.winner_team_id === m.away_team_id ? 'text-accent-400' : 'text-surface-400'}>{set.away_score}</span>
+                                    <span className={set.winner_team_id === m.away_team_id ? 'text-amber-400 font-black' : 'text-surface-300'}>{set.away_score}</span>
                                 </p>
                             </div>
                         ))}
                     </div>
                 )}
 
-                <div className="flex justify-center gap-4 mt-4 text-xs text-surface-500">
-                    {m.referee && <span>🧑‍⚖️ {m.referee.name}</span>}
+                <div className="flex justify-center gap-4 mt-3 text-[11px] text-surface-500 font-medium">
+                    {m.referee && <span>🧑‍⚖️ Wasit: {m.referee.name}</span>}
                     {m.court_number && <span>📍 Lapangan {m.court_number}</span>}
                 </div>
             </div>
 
-            {/* Stats Comparison */}
-            <div className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden">
-                <div className="px-5 py-4 border-b border-surface-700/50 flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-surface-100">📊 Statistik Performa</h2>
-                    <div className="flex gap-1">
-                        <button
-                            onClick={() => setSetFilter('all')}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${setFilter === 'all' ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30' : 'text-surface-400 hover:bg-surface-800'}`}
-                        >
-                            All Sets
-                        </button>
-                        {m.sets?.map((s) => (
-                            <button
-                                key={s.set_number}
-                                onClick={() => setSetFilter(s.set_number)}
-                                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${setFilter === s.set_number ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30' : 'text-surface-400 hover:bg-surface-800'}`}
-                            >
-                                Set {s.set_number}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="border-b border-surface-700/30">
-                                <th className="px-5 py-3 text-right text-xs font-semibold text-primary-400 w-1/3">{m.home_team?.name}</th>
-                                <th className="px-5 py-3 text-center text-xs font-semibold text-surface-400">Statistik</th>
-                                <th className="px-5 py-3 text-left text-xs font-semibold text-accent-400 w-1/3">{m.away_team?.name}</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-surface-700/20">
-                            {statRows.map((row) => {
-                                const hv = homeStats[row.key];
-                                const av = awayStats[row.key];
-                                const total = hv + av;
-                                const hp = total > 0 ? (hv / total) * 100 : 50;
-                                return (
-                                    <tr key={row.key} className="hover:bg-surface-800/30 transition-colors">
-                                        <td className="px-5 py-3 text-right">
-                                            <span className="text-sm font-semibold text-surface-200">{hv}</span>
-                                        </td>
-                                        <td className="px-5 py-3 text-center">
-                                            <p className="text-xs text-surface-400 mb-1.5">{row.label}</p>
-                                            <div className="flex h-1.5 rounded-full overflow-hidden bg-surface-700">
-                                                <div className="bg-primary-500 transition-all duration-500" style={{ width: `${hp}%` }} />
-                                                <div className="bg-accent-500 transition-all duration-500" style={{ width: `${100 - hp}%` }} />
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-3 text-left">
-                                            <span className="text-sm font-semibold text-surface-200">{av}</span>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            {/* Individual Performance & Zone Distribution */}
-            <div className="rounded-xl border border-surface-700/50 bg-surface-900/50 p-5 mt-6">
-                <h2 className="text-lg font-semibold text-surface-100 mb-4 flex items-center gap-2">
-                    👤 Detail Performa Pemain
-                </h2>
+            {/* 2-CARD SIDE-BY-SIDE LAYOUT (Kiri: Home Team, Kanan: Away Team) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    {/* Home Team Player List - 3 cols */}
-                    <div className="lg:col-span-3 space-y-2">
-                        <h3 className="text-xs font-black text-primary-400 border-b border-surface-700/50 pb-1.5 mb-2">
-                            🟢 {m.home_team?.name}
-                        </h3>
-                        <div className="space-y-1">
-                            {m.home_team?.athletes?.map(athlete => {
-                                const stats = getAthleteStats(athlete.id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id);
-                                const totalActions = Object.values(stats).reduce((a, b) => a + b, 0);
+                {/* ==================================================== */}
+                {/* CARD KIRI: TIM TUAN RUMAH (HOME TEAM)                */}
+                {/* ==================================================== */}
+                <div className="rounded-2xl border border-primary-500/30 bg-surface-900/60 p-4 sm:p-5 shadow-xl flex flex-col gap-4">
+                    
+                    {/* Header Tim & Filter Set */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-surface-800">
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-primary-500 shadow-sm shadow-primary-500/50"></span>
+                            <h3 className="text-base font-black text-primary-400 truncate">
+                                🟢 {homeName}
+                            </h3>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary-500/10 border border-primary-500/30 text-primary-300">
+                                {setsWonHome} Set Menang
+                            </span>
+                        </div>
+
+                        {/* Set Filter Pills for Home */}
+                        <div className="flex items-center gap-1 bg-surface-950/60 p-1 rounded-xl border border-surface-800">
+                            <button
+                                onClick={() => setHomeSetFilter('all')}
+                                className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
+                                    homeSetFilter === 'all'
+                                        ? 'bg-primary-500 text-white shadow-xs'
+                                        : 'text-surface-400 hover:text-surface-200'
+                                }`}
+                            >
+                                All Sets
+                            </button>
+                            {m.sets?.map((s) => (
+                                <button
+                                    key={s.set_number}
+                                    onClick={() => setHomeSetFilter(s.set_number)}
+                                    className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
+                                        homeSetFilter === s.set_number
+                                            ? 'bg-primary-500 text-white shadow-xs'
+                                            : 'text-surface-400 hover:text-surface-200'
+                                    }`}
+                                >
+                                    Set {s.set_number}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Pilihan Pemain (All Pemain & Individu) */}
+                    <div>
+                        <span className="text-xs font-bold text-surface-400 block mb-1.5">👤 Pilih Pemain {homeName}:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                onClick={() => setSelectedHomeAthleteId('all')}
+                                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
+                                    selectedHomeAthleteId === 'all'
+                                        ? 'bg-primary-500 text-white border-primary-400 shadow-md shadow-primary-950/40'
+                                        : 'bg-surface-800/60 border-surface-700/60 text-surface-300 hover:bg-surface-700/60'
+                                }`}
+                            >
+                                <span>👥 Semua Pemain</span>
+                            </button>
+                            {homeAthletes.map(athlete => {
+                                const stats = getAthleteStats(athlete.id, homeSetFilter);
+                                const isSelected = selectedHomeAthleteId === athlete.id;
+                                const totalActs = Object.values(stats).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
+
                                 return (
                                     <button
                                         key={athlete.id}
-                                        onClick={() => setSelectedAthleteId(athlete.id)}
-                                        className={`w-full text-left px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all duration-200 active:scale-95 ${selectedAthleteId === athlete.id ? 'bg-primary-500/10 border-primary-500/40 text-primary-300' : 'bg-surface-800/10 border-surface-800/20 hover:bg-surface-800/30 text-surface-300'}`}
+                                        onClick={() => setSelectedHomeAthleteId(athlete.id)}
+                                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
+                                            isSelected
+                                                ? 'bg-primary-500 text-white border-primary-400 shadow-md shadow-primary-950/40'
+                                                : 'bg-surface-800/60 border-surface-700/60 text-surface-300 hover:bg-surface-700/60'
+                                        }`}
                                     >
-                                        <div className="flex items-center gap-2">
-                                            <span className="opacity-60">#{athlete.jersey_number}</span>
-                                            <span className="truncate max-w-[120px]">{athlete.name}</span>
-                                        </div>
-                                        {totalActions > 0 && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-800 border border-surface-700 text-surface-400 font-bold">
-                                                {totalActions}
+                                        <span className="opacity-75 font-mono">#{athlete.jersey_number || '-'}</span>
+                                        <span className="truncate max-w-[110px]">{athlete.name}</span>
+                                        {totalActs > 0 && (
+                                            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-black/30 text-white' : 'bg-surface-900 text-primary-400'}`}>
+                                                {totalActs}
                                             </span>
                                         )}
                                     </button>
@@ -464,110 +456,177 @@ export default function MatchShow({ match: m }) {
                         </div>
                     </div>
 
-                    {/* Central Display: Map & detailed stats - 6 cols */}
-                    <div className="lg:col-span-6 bg-surface-950/20 border border-surface-800/40 rounded-2xl p-5 flex flex-col gap-6 items-center min-h-[300px]">
-                        {selectedAthleteId ? (() => {
-                            const athlete = allAthletes.find(a => a.id === selectedAthleteId);
-                            const stats = getAthleteStats(selectedAthleteId, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id);
-                            const totalActions = Object.values(stats).reduce((a, b) => a + b, 0);
-                            const isHome = m.home_team?.athletes?.some(a => a.id === selectedAthleteId);
+                    {/* Tabel Rekap Statistik Tim/Pemain yang Dipilih */}
+                    {(() => {
+                        const isAll = selectedHomeAthleteId === 'all';
+                        const athlete = !isAll ? homeAthletes.find(a => a.id === selectedHomeAthleteId) : null;
+                        const stats = isAll ? homeTeamAggStats : getAthleteStats(selectedHomeAthleteId, homeSetFilter);
 
-                            return (
-                                <>
-                                    {/* Stats info */}
-                                    <div className="flex-1 w-full">
-                                        <div className="mb-4">
-                                            <span className={`inline-block text-[9px] font-extrabold px-2.5 py-0.5 rounded-full mb-1 border uppercase tracking-wider ${isHome ? 'bg-primary-500/10 text-primary-400 border-primary-500/20' : 'bg-accent-500/10 text-accent-400 border-accent-500/20'}`}>
-                                                {isHome ? m.home_team?.name : m.away_team?.name}
-                                            </span>
-                                            <h3 className="text-base font-black text-surface-100 flex items-center gap-2">
-                                                <span className="text-surface-400">#{athlete?.jersey_number}</span>
-                                                {athlete?.name}
-                                            </h3>
-                                            <p className="text-[10px] text-surface-500 font-bold uppercase tracking-wider mt-0.5">
-                                                {athlete?.position || 'Pemain'}
-                                            </p>
-                                        </div>
-
-                                        {totalActions === 0 ? (
-                                            <div className="h-[180px] flex items-center justify-center border border-dashed border-surface-800 rounded-xl">
-                                                <p className="text-xs text-surface-500 italic text-center px-4">
-                                                    Tidak ada data statistik untuk pemain ini pada set ini.
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div className="bg-surface-900/50 rounded-xl p-2.5 border border-surface-800/40">
-                                                    <span className="text-[9px] text-surface-500 block uppercase font-bold tracking-wider leading-none">🏐 Servis</span>
-                                                    <div className="text-[11px] font-semibold text-surface-300 mt-2 flex flex-col gap-0.5">
-                                                        <span className="text-primary-400">Masuk: {stats.service_in}</span>
-                                                        <span className="text-accent-400">Ace: {stats.service_ace}</span>
-                                                        <span className="text-red-400">Error: {stats.service_error}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-surface-900/50 rounded-xl p-2.5 border border-surface-800/40">
-                                                    <span className="text-[9px] text-surface-500 block uppercase font-bold tracking-wider leading-none">⚡ Strike / Smash</span>
-                                                    <div className="text-[11px] font-semibold text-surface-300 mt-2 flex flex-col gap-0.5">
-                                                        <span className="text-primary-400">Sukses (✓): {stats.strike_success}</span>
-                                                        <span className="text-red-400">Gagal (✗): {stats.strike_fail}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-surface-900/50 rounded-xl p-2.5 border border-surface-800/40">
-                                                    <span className="text-[9px] text-surface-500 block uppercase font-bold tracking-wider leading-none">🤲 Receive</span>
-                                                    <div className="text-[11px] font-semibold text-surface-300 mt-2 flex flex-col gap-0.5">
-                                                        <span className="text-primary-400">Sukses (✓): {stats.receive_success}</span>
-                                                        <span className="text-red-400">Gagal (✗): {stats.receive_fail}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-surface-900/50 rounded-xl p-2.5 border border-surface-800/40">
-                                                    <span className="text-[9px] text-surface-500 block uppercase font-bold tracking-wider leading-none">🎯 Feeding</span>
-                                                    <div className="text-[11px] font-semibold text-surface-300 mt-2 flex flex-col gap-0.5">
-                                                        <span className="text-primary-400">Sukses (✓): {stats.feeding_success}</span>
-                                                        <span className="text-red-400">Gagal (✗): {stats.feeding_fail}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
+                        return (
+                            <div className="space-y-4">
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-xs font-bold text-surface-300">
+                                            📊 Rekapitulasi: <strong className="text-primary-400">{isAll ? `Semua Pemain (${homeName})` : `#${athlete?.jersey_number || '-'} ${athlete?.name}`}</strong> ({homeSetFilter === 'all' ? 'All Sets' : `Set ${homeSetFilter}`})
+                                        </span>
+                                        <button
+                                            onClick={() => exportMatchReportPdf(m, 'home')}
+                                            className="text-[10px] font-bold text-primary-400 hover:text-primary-300 transition-colors flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <span>📥 Download PDF</span>
+                                        </button>
                                     </div>
 
-                                    {/* Court Map Miniature */}
-                                    <div className="w-full md:w-full flex-1 flex items-center justify-center p-1">
-                                        <PlayerCourtMiniature stats={stats} />
+                                    <div className="overflow-hidden rounded-xl border border-surface-800 bg-surface-950/40">
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="bg-surface-900 border-b border-surface-800 text-surface-400 text-[10px] uppercase">
+                                                <tr>
+                                                    <th className="py-1.5 px-3">Parameter Statistik</th>
+                                                    <th className="py-1.5 px-3 text-center font-bold text-primary-400">Total</th>
+                                                    <th className="py-1.5 px-3 text-right">Rincian</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-surface-800/50 text-surface-300 font-medium">
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🏐 Servis</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.service_in + stats.service_ace}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.service_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.service_in}</span> | <span className="text-red-400 font-bold">Err: {stats.service_error}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">⚡ Strike</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.strike_in + stats.strike_ace || stats.strike_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.strike_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.strike_in || stats.strike_success}</span> | <span className="text-red-400 font-bold">Err: {stats.strike_error || stats.strike_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🔄 Freeball</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.freeball_in + stats.freeball_ace}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.freeball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.freeball_in}</span> | <span className="text-red-400 font-bold">Err: {stats.freeball_error}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🤲 Firstball</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.firstball_in + stats.firstball_ace || stats.receive_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.firstball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.firstball_in || stats.receive_success}</span> | <span className="text-red-400 font-bold">Err: {stats.firstball_error || stats.receive_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🎯 Feeding</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.feeding_in + stats.feeding_ace || stats.feeding_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.feeding_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.feeding_in || stats.feeding_success}</span> | <span className="text-red-400 font-bold">Err: {stats.feeding_error || stats.feeding_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🛡️ Blocking</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.blocking_in + stats.blocking_ace || stats.block_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.blocking_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.blocking_in || stats.block_success}</span> | <span className="text-red-400 font-bold">Err: {stats.blocking_error || stats.block_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                {isAll && stats.opponent_mistake > 0 && (
+                                                    <tr className="hover:bg-surface-800/20 bg-primary-500/5">
+                                                        <td className="py-1.5 px-3 text-primary-300">⚠️ Kesalahan Lawan</td>
+                                                        <td className="py-1.5 px-3 text-center font-black text-primary-400 font-mono">+{stats.opponent_mistake}</td>
+                                                        <td className="py-1.5 px-3 text-right text-[11px] font-mono text-primary-300/80">Poin Hadiah</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                </>
-                            );
-                        })() : (
-                            <div className="w-full h-full flex flex-col items-center justify-center text-surface-500 text-xs italic">
-                                Pilih salah satu pemain untuk melihat peta zona jatuh bola
+                                </div>
+
+                                {/* Peta 10-Zona Lapangan Langsung di Bawah Tabel */}
+                                <PlayerCourtMiniature stats={stats} />
                             </div>
-                        )}
+                        );
+                    })()}
+                </div>
+
+                {/* ==================================================== */}
+                {/* CARD KANAN: TIM TAMU (AWAY TEAM)                     */}
+                {/* ==================================================== */}
+                <div className="rounded-2xl border border-amber-500/30 bg-surface-900/60 p-4 sm:p-5 shadow-xl flex flex-col gap-4">
+                    
+                    {/* Header Tim & Filter Set */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-surface-800">
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span>
+                            <h3 className="text-base font-black text-amber-400 truncate">
+                                🟡 {awayName}
+                            </h3>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                                {setsWonAway} Set Menang
+                            </span>
+                        </div>
+
+                        {/* Set Filter Pills for Away */}
+                        <div className="flex items-center gap-1 bg-surface-950/60 p-1 rounded-xl border border-surface-800">
+                            <button
+                                onClick={() => setAwaySetFilter('all')}
+                                className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
+                                    awaySetFilter === 'all'
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : 'text-surface-400 hover:text-surface-200'
+                                }`}
+                            >
+                                All Sets
+                            </button>
+                            {m.sets?.map((s) => (
+                                <button
+                                    key={s.set_number}
+                                    onClick={() => setAwaySetFilter(s.set_number)}
+                                    className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
+                                        awaySetFilter === s.set_number
+                                            ? 'bg-amber-500 text-white shadow-xs'
+                                            : 'text-surface-400 hover:text-surface-200'
+                                    }`}
+                                >
+                                    Set {s.set_number}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
-                    {/* Away Team Player List - 3 cols */}
-                    <div className="lg:col-span-3 space-y-2">
-                        <h3 className="text-sm font-bold text-accent-400 border-b border-surface-700/50 pb-1.5 mb-2">
-                            🟡 {m.away_team?.name}
-                        </h3>
-                        <div className="space-y-1">
-                            {m.away_team?.athletes?.map(athlete => {
-                                const stats = getAthleteStats(athlete.id, currentFilter === 'all' ? 'all' : m.sets?.find(s => s.set_number === currentFilter)?.id);
-                                const totalActions = Object.values(stats).reduce((a, b) => a + b, 0);
+                    {/* Pilihan Pemain Tim Tamu (All Pemain & Individu) */}
+                    <div>
+                        <span className="text-xs font-bold text-surface-400 block mb-1.5">👤 Pilih Pemain {awayName}:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                onClick={() => setSelectedAwayAthleteId('all')}
+                                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
+                                    selectedAwayAthleteId === 'all'
+                                        ? 'bg-amber-500 text-white border-amber-400 shadow-md shadow-amber-950/40'
+                                        : 'bg-surface-800/60 border-surface-700/60 text-surface-300 hover:bg-surface-700/60'
+                                }`}
+                            >
+                                <span>👥 Semua Pemain</span>
+                            </button>
+                            {awayAthletes.map(athlete => {
+                                const stats = getAthleteStats(athlete.id, awaySetFilter);
+                                const isSelected = selectedAwayAthleteId === athlete.id;
+                                const totalActs = Object.values(stats).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
+
                                 return (
                                     <button
                                         key={athlete.id}
-                                        onClick={() => setSelectedAthleteId(athlete.id)}
-                                        className={`w-full text-left px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all duration-200 active:scale-95 ${selectedAthleteId === athlete.id ? 'bg-accent-500/10 border-accent-500/40 text-accent-300' : 'bg-surface-800/10 border-surface-800/20 hover:bg-surface-800/30 text-surface-300'}`}
+                                        onClick={() => setSelectedAwayAthleteId(athlete.id)}
+                                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
+                                            isSelected
+                                                ? 'bg-amber-500 text-white border-amber-400 shadow-md shadow-amber-950/40'
+                                                : 'bg-surface-800/60 border-surface-700/60 text-surface-300 hover:bg-surface-700/60'
+                                        }`}
                                     >
-                                        <div className="flex items-center gap-2">
-                                            <span className="opacity-60">#{athlete.jersey_number}</span>
-                                            <span className="truncate max-w-[120px]">{athlete.name}</span>
-                                        </div>
-                                        {totalActions > 0 && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-surface-800 border border-surface-700 text-surface-400 font-bold">
-                                                {totalActions}
+                                        <span className="opacity-75 font-mono">#{athlete.jersey_number || '-'}</span>
+                                        <span className="truncate max-w-[110px]">{athlete.name}</span>
+                                        {totalActs > 0 && (
+                                            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-black/30 text-white' : 'bg-surface-900 text-amber-400'}`}>
+                                                {totalActs}
                                             </span>
                                         )}
                                     </button>
@@ -575,7 +634,99 @@ export default function MatchShow({ match: m }) {
                             })}
                         </div>
                     </div>
+
+                    {/* Tabel Rekap Statistik Tim Tamu/Pemain yang Dipilih */}
+                    {(() => {
+                        const isAll = selectedAwayAthleteId === 'all';
+                        const athlete = !isAll ? awayAthletes.find(a => a.id === selectedAwayAthleteId) : null;
+                        const stats = isAll ? awayTeamAggStats : getAthleteStats(selectedAwayAthleteId, awaySetFilter);
+
+                        return (
+                            <div className="space-y-4">
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-xs font-bold text-surface-300">
+                                            📊 Rekapitulasi: <strong className="text-amber-400">{isAll ? `Semua Pemain (${awayName})` : `#${athlete?.jersey_number || '-'} ${athlete?.name}`}</strong> ({awaySetFilter === 'all' ? 'All Sets' : `Set ${awaySetFilter}`})
+                                        </span>
+                                        <button
+                                            onClick={() => exportMatchReportPdf(m, 'away')}
+                                            className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <span>📥 Download PDF</span>
+                                        </button>
+                                    </div>
+
+                                    <div className="overflow-hidden rounded-xl border border-surface-800 bg-surface-950/40">
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="bg-surface-900 border-b border-surface-800 text-surface-400 text-[10px] uppercase">
+                                                <tr>
+                                                    <th className="py-1.5 px-3">Parameter Statistik</th>
+                                                    <th className="py-1.5 px-3 text-center font-bold text-amber-400">Total</th>
+                                                    <th className="py-1.5 px-3 text-right">Rincian</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-surface-800/50 text-surface-300 font-medium">
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🏐 Servis</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.service_in + stats.service_ace}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.service_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.service_in}</span> | <span className="text-red-400 font-bold">Err: {stats.service_error}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">⚡ Strike</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.strike_in + stats.strike_ace || stats.strike_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.strike_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.strike_in || stats.strike_success}</span> | <span className="text-red-400 font-bold">Err: {stats.strike_error || stats.strike_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🔄 Freeball</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.freeball_in + stats.freeball_ace}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.freeball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.freeball_in}</span> | <span className="text-red-400 font-bold">Err: {stats.freeball_error}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🤲 Firstball</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.firstball_in + stats.firstball_ace || stats.receive_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.firstball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.firstball_in || stats.receive_success}</span> | <span className="text-red-400 font-bold">Err: {stats.firstball_error || stats.receive_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🎯 Feeding</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.feeding_in + stats.feeding_ace || stats.feeding_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.feeding_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.feeding_in || stats.feeding_success}</span> | <span className="text-red-400 font-bold">Err: {stats.feeding_error || stats.feeding_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr className="hover:bg-surface-800/20">
+                                                    <td className="py-1.5 px-3">🛡️ Blocking</td>
+                                                    <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.blocking_in + stats.blocking_ace || stats.block_success}</td>
+                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                        <span className="text-amber-400 font-bold">Ace: {stats.blocking_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.blocking_in || stats.block_success}</span> | <span className="text-red-400 font-bold">Err: {stats.blocking_error || stats.block_fail}</span>
+                                                    </td>
+                                                </tr>
+                                                {isAll && stats.opponent_mistake > 0 && (
+                                                    <tr className="hover:bg-surface-800/20 bg-amber-500/5">
+                                                        <td className="py-1.5 px-3 text-amber-300">⚠️ Kesalahan Lawan</td>
+                                                        <td className="py-1.5 px-3 text-center font-black text-amber-400 font-mono">+{stats.opponent_mistake}</td>
+                                                        <td className="py-1.5 px-3 text-right text-[11px] font-mono text-amber-300/80">Poin Hadiah</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Peta 10-Zona Lapangan Langsung di Bawah Tabel */}
+                                <PlayerCourtMiniature stats={stats} />
+                            </div>
+                        );
+                    })()}
                 </div>
+
             </div>
         </AuthenticatedLayout>
     );

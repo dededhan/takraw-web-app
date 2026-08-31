@@ -52,12 +52,32 @@ class BracketMatrix extends Model
             }
         }
 
+        if (str_starts_with($source, 'winner_qf_')) {
+            return ['type' => 'winner', 'stage' => 'quarterfinal', 'position' => (int) substr($source, 10)];
+        }
+
+        if (str_starts_with($source, 'winner_sf_')) {
+            return ['type' => 'winner', 'stage' => 'semifinal', 'position' => (int) substr($source, 10)];
+        }
+
+        if (str_starts_with($source, 'loser_sf_')) {
+            return ['type' => 'loser', 'stage' => 'semifinal', 'position' => (int) substr($source, 9)];
+        }
+
         if (str_starts_with($source, 'wildcard_')) {
             return ['type' => 'wildcard', 'position' => (int) substr($source, 9)];
         }
 
         if (str_starts_with($source, 'winner_pos_')) {
             return ['type' => 'winner', 'position' => (int) substr($source, 11)];
+        }
+
+        if (str_starts_with($source, 'winner_')) {
+            return ['type' => 'winner', 'position' => (int) substr($source, 7)];
+        }
+
+        if (str_starts_with($source, 'loser_')) {
+            return ['type' => 'loser', 'position' => (int) substr($source, 6)];
         }
 
         return ['type' => 'unknown', 'raw' => $source];
@@ -80,10 +100,22 @@ class BracketMatrix extends Model
     {
         $parsed = self::parseSource($source);
         return match ($parsed['type']) {
-            'pool'     => "Juara Pool {$parsed['pool']}" . ($parsed['rank'] > 1 ? " (Peringkat {$parsed['rank']})" : ''),
+            'pool'     => match ((int) ($parsed['rank'] ?? 1)) {
+                1 => "Juara Pool {$parsed['pool']}",
+                2 => "Runner-up Pool {$parsed['pool']}",
+                default => "Peringkat {$parsed['rank']} Pool {$parsed['pool']}",
+            },
             'bye'      => 'BYE (Langsung Lolos)',
             'wildcard' => "Wildcard #{$parsed['position']}",
-            'winner'   => "Pemenang Posisi #{$parsed['position']}",
+            'winner'   => match ($parsed['stage'] ?? null) {
+                'quarterfinal' => "Pemenang QF #{$parsed['position']}",
+                'semifinal'    => "Pemenang SF #{$parsed['position']}",
+                default        => "Pemenang Match #{$parsed['position']}",
+            },
+            'loser'    => match ($parsed['stage'] ?? null) {
+                'semifinal' => "Kalah SF #{$parsed['position']}",
+                default     => "Kalah Match #{$parsed['position']}",
+            },
             default    => $source,
         };
     }

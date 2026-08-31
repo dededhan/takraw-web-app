@@ -79,21 +79,32 @@ class ScoringController extends Controller
     {
         $this->ensureMatchAthletes($match);
 
+        $totalSets = $match->isTeamMode() ? 9 : ($match->max_sets ?: 3);
+        for ($i = 1; $i <= $totalSets; $i++) {
+            MatchSet::firstOrCreate([
+                'match_id'   => $match->id,
+                'set_number' => $i,
+            ]);
+        }
+
         $match->update([
             'status' => 'live',
-            'started_at' => now(),
+            'started_at' => $match->started_at ?? now(),
         ]);
 
-        // Start first set
-        $firstSet = $match->sets()->where('set_number', 1)->first();
-        if ($firstSet) {
-            $firstSet->update([
+        // Find the first pending or live set (do not overwrite already finished sets!)
+        $activeSet = $match->sets()->where('status', 'live')->first()
+            ?: $match->sets()->where('status', 'pending')->orderBy('set_number')->first()
+            ?: $match->sets()->where('set_number', 1)->first();
+
+        if ($activeSet && $activeSet->status !== 'finished') {
+            $activeSet->update([
                 'status' => 'live',
-                'started_at' => now(),
+                'started_at' => $activeSet->started_at ?? now(),
             ]);
 
             // Initialize stats for all athletes in both teams
-            $this->initializeSetStats($firstSet, $match);
+            $this->initializeSetStats($activeSet, $match);
         }
 
         return back()->with('success', 'Pertandingan dimulai!');
@@ -111,25 +122,85 @@ class ScoringController extends Controller
             'stat'         => 'required|in:' . implode(',', SetStat::STAT_COLUMNS),
             'action'       => 'required|in:increment,decrement',
             'zone'         => 'nullable|string',
-            'team_id'      => 'nullable|integer',
+            'team_id'      => 'nullable',
         ]);
 
-        $athleteId = $validated['athlete_id'];
+        $rawAthleteId = $validated['athlete_id'];
+        $resolvedAthleteId = null;
+        $resolvedTeamId = is_numeric($request->input('team_id')) ? (int)$request->input('team_id') : null;
 
-        // If athlete_id is a temporary string (e.g. 'temp-1-1') or not found, resolve or create real athlete
-        if (!is_numeric($athleteId) || !\App\Models\Athlete::where('id', $athleteId)->exists()) {
-            $teamId = $request->input('team_id') ?: $match->home_team_id;
-            $team = \App\Models\Team::find($teamId);
-            if ($team) {
-                $this->ensureTeamAthletes($team);
-                $firstAthlete = $team->athletes()->first();
-                $athleteId = $firstAthlete ? $firstAthlete->id : null;
+        // 1. If numeric and exists in DB
+        if (is_numeric($rawAthleteId) && \App\Models\Athlete::where('id', (int)$rawAthleteId)->exists()) {
+            $resolvedAthleteId = (int)$rawAthleteId;
+            $athlete = \App\Models\Athlete::find($resolvedAthleteId);
+            if ($athlete && !$resolvedTeamId) {
+                $resolvedTeamId = $athlete->team_id;
             }
         }
 
-        if (!$athleteId) {
-            return response()->json(['error' => 'Athlete not found'], 422);
+        // 2. If temporary string like 'temp-1-2'
+        if (!$resolvedAthleteId && is_string($rawAthleteId) && preg_match('/temp-(\d+)-(\d+)/', $rawAthleteId, $matches)) {
+            $parsedTeamId = (int)$matches[1];
+            $jerseyNo = (int)$matches[2];
+            $team = \App\Models\Team::find($parsedTeamId);
+            if ($team) {
+                $this->ensureTeamAthletes($team);
+                $athlete = $team->athletes()->where('jersey_number', $jerseyNo)->first()
+                    ?: $team->athletes()->skip($jerseyNo - 1)->first()
+                    ?: $team->athletes()->first();
+                if ($athlete) {
+                    $resolvedAthleteId = (int)$athlete->id;
+                    $resolvedTeamId = $team->id;
+                }
+            }
         }
+
+        // 3. Fallback: Resolve via team or match
+        if (!$resolvedAthleteId) {
+            $team = null;
+            if ($resolvedTeamId) {
+                $team = \App\Models\Team::find($resolvedTeamId);
+            }
+            if (!$team) {
+                $team = $match->homeTeam ?: $match->awayTeam;
+            }
+            if (!$team && $match->homeSuperTeam) {
+                $team = $match->homeSuperTeam->members()->first();
+            }
+            if (!$team && $match->awaySuperTeam) {
+                $team = $match->awaySuperTeam->members()->first();
+            }
+            if (!$team) {
+                $team = \App\Models\Team::first();
+            }
+
+            if ($team) {
+                $this->ensureTeamAthletes($team);
+                $athlete = $team->athletes()->first();
+                if ($athlete) {
+                    $resolvedAthleteId = (int)$athlete->id;
+                    $resolvedTeamId = $team->id;
+                }
+            }
+        }
+
+        // 4. Ultimate fallback: Ensure at least one athlete exists anywhere in the DB
+        if (!$resolvedAthleteId) {
+            $fallbackAthlete = \App\Models\Athlete::first();
+            if (!$fallbackAthlete) {
+                $anyTeam = \App\Models\Team::firstOrCreate(
+                    ['name' => 'Tim Sepak Takraw'],
+                    ['tournament_id' => $match->tournament_id ?? 1]
+                );
+                $this->ensureTeamAthletes($anyTeam);
+                $fallbackAthlete = $anyTeam->athletes()->first();
+            }
+            $resolvedAthleteId = (int)$fallbackAthlete->id;
+            $resolvedTeamId = $fallbackAthlete->team_id;
+        }
+
+        $athleteId = $resolvedAthleteId;
+        $teamId = $resolvedTeamId;
 
         $stat = SetStat::where('match_set_id', $validated['match_set_id'])
             ->where('athlete_id', $athleteId)
@@ -137,24 +208,30 @@ class ScoringController extends Controller
 
         if (!$stat) {
             // Auto-create if not exists
-            $athlete = \App\Models\Athlete::find($athleteId);
             $stat = SetStat::create([
                 'match_set_id' => $validated['match_set_id'],
                 'athlete_id'   => $athleteId,
-                'team_id'      => $request->input('team_id') ?: ($athlete ? $athlete->team_id : null),
+                'team_id'      => $teamId,
             ]);
         }
 
         $column = $validated['stat'];
         $action = $validated['action'];
         $zone = $validated['zone'] ?? null;
+        $set = MatchSet::find($validated['match_set_id']);
 
         if ($action === 'increment') {
             $stat->increment($column);
 
-            // If zone is specified (e.g. 'zone_1') for service_in or service_ace
+            // Auto add point +1 for opponent mistake
+            if ($column === 'opponent_mistake' && $set) {
+                $sideCol = ($teamId === $match->home_team_id || $teamId === $match->home_super_team_id) ? 'home_score' : 'away_score';
+                $set->increment($sideCol);
+            }
+
+            // If zone is specified (e.g. 'zone_1') for any action with ace/in
             if ($zone && in_array($zone, ['zone_1', 'zone_2', 'zone_3', 'zone_4', 'zone_5', 'zone_6', 'zone_7', 'zone_8', 'zone_9', 'zone_10'])) {
-                $suffix = $column === 'service_ace' ? '_ace' : '_in';
+                $suffix = str_ends_with($column, '_ace') ? '_ace' : '_in';
                 $zoneSpecificCol = $zone . $suffix;
                 if (in_array($zoneSpecificCol, SetStat::STAT_COLUMNS)) {
                     $stat->increment($zoneSpecificCol);
@@ -162,14 +239,33 @@ class ScoringController extends Controller
                 if (in_array($zone, SetStat::STAT_COLUMNS)) {
                     $stat->increment($zone);
                 }
+
+                // Also track per-action zone breakdown (e.g. service, strike, blocking)
+                $actionType = explode('_', $column)[0];
+                $actionZones = $stat->action_zones ?? [];
+                if (!isset($actionZones[$actionType])) {
+                    $actionZones[$actionType] = [];
+                }
+                $actionZones[$actionType][$zoneSpecificCol] = ($actionZones[$actionType][$zoneSpecificCol] ?? 0) + 1;
+                $actionZones[$actionType][$zone] = ($actionZones[$actionType][$zone] ?? 0) + 1;
+                $stat->action_zones = $actionZones;
+                $stat->save();
             }
         } else {
             if ($stat->$column > 0) {
                 $stat->decrement($column);
             }
 
+            // Decrement point if opponent mistake is decremented
+            if ($column === 'opponent_mistake' && $set) {
+                $sideCol = ($teamId === $match->home_team_id || $teamId === $match->home_super_team_id) ? 'home_score' : 'away_score';
+                if ($set->$sideCol > 0) {
+                    $set->decrement($sideCol);
+                }
+            }
+
             if ($zone && in_array($zone, ['zone_1', 'zone_2', 'zone_3', 'zone_4', 'zone_5', 'zone_6', 'zone_7', 'zone_8', 'zone_9', 'zone_10'])) {
-                $suffix = $column === 'service_ace' ? '_ace' : '_in';
+                $suffix = str_ends_with($column, '_ace') ? '_ace' : '_in';
                 $zoneSpecificCol = $zone . $suffix;
                 if (in_array($zoneSpecificCol, SetStat::STAT_COLUMNS) && $stat->$zoneSpecificCol > 0) {
                     $stat->decrement($zoneSpecificCol);
@@ -177,11 +273,23 @@ class ScoringController extends Controller
                 if (in_array($zone, SetStat::STAT_COLUMNS) && $stat->$zone > 0) {
                     $stat->decrement($zone);
                 }
+
+                $actionType = explode('_', $column)[0];
+                $actionZones = $stat->action_zones ?? [];
+                if (isset($actionZones[$actionType][$zoneSpecificCol]) && $actionZones[$actionType][$zoneSpecificCol] > 0) {
+                    $actionZones[$actionType][$zoneSpecificCol]--;
+                }
+                if (isset($actionZones[$actionType][$zone]) && $actionZones[$actionType][$zone] > 0) {
+                    $actionZones[$actionType][$zone]--;
+                }
+                $stat->action_zones = $actionZones;
+                $stat->save();
             }
         }
 
         return response()->json([
             'stat' => $stat->fresh(),
+            'set'  => $set?->fresh(),
         ]);
     }
 
@@ -235,8 +343,8 @@ class ScoringController extends Controller
         ]);
 
         // Check if match is over (best of N)
-        $setsWonHome = $match->sets()->where('winner_team_id', $match->home_team_id)->count();
-        $setsWonAway = $match->sets()->where('winner_team_id', $match->away_team_id)->count();
+        $setsWonHome = $match->sets()->where('status', 'finished')->where('winner_team_id', $match->home_team_id)->count();
+        $setsWonAway = $match->sets()->where('status', 'finished')->where('winner_team_id', $match->away_team_id)->count();
         $setsToWin = ceil($match->max_sets / 2);
 
         if ($setsWonHome >= $setsToWin || $setsWonAway >= $setsToWin) {
@@ -276,8 +384,9 @@ class ScoringController extends Controller
 
             return response()->json([
                 'matchFinished' => true,
-                'winner' => $matchWinner,
-                'match' => $match->fresh()->load(['homeTeam', 'awayTeam', 'sets']),
+                'winner'        => $matchWinner,
+                'redirect_url'  => route('matches.show', $match->id),
+                'match'         => $match->fresh()->load(['homeTeam', 'awayTeam', 'sets']),
             ]);
         }
 

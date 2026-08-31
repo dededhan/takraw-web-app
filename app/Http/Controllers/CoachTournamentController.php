@@ -29,7 +29,10 @@ class CoachTournamentController extends Controller
                     $q->where('coach_id', $user->id);
                 },
                 'superTeams' => function ($q) use ($user) {
-                    $q->where('coach_id', $user->id)->with('members.athletes');
+                    $q->where(function ($sq) use ($user) {
+                        $sq->where('coach_id', $user->id)
+                           ->orWhere('created_by', $user->id);
+                    })->with('members.athletes');
                 }
             ])
             ->latest()
@@ -43,8 +46,11 @@ class CoachTournamentController extends Controller
             ->with(['athletes', 'tournaments'])
             ->get();
 
-        // Get all super teams coached by this coach
-        $mySuperTeams = SuperTeam::where('coach_id', $user->id)
+        // Get all super teams coached or created by this coach
+        $mySuperTeams = SuperTeam::where(function ($q) use ($user) {
+                $q->where('coach_id', $user->id)
+                  ->orWhere('created_by', $user->id);
+            })
             ->with(['members.athletes', 'tournament'])
             ->get();
 

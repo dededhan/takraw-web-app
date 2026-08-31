@@ -2,7 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import StatusBadge from '@/Components/StatusBadge';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import { Head, Link, useForm, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const MODE_LABELS = {
     regu:        { label: 'Mode Regu',        icon: '🏐', color: 'bg-blue-600/20 text-blue-300 border-blue-500/30' },
@@ -74,6 +74,8 @@ export default function PoolIndex({ tournament }) {
         });
     };
 
+    const [isShuffling, setIsShuffling] = useState(false);
+
     const handleModeChange = (mode) => {
         setSelectedMode(mode);
         generateForm.setData('match_mode', mode);
@@ -83,8 +85,19 @@ export default function PoolIndex({ tournament }) {
 
     const handleGenerate = (e) => {
         e.preventDefault();
+        setShowGenerate(false);
+        setIsShuffling(true);
+    };
+
+    const handleExecuteGenerate = (onDone) => {
         generateForm.post(route('pools.generate-random', tournament.id), {
-            onSuccess: () => setShowGenerate(false),
+            preserveScroll: true,
+            onSuccess: () => {
+                if (onDone) onDone();
+            },
+            onError: () => {
+                setIsShuffling(false);
+            },
         });
     };
 
@@ -102,6 +115,13 @@ export default function PoolIndex({ tournament }) {
 
     const handleRemove = (poolId, id) => {
         router.delete(route('pools.remove-team', { pool: poolId, team: id }));
+    };
+
+    const handleDeletePool = (pool) => {
+        if (!confirm(`Apakah Anda yakin ingin menghapus Pool ${pool.name}? Semua tim di pool ini akan dikeluarkan.`)) {
+            return;
+        }
+        router.delete(route('pools.destroy', pool.id));
     };
 
     const handleGenerateMatches = () => {
@@ -290,7 +310,19 @@ export default function PoolIndex({ tournament }) {
                                     <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden shadow-sm">
                                         <div className="px-5 py-3 border-b border-surface-700/50 bg-surface-800/30 flex items-center justify-between">
                                             <h3 className="text-sm font-bold text-accent-300">Pool {pool.name} ({selectedMode.replace('_', ' ')})</h3>
-                                            <span className="text-xs text-surface-500">{contestants.length} {isTeamMode ? 'Super Team' : 'tim'}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-surface-500">{contestants.length} {isTeamMode ? 'Super Team' : 'tim'}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeletePool(pool)}
+                                                    className="p-1 rounded text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                    title="Hapus Pool Ini"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {/* Contestants in pool */}
@@ -413,6 +445,239 @@ export default function PoolIndex({ tournament }) {
                 title="Generate Pertandingan Round-Robin"
                 message="Pertandingan pool-stage berstatus 'scheduled' yang ada akan dihapus dan diganti dengan pertandingan round-robin baru berdasarkan susunan pool saat ini. Lanjutkan?"
             />
+
+            {/* Interactive Pool Shuffling / Drawing Modal */}
+            <ShufflePoolModal
+                isOpen={isShuffling}
+                poolCount={generateForm.data.pool_count}
+                matchMode={selectedMode}
+                modeConfig={currentCfg}
+                isTeamMode={isTeamMode}
+                contestants={isTeamMode
+                    ? (tournament.super_teams || []).filter(st => st.match_mode === selectedMode)
+                    : (tournament.teams || []).filter(t => !superTeamMemberIds.has(t.id))
+                }
+                onExecute={(onDone) => handleExecuteGenerate(onDone)}
+                onClose={() => setIsShuffling(false)}
+            />
         </AuthenticatedLayout>
+    );
+}
+
+function ShufflePoolModal({ isOpen, poolCount, matchMode, modeConfig, isTeamMode, contestants = [], onExecute, onClose }) {
+    if (!isOpen) return null;
+
+    const [progress, setProgress] = useState(0);
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [statusText, setStatusText] = useState('🌀 Mengocok seluruh kontestan...');
+    const [isDone, setIsDone] = useState(false);
+    const [assignedSlots, setAssignedSlots] = useState({});
+
+    // Sound effect synthesis using Web Audio API
+    const playTickSound = () => {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(400 + Math.random() * 260, ctx.currentTime);
+            gain.gain.setValueAtTime(0.04, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.06);
+        } catch (e) {
+            // Ignore audio policy blocks gracefully
+        }
+    };
+
+    const playFanfare = () => {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.09);
+                gain.gain.setValueAtTime(0.08, ctx.currentTime + i * 0.09);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.09 + 0.35);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime + i * 0.09);
+                osc.stop(ctx.currentTime + i * 0.09 + 0.35);
+            });
+        } catch (e) {
+            // Ignore
+        }
+    };
+
+    const effectiveContestants = contestants.length > 0 ? contestants : [
+        { id: 1, name: 'Elang Jakarta', region: 'DKI Jakarta' },
+        { id: 2, name: 'Maung Bandung', region: 'Jawa Barat' },
+        { id: 3, name: 'Singa Surabaya', region: 'Jawa Timur' },
+        { id: 4, name: 'Garuda Yogya', region: 'DIY' },
+        { id: 5, name: 'Banteng Semarang', region: 'Jawa Tengah' },
+        { id: 6, name: 'Rajawali Medan', region: 'Sumatera Utara' },
+    ];
+
+    const poolLabels = Array.from({ length: poolCount }, (_, i) => String.fromCharCode(65 + i));
+
+    useEffect(() => {
+        let intervalTime = 65;
+        let cardTimer = null;
+        let progressTimer = null;
+        let executed = false;
+
+        // Slot machine fast cycling timer
+        cardTimer = setInterval(() => {
+            setCurrentIndex(prev => (prev + 1) % effectiveContestants.length);
+            playTickSound();
+        }, intervalTime);
+
+        // Progress step timer (2.6 seconds total)
+        const startTime = Date.now();
+        const duration = 2600;
+
+        progressTimer = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const pct = Math.min(100, Math.floor((elapsed / duration) * 100));
+            setProgress(pct);
+
+            // Dynamic simulated pool assignment
+            const simulatedPoolIndex = Math.floor((pct / 100) * poolCount) % poolCount;
+            const currentPool = poolLabels[simulatedPoolIndex];
+            setAssignedSlots(prev => ({
+                ...prev,
+                [currentPool]: (prev[currentPool] || 0) + 1
+            }));
+
+            if (pct < 30) {
+                setStatusText(`🌀 Mengocok ${effectiveContestants.length} kontestan turnamen...`);
+            } else if (pct < 70) {
+                setStatusText(`🎲 Mengundi penempatan Pool A s/d Pool ${poolLabels[poolLabels.length - 1]}...`);
+            } else if (pct < 95) {
+                setStatusText(`👑 Menyusun Bagan Eliminasi & Bracket Matrix...`);
+            } else {
+                setStatusText(`✨ Pengundian selesai! Menyimpan ke sistem...`);
+            }
+
+            if (pct >= 100 && !executed) {
+                executed = true;
+                clearInterval(progressTimer);
+                clearInterval(cardTimer);
+
+                // Trigger backend generate
+                onExecute(() => {
+                    playFanfare();
+                    setIsDone(true);
+                    setTimeout(() => {
+                        onClose();
+                    }, 800);
+                });
+            }
+        }, 60);
+
+        return () => {
+            clearInterval(cardTimer);
+            clearInterval(progressTimer);
+        };
+    }, []);
+
+    const activeTeam = effectiveContestants[currentIndex] || effectiveContestants[0];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/90 backdrop-blur-xl animate-fade-in select-none">
+            <div className="bg-gradient-to-b from-surface-900 via-surface-950 to-black border-2 border-primary-500/50 rounded-3xl max-w-lg w-full p-6 shadow-2xl overflow-hidden flex flex-col items-center text-center relative animate-scale-in">
+                
+                {/* Ambient glow background */}
+                <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 bg-primary-500/20 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-24 left-1/2 -translate-x-1/2 w-64 h-64 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
+
+                {/* Header Badge */}
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-primary-500/10 border border-primary-500/30 text-primary-300 text-xs font-bold uppercase tracking-wider mb-4 shadow-sm">
+                    <span className="animate-spin text-sm">🏐</span>
+                    <span>Pengundian Acak — {modeConfig.label}</span>
+                </div>
+
+                {/* Main 3D Orbiting Sphere Icon */}
+                <div className="relative my-2">
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-amber-500 via-primary-500 to-emerald-400 p-1 shadow-xl shadow-primary-500/30 flex items-center justify-center animate-pulse">
+                        <div className="w-full h-full rounded-full bg-surface-950 flex items-center justify-center">
+                            <span className="text-3xl animate-bounce">
+                                {isDone ? '🏆' : '🎲'}
+                            </span>
+                        </div>
+                    </div>
+                    {/* Rotating Dashed Orbit Ring */}
+                    <div className="absolute inset-0 -m-2 border-2 border-dashed border-primary-400/60 rounded-full animate-spin" style={{ animationDuration: '4s' }} />
+                </div>
+
+                {/* Slot Machine Card Display */}
+                <div className="w-full my-4 p-4 rounded-2xl bg-surface-900/80 border-2 border-amber-400/60 shadow-inner flex flex-col items-center justify-center transition-all duration-100 min-h-[110px]">
+                    <span className="text-[10px] uppercase font-bold text-amber-400/80 tracking-widest mb-1">
+                        {isDone ? '★ PENGUNDIAN BERHASIL' : '⚡ SEDANG DIUNDI...'}
+                    </span>
+                    <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide truncate max-w-full scale-105 transition-transform duration-75">
+                        {activeTeam.name}
+                    </h3>
+                    {activeTeam.region && (
+                        <p className="text-xs text-surface-400 font-semibold mt-1">
+                            📍 {activeTeam.region}
+                        </p>
+                    )}
+                </div>
+
+                {/* Mini Target Pools Preview */}
+                <div className="w-full my-2">
+                    <div className="grid grid-cols-4 sm:grid-cols-4 gap-2">
+                        {poolLabels.map((label) => {
+                            const isPulsing = Math.random() > 0.4;
+                            return (
+                                <div
+                                    key={label}
+                                    className={`
+                                        p-2 rounded-xl border text-center transition-all duration-200
+                                        ${isPulsing
+                                            ? 'bg-primary-500/20 border-primary-400 shadow-md ring-1 ring-primary-400/40'
+                                            : 'bg-surface-900/50 border-surface-800'
+                                        }
+                                    `}
+                                >
+                                    <span className="text-xs font-black text-primary-300 block">Pool {label}</span>
+                                    <span className="text-[9px] text-surface-400 font-mono">
+                                        {isDone ? 'Terisi ✓' : 'Mengundi...'}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Progress Bar & Status Text */}
+                <div className="w-full mt-4 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-surface-300 flex items-center gap-1.5">
+                            {statusText}
+                        </span>
+                        <span className="text-amber-300 font-mono">{progress}%</span>
+                    </div>
+
+                    <div className="w-full h-3 rounded-full bg-surface-800 overflow-hidden p-0.5 border border-surface-700">
+                        <div
+                            className="h-full rounded-full bg-gradient-to-r from-amber-400 via-primary-400 to-emerald-400 transition-all duration-100 shadow-lg"
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
+                </div>
+
+                {/* Completion Banner */}
+                {isDone && (
+                    <div className="mt-4 p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black text-xs animate-bounce">
+                        🎉 Pengundian selesai! Memperbarui susunan pool turnamen...
+                    </div>
+                )}
+            </div>
+        </div>
     );
 }

@@ -59,6 +59,28 @@ class MasterScheduleController extends Controller
      */
     public function saveConfig(Request $request, Tournament $tournament)
     {
+        if (!$request->input('has_ishoma') || empty($request->input('ishoma_start_time'))) {
+            $request->merge([
+                'ishoma_start_time' => null,
+                'ishoma_end_time'   => null,
+            ]);
+        }
+
+        // Pastikan pool_counts selalu terisi untuk setiap mode yang aktif
+        $modes = $request->input('modes', ['regu']);
+        $poolCounts = $request->input('pool_counts', []);
+        if (!is_array($poolCounts)) {
+            $poolCounts = [];
+        }
+        foreach ($modes as $m) {
+            if (!isset($poolCounts[$m]) || empty($poolCounts[$m])) {
+                $poolCounts[$m] = 2;
+            } else {
+                $poolCounts[$m] = (int) $poolCounts[$m];
+            }
+        }
+        $request->merge(['pool_counts' => $poolCounts]);
+
         $validated = $request->validate([
             'total_days'               => 'required|integer|min:1|max:14',
             'courts_count'             => 'required|integer|min:1|max:20',
@@ -182,7 +204,7 @@ class MasterScheduleController extends Controller
         ]);
 
         // Load SELURUH matches untuk semua hari (diurutkan kronologis dengan nomor match start dari 1)
-        $matches = Match_::where('tournament_id', $tournament->id)
+        $rawMatches = Match_::where('tournament_id', $tournament->id)
             ->with([
                 'homeTeam', 'awayTeam', 'referee',
                 'homeSuperTeam.members', 'awaySuperTeam.members',
@@ -192,15 +214,9 @@ class MasterScheduleController extends Controller
             ->orderBy('day_number')
             ->orderBy('time_slot_id')
             ->orderBy('court_id')
-            ->get()
-            ->values()
-            ->map(fn($m, $idx) => [
-                ...$m->toArray(),
-                'match_number'      => $idx + 1,
-                'home_display_name' => $m->home_display_name,
-                'away_display_name' => $m->away_display_name,
-                'has_conflicts'     => $m->hasActiveConflicts(),
-            ]);
+            ->get();
+
+        $matches = $this->formatMatchesWithTags($rawMatches);
 
         $timeSlots = TimeSlot::where('tournament_id', $tournament->id)
             ->orderBy('slot_number')
@@ -229,6 +245,138 @@ class MasterScheduleController extends Controller
             'activeConflicts' => $activeConflicts,
             'totalDays'       => $tournament->total_days,
         ]);
+    }
+
+    /**
+     * Tampilkan halaman cetak jadwal formal / resmi turnamen (Formal Document Table).
+     */
+    public function printSchedule(Tournament $tournament): Response
+    {
+        $tournament->load([
+            'modes',
+            'courts',
+            'teams',
+            'superTeams.members',
+        ]);
+
+        $rawMatches = Match_::where('tournament_id', $tournament->id)
+            ->with([
+                'homeTeam', 'awayTeam', 'referee',
+                'homeSuperTeam.members', 'awaySuperTeam.members',
+                'court', 'timeSlot',
+            ])
+            ->orderBy('day_number')
+            ->orderBy('time_slot_id')
+            ->orderBy('court_id')
+            ->get();
+
+        $matches = $this->formatMatchesWithTags($rawMatches);
+
+        $timeSlots = TimeSlot::where('tournament_id', $tournament->id)
+            ->orderBy('day_number')
+            ->orderBy('slot_number')
+            ->get();
+
+        $courts = Court::where('tournament_id', $tournament->id)
+            ->where('is_active', true)
+            ->orderBy('court_number')
+            ->get();
+
+        return Inertia::render('Tournament/MasterSchedule/PrintSchedule', [
+            'tournament' => $tournament,
+            'matches'    => $matches,
+            'timeSlots'  => $timeSlots,
+            'courts'     => $courts,
+            'totalDays'  => $tournament->total_days,
+        ]);
+    }
+
+    /**
+     * Resolve placeholder nama tim bracket ke format nomor partai/match tag presisi (e.g. "Pemenang Match #7").
+     */
+    protected function formatMatchesWithTags($matchesCollection): array
+    {
+        // 1. Catat mapping stage & bracket_position ke nomor urut match (#1, #2, #3, ...)
+        $stageMap = [];
+        foreach ($matchesCollection as $idx => $m) {
+            $matchNum = $idx + 1;
+            if ($m->stage && $m->bracket_position) {
+                $stageMap[$m->match_mode][$m->stage][$m->bracket_position] = $matchNum;
+                if ($m->stage === 'quarterfinal') {
+                    $stageMap[$m->match_mode]['round_of_8'][$m->bracket_position] = $matchNum;
+                }
+            }
+        }
+
+        // 2. Format display name untuk setiap match
+        return $matchesCollection->values()->map(function ($m, $idx) use ($stageMap) {
+            $matchNum = $idx + 1;
+
+            $homeDisplay = $this->resolveSideDisplayName($m, 'home', $stageMap);
+            $awayDisplay = $this->resolveSideDisplayName($m, 'away', $stageMap);
+
+            return [
+                ...$m->toArray(),
+                'match_number'      => $matchNum,
+                'home_display_name' => $homeDisplay,
+                'away_display_name' => $awayDisplay,
+                'has_conflicts'     => method_exists($m, 'hasActiveConflicts') ? $m->hasActiveConflicts() : false,
+            ];
+        })->all();
+    }
+
+    protected function resolveSideDisplayName($match, string $side, array $stageMap): string
+    {
+        if ($match->isTeamMode()) {
+            $realSuperTeam = $side === 'home' ? $match->homeSuperTeam : $match->awaySuperTeam;
+            if ($realSuperTeam) return $realSuperTeam->name;
+        } else {
+            $realTeam = $side === 'home' ? $match->homeTeam : $match->awayTeam;
+            if ($realTeam) return $realTeam->name;
+        }
+
+        $raw = trim((string) ($side === 'home' ? $match->home_placeholder : $match->away_placeholder));
+        if (empty($raw)) {
+            return 'TBD';
+        }
+
+        $mode = $match->match_mode;
+
+        // Cek pola winner / pemenang QF
+        if (preg_match('/(?:winner_qf_|winner\s*qf\s*#?|pemenang\s*qf\s*#?)(\d+)/i', $raw, $mat)) {
+            $pos = (int) $mat[1];
+            if (isset($stageMap[$mode]['quarterfinal'][$pos])) {
+                return "Pemenang Match #" . $stageMap[$mode]['quarterfinal'][$pos];
+            }
+            return "Pemenang QF #{$pos}";
+        }
+
+        // Cek pola winner / pemenang SF
+        if (preg_match('/(?:winner_sf_|winner\s*sf\s*#?|pemenang\s*sf\s*#?)(\d+)/i', $raw, $mat)) {
+            $pos = (int) $mat[1];
+            if (isset($stageMap[$mode]['semifinal'][$pos])) {
+                return "Pemenang Match #" . $stageMap[$mode]['semifinal'][$pos];
+            }
+            return "Pemenang SF #{$pos}";
+        }
+
+        // Cek pola loser / kalah SF (perebutan juara 3)
+        if (preg_match('/(?:loser_sf_|loser\s*sf\s*#?|kalah\s*sf\s*#?)(\d+)/i', $raw, $mat)) {
+            $pos = (int) $mat[1];
+            if (isset($stageMap[$mode]['semifinal'][$pos])) {
+                return "Kalah Match #" . $stageMap[$mode]['semifinal'][$pos];
+            }
+            return "Kalah SF #{$pos}";
+        }
+
+        // Cek pola pool rank (pool_A_rank_1)
+        if (preg_match('/pool_([A-Za-z])_rank_(\d+)/i', $raw, $mat)) {
+            $poolName = strtoupper($mat[1]);
+            $rank = (int) $mat[2];
+            return $rank === 1 ? "Juara Pool {$poolName}" : ($rank === 2 ? "Runner-up Pool {$poolName}" : "Peringkat {$rank} Pool {$poolName}");
+        }
+
+        return $raw;
     }
 
     /**

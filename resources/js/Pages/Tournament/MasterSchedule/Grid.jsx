@@ -231,6 +231,17 @@ export default function Grid({
                     )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                    {/* Tombol Cetak Jadwal Formal */}
+                    <a
+                        href={route('tournaments.master-schedule.print', tournament.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
+                        title="Cetak format tabel formal untuk panitia dan wasit"
+                    >
+                        <span>🖨️</span> Cetak Jadwal Resmi
+                    </a>
+
                     {/* Tombol Modal Penugasan Wasit */}
                     <button
                         onClick={() => setShowRefereeModal(true)}

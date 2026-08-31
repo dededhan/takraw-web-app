@@ -121,7 +121,7 @@ export default function TournamentHistory({ tournaments = [] }) {
                 <div className="space-y-6">
                     {filteredTournaments.map((tournament) => {
                         const myTournamentTeams = tournament.teams || [];
-                        const myTournamentSuperTeams = tournament.superTeams || [];
+                        const myTournamentSuperTeams = tournament.super_teams || tournament.superTeams || [];
                         const matches = tournament.matches || [];
 
                         return (

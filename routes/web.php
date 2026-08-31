@@ -52,6 +52,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/tournaments/{tournament}/pools/generate-matches', [PoolController::class, 'generateMatches'])->name('pools.generate-matches');
         Route::post('/pools/{pool}/assign-team', [PoolController::class, 'assignTeam'])->name('pools.assign-team');
         Route::delete('/pools/{pool}/teams/{team}', [PoolController::class, 'removeTeam'])->name('pools.remove-team');
+        Route::delete('/pools/{pool}', [PoolController::class, 'destroy'])->name('pools.destroy');
 
         // ─── Master Schedule ──────────────────────────────
         Route::prefix('tournaments/{tournament}')->name('tournaments.')->group(function () {
@@ -79,6 +80,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             // Step 4: Grid (Interactive)
             Route::get('master-schedule', [MasterScheduleController::class, 'index'])
                 ->name('master-schedule.index');
+            Route::get('master-schedule/print', [MasterScheduleController::class, 'printSchedule'])
+                ->name('master-schedule.print');
             Route::post('master-schedule/publish', [MasterScheduleController::class, 'publish'])
                 ->name('master-schedule.publish');
             Route::post('master-schedule/unpublish', [MasterScheduleController::class, 'unpublish'])
@@ -145,8 +148,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/teams/{team}/import-athletes', [TeamController::class, 'importAthletes'])->name('teams.import-athletes');
     });
 
-    // ─── Referee Routes ─────────────────────────────
-    Route::middleware('role:referee')->group(function () {
+    // ─── Referee & Admin Routes ─────────────────────
+    Route::middleware('role:admin,referee')->group(function () {
         // Scoring
         Route::get('/scoring/{match}', [ScoringController::class, 'show'])->name('scoring.show');
         Route::post('/scoring/{match}/setup', [ScoringController::class, 'setup'])->name('scoring.setup');

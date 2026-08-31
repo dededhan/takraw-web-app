@@ -74,8 +74,13 @@ class PoolController extends Controller
         $matchMode = $validated['match_mode'];
         $poolCount = $validated['pool_count'];
 
-        // Hapus pool lama KHUSUS mode ini
-        $tournament->pools()->where('match_mode', $matchMode)->delete();
+        // Hapus pool lama KHUSUS mode ini (termasuk yang match_mode IS NULL jika mode regu)
+        $tournament->pools()->where(function ($q) use ($matchMode) {
+            $q->where('match_mode', $matchMode);
+            if ($matchMode === 'regu') {
+                $q->orWhereNull('match_mode');
+            }
+        })->delete();
 
         $poolLabels = range('A', chr(64 + $poolCount));
 
@@ -255,6 +260,19 @@ class PoolController extends Controller
         }
 
         return back()->with('success', 'Kontestan berhasil dihapus dari pool!');
+    }
+
+    /**
+     * Delete a pool completely.
+     */
+    public function destroy(Pool $pool)
+    {
+        $pool->teams()->detach();
+        $pool->standings()->delete();
+        \App\Models\SuperTeam::where('pool_id', $pool->id)->update(['pool_id' => null]);
+        $pool->delete();
+
+        return back()->with('success', "Pool \"{$pool->name}\" berhasil dihapus!");
     }
 
     /**

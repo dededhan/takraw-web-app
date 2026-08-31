@@ -180,11 +180,15 @@ export default function BracketMatrix({ tournament, activeModes, matrices, stage
                                             }
                                             if (src.startsWith('winner_qf_')) {
                                                 const pos = src.replace('winner_qf_', '');
-                                                return `🏆 Pemenang Perempat Final (QF #${pos})`;
+                                                return `🏆 Pemenang QF #${pos}`;
                                             }
                                             if (src.startsWith('winner_sf_')) {
                                                 const pos = src.replace('winner_sf_', '');
-                                                return `🏆 Pemenang Semifinal (SF #${pos})`;
+                                                return `🏆 Pemenang SF #${pos}`;
+                                            }
+                                            if (src.startsWith('loser_sf_')) {
+                                                const pos = src.replace('loser_sf_', '');
+                                                return `🥉 Kalah SF #${pos} (Juara 3)`;
                                             }
                                             if (src === 'bye') return '⬛ BYE (Langsung Lolos)';
                                             return src;

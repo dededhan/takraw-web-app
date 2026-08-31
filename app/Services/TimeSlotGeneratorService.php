@@ -138,8 +138,9 @@ class TimeSlotGeneratorService
 
             // Jangan overlap dengan ISHOMA
             if ($hasIshoma && !$ishomaInserted && $ishomaStart && $slotEnd > $ishomaStart) {
-                // Potong di ISHOMA, jangan buat slot yang overlap
-                break; // ISHOMA akan diinsert di iterasi berikutnya
+                // Maju langsung ke ISHOMA jika slot ini menabrak jam ISHOMA
+                $current = $ishomaStart->copy();
+                continue;
             }
 
             // ─── Insert slot match ────────────────────────────

@@ -81,12 +81,15 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
                         >
                             🗓️ Master Schedule
                         </Link>
-                        <Link
-                            href={route('tournaments.super-teams.index', tournament.id)}
-                            className="px-4 py-2 rounded-xl text-sm font-medium text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-colors flex items-center gap-1.5"
+                        <a
+                            href={route('tournaments.master-schedule.print', tournament.id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 rounded-xl text-sm font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors flex items-center gap-1.5"
+                            title="Cetak format tabel formal untuk panitia dan wasit"
                         >
-                            🏆 Super Team
-                        </Link>
+                            🖨️ Cetak Jadwal Resmi
+                        </a>
                         <Link
                             href={route('pools.index', tournament.id)}
                             className="px-4 py-2 rounded-xl text-sm font-medium text-accent-300 bg-accent-500/10 border border-accent-500/30 hover:bg-accent-500/20 transition-colors"
@@ -105,8 +108,12 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
                 {/* Quick Stats */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
                     <div className="px-4 py-3 rounded-xl bg-surface-800/50 border border-surface-700/30 text-center">
-                        <p className="text-2xl font-bold text-surface-100">{tournament.teams?.length ?? 0}</p>
-                        <p className="text-xs text-surface-500">Tim</p>
+                        <p className="text-2xl font-bold text-surface-100">
+                            {(tournament.teams?.length || 0) + (tournament.super_teams?.length || tournament.superTeams?.length || 0)}
+                        </p>
+                        <p className="text-xs text-surface-500">
+                            {(tournament.super_teams?.length || tournament.superTeams?.length) ? 'Kontestan' : 'Tim'}
+                        </p>
                     </div>
                     <div className="px-4 py-3 rounded-xl bg-surface-800/50 border border-surface-700/30 text-center">
                         <p className="text-2xl font-bold text-surface-100">{tournament.pools?.length ?? 0}</p>
@@ -148,7 +155,16 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
             {/* Tab Content */}
             <div className="animate-fade-in">
                 {activeTab === 'overview' && <OverviewTab tournament={tournament} />}
-                {activeTab === 'teams' && <TeamsTab teams={tournament.teams} availableTeams={availableTeams} tournamentId={tournament.id} status={tournament.status} />}
+                {activeTab === 'teams' && (
+                    <TeamsTab
+                        teams={tournament.teams || []}
+                        superTeams={tournament.super_teams || tournament.superTeams || []}
+                        availableTeams={availableTeams}
+                        tournamentId={tournament.id}
+                        status={tournament.status}
+                        tournament={tournament}
+                    />
+                )}
                 {activeTab === 'pools' && <PoolsTab pools={tournament.pools} tournamentId={tournament.id} />}
                 {activeTab === 'matches' && <MatchesTab matches={tournament.matches} />}
                 {activeTab === 'bracket' && <BracketTab tournament={tournament} />}
@@ -452,7 +468,7 @@ function OverviewTab({ tournament }) {
 }
 
 
-function TeamsTab({ teams, availableTeams, tournamentId, status }) {
+function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournamentId, status, tournament }) {
     const { auth } = usePage().props;
     const isAdmin = auth.user?.role === 'admin';
     const isRegPhase = status === 'draft' || status === 'registration';
@@ -461,6 +477,30 @@ function TeamsTab({ teams, availableTeams, tournamentId, status }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTeamId, setSelectedTeamId] = useState('');
     const [processing, setProcessing] = useState(false);
+
+    // Filter regular teams by team name, region, coach name, or athlete name
+    const filteredTeams = teams.filter(team => {
+        const query = searchQuery.toLowerCase();
+        const matchesTeam = team.name?.toLowerCase().includes(query) || (team.region && team.region.toLowerCase().includes(query));
+        const matchesCoach = team.coach?.name?.toLowerCase().includes(query);
+        const matchesAthlete = (team.athletes || []).some(a => a.name?.toLowerCase().includes(query));
+        return matchesTeam || matchesCoach || matchesAthlete;
+    });
+
+    // Filter super teams by super team name, member name, coach name, or athlete name
+    const filteredSuperTeams = superTeams.filter(st => {
+        const query = searchQuery.toLowerCase();
+        const matchesName = st.name?.toLowerCase().includes(query);
+        const matchesCoach = st.coach?.name?.toLowerCase().includes(query);
+        const matchesMembers = (st.members || []).some(m =>
+            m.name?.toLowerCase().includes(query) ||
+            m.region?.toLowerCase().includes(query) ||
+            (m.athletes || []).some(a => a.name?.toLowerCase().includes(query))
+        );
+        return matchesName || matchesCoach || matchesMembers;
+    });
+
+    const totalContestants = filteredTeams.length + filteredSuperTeams.length;
 
     const filteredAvailable = availableTeams.filter(team =>
         team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -495,69 +535,332 @@ function TeamsTab({ teams, availableTeams, tournamentId, status }) {
         });
     };
 
+    const positionColors = {
+        Tekong: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+        Feeder: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        Killer: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+        Cadangan: 'bg-surface-700/60 text-surface-300 border-surface-600/50',
+    };
+
     return (
-        <div className="space-y-4">
-            {/* Header & Add button */}
-            {isAdmin && isRegPhase && (
-                <div className="flex justify-end">
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="px-4 py-2 rounded-xl text-sm font-medium text-primary-300 bg-primary-500/10 border border-primary-500/30 hover:bg-primary-500/20 transition-colors flex items-center gap-1.5"
-                    >
-                        ➕ Tambah Tim ke Turnamen
-                    </button>
+        <div className="space-y-8">
+            {/* Top Toolbar: Search & Add Team */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-surface-900/60 border border-surface-700/50 rounded-2xl p-4">
+                <div className="flex-1 max-w-md relative">
+                    <input
+                        type="text"
+                        placeholder="🔍 Cari nama tim, super team, pelatih, atau atlet..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-surface-950 border border-surface-700 text-surface-200 rounded-xl px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors"
+                    />
+                    {searchQuery && (
+                        <button
+                            type="button"
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-3 top-2.5 text-surface-500 hover:text-surface-300 text-sm"
+                        >
+                            ✕
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-surface-400">
+                        Total: <strong className="text-primary-300">{totalContestants}</strong> Kontestan Terdaftar
+                        {filteredSuperTeams.length > 0 && ` (${filteredSuperTeams.length} Super Team)`}
+                    </span>
+
+                    {isAdmin && isRegPhase && (
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold text-white bg-primary-600 hover:bg-primary-550 shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                            ➕ Tambah Tim ke Turnamen
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Empty State */}
+            {totalContestants === 0 && (
+                <div className="text-center py-16 rounded-2xl border border-dashed border-surface-700/60 bg-surface-900/30">
+                    <p className="text-4xl mb-3">👥</p>
+                    <p className="text-surface-300 font-bold text-base">Belum ada tim atau Super Team yang terdaftar</p>
+                    <p className="text-surface-500 text-xs mt-1">Gunakan tombol pendaftaran untuk menambahkan tim ke turnamen ini.</p>
                 </div>
             )}
 
-            {/* Teams List */}
-            <div className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden">
-                {(!teams || teams.length === 0) ? (
-                    <div className="text-center py-12">
-                        <p className="text-surface-500 text-sm">Belum ada tim terdaftar</p>
+            {/* 1. Super Teams Section */}
+            {filteredSuperTeams.length > 0 && (
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-surface-800">
+                        <span className="text-xl">🏆</span>
+                        <h3 className="text-base font-bold text-surface-100">Super Teams Terdaftar</h3>
+                        <span className="text-xs px-2.5 py-0.5 rounded-full border font-bold bg-amber-500/20 text-amber-300 border-amber-500/30">
+                            {filteredSuperTeams.length} Super Team
+                        </span>
                     </div>
-                ) : (
-                    <div className="divide-y divide-surface-700/30">
-                        {teams.map((team) => (
-                            <div key={team.id} className="flex items-center justify-between px-5 py-4 hover:bg-surface-800/50 transition-colors">
-                                <Link
-                                    href={route('teams.show', team.id)}
-                                    className="flex items-center gap-3 flex-1 min-w-0"
+
+                    <div className="grid grid-cols-1 gap-6">
+                        {filteredSuperTeams.map((st) => {
+                            const totalAthletes = (st.members || []).reduce((sum, m) => sum + (m.athletes?.length || 0), 0);
+
+                            return (
+                                <div
+                                    key={st.id}
+                                    className="rounded-2xl border border-amber-500/40 bg-gradient-to-b from-surface-900/90 to-surface-950/80 shadow-2xl overflow-hidden"
                                 >
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500/30 to-primary-600/20 flex items-center justify-center text-sm font-bold text-primary-300 shrink-0">
-                                        {team.name.charAt(0)}
+                                    {/* Super Team Header */}
+                                    <div className="p-5 border-b border-surface-800/80 bg-gradient-to-r from-amber-500/10 via-surface-900 to-surface-900">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/30 via-amber-600/20 to-amber-700/10 border border-amber-500/40 flex items-center justify-center text-2xl font-black text-amber-300 shrink-0 shadow-inner">
+                                                    🏆
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h3 className="text-lg font-black text-amber-200 truncate">
+                                                            {st.name}
+                                                        </h3>
+                                                        <span className="px-2.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black uppercase">
+                                                            {st.match_mode === 'team_double' ? 'Team Double (3x2)' : 'Team Regu (3x3)'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-surface-400 font-bold mt-0.5">
+                                                        👥 {st.members?.length || 0} Sub-Tim • {totalAthletes} Total Atlet
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Coach Card Info */}
+                                            <div className="rounded-xl bg-surface-950/80 border border-surface-800 p-3 flex items-center gap-3 text-xs shrink-0">
+                                                <span className="text-xl">👔</span>
+                                                <div>
+                                                    <span className="text-[10px] uppercase font-bold text-surface-400 block leading-tight">Pelatih Super Team</span>
+                                                    <span className="text-xs font-bold text-surface-200">
+                                                        {st.coach?.name || st.creator?.name || (st.members && st.members[0]?.coach?.name) || 'Belum Ditentukan'}
+                                                    </span>
+                                                    {(st.coach?.phone || st.creator?.phone || (st.members && st.members[0]?.coach?.phone)) && (
+                                                        <span className="text-[10px] font-mono text-primary-300 block">
+                                                            📞 {st.coach?.phone || st.creator?.phone || st.members[0]?.coach?.phone}
+                                                        </span>
+                                                    )}
+                                                    {(st.coach?.email || st.creator?.email) && (
+                                                        <span className="text-[10px] text-surface-400 block truncate max-w-[160px]">
+                                                            ✉️ {st.coach?.email || st.creator?.email}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="truncate">
-                                        <p className="text-sm font-medium text-surface-200 truncate">{team.name}</p>
-                                        <p className="text-xs text-surface-500 truncate">{team.region} • {team.athletes?.length || 0} atlet</p>
+
+                                    {/* 3 Sub-Teams Breakdown */}
+                                    <div className="p-5 bg-surface-950/50">
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-surface-400 mb-3 flex items-center gap-1.5">
+                                            <span>⚔️</span>
+                                            <span>Daftar 3 Sub-Tim & Anggota Atlet:</span>
+                                        </h4>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {(st.members || []).map((sub, sIdx) => (
+                                                <div
+                                                    key={sub.id || sIdx}
+                                                    className="rounded-xl border border-surface-800 bg-surface-900/80 p-3.5 space-y-3 flex flex-col justify-between"
+                                                >
+                                                    <div className="flex items-center justify-between pb-2 border-b border-surface-800">
+                                                        <div>
+                                                            <h5 className="text-xs font-black text-surface-200 flex items-center gap-1.5">
+                                                                <span className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-mono font-black flex items-center justify-center border border-amber-500/30">
+                                                                    {sIdx + 1}
+                                                                </span>
+                                                                <span>{sub.name}</span>
+                                                            </h5>
+                                                            {sub.region && (
+                                                                <span className="text-[10px] text-surface-400 font-semibold block mt-0.5">
+                                                                    📍 {sub.region}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <span className="text-[10px] text-emerald-400 font-bold">
+                                                            {sub.athletes?.length || 0} Atlet
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Athletes */}
+                                                    <div className="space-y-1.5 flex-1">
+                                                        {(!sub.athletes || sub.athletes.length === 0) ? (
+                                                            <p className="text-[11px] text-surface-500 italic py-1">Belum ada atlet.</p>
+                                                        ) : (
+                                                            sub.athletes.map((ath, aIdx) => {
+                                                                const jerseyNo = ath.jersey_number || ath.number || (aIdx + 1);
+                                                                const posStyle = positionColors[ath.position] || positionColors.Cadangan;
+
+                                                                return (
+                                                                    <div
+                                                                        key={ath.id || aIdx}
+                                                                        className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-surface-950/60 border border-surface-800 text-xs"
+                                                                    >
+                                                                        <div className="flex items-center gap-1.5 min-w-0">
+                                                                            <span className="w-5 h-5 rounded bg-surface-800 text-primary-300 font-mono font-black text-[10px] flex items-center justify-center shrink-0 border border-surface-700">
+                                                                                #{jerseyNo}
+                                                                            </span>
+                                                                            <span className="text-[11px] font-bold text-surface-200 truncate" title={ath.name}>
+                                                                                {ath.name}
+                                                                            </span>
+                                                                        </div>
+                                                                        {ath.position && (
+                                                                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold border shrink-0 ${posStyle}`}>
+                                                                                {ath.position}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                </Link>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    {isAdmin && isRegPhase && (
-                                        <button
-                                            onClick={() => handleRemoveTeam(team)}
-                                            disabled={processing}
-                                            className="p-2 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                                            title="Keluarkan tim dari turnamen"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                        </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* 2. Regular Teams Section */}
+            {filteredTeams.length > 0 && (
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-surface-800">
+                        <span className="text-xl">👥</span>
+                        <h3 className="text-base font-bold text-surface-100">Tim Reguler Terdaftar</h3>
+                        <span className="text-xs px-2.5 py-0.5 rounded-full border font-bold bg-primary-500/20 text-primary-300 border-primary-500/30">
+                            {filteredTeams.length} Tim
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {filteredTeams.map((team) => (
+                            <div
+                                key={team.id}
+                                className="rounded-2xl border border-surface-700/60 bg-gradient-to-b from-surface-900/90 to-surface-950/80 shadow-xl overflow-hidden hover:border-surface-600/80 transition-all flex flex-col justify-between"
+                            >
+                                {/* Card Top: Team Header & Coach Info */}
+                                <div className="p-5 border-b border-surface-800/80">
+                                    <div className="flex items-start justify-between gap-3 mb-4">
+                                        <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-500/30 via-primary-600/20 to-primary-700/10 border border-primary-500/30 flex items-center justify-center text-lg font-black text-primary-300 shrink-0 shadow-inner">
+                                                {team.name.charAt(0)}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <h3 className="text-base font-black text-surface-100 truncate">
+                                                        {team.name}
+                                                    </h3>
+                                                    {team.region && (
+                                                        <span className="px-2 py-0.5 rounded-md bg-surface-800 border border-surface-700/60 text-surface-300 text-[10px] font-semibold">
+                                                            📍 {team.region}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-emerald-400 font-bold mt-0.5">
+                                                    👥 {team.athletes?.length || 0} Atlet Terdaftar
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Action Buttons */}
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <Link
+                                                href={route('teams.show', team.id)}
+                                                className="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white text-xs font-bold transition-all border border-surface-700/50 flex items-center gap-1"
+                                            >
+                                                Detail →
+                                            </Link>
+
+                                            {isAdmin && isRegPhase && (
+                                                <button
+                                                    onClick={() => handleRemoveTeam(team)}
+                                                    disabled={processing}
+                                                    className="p-1.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/20 border border-red-500/30 transition-colors disabled:opacity-50"
+                                                    title="Keluarkan tim dari turnamen"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Coach Card / Info */}
+                                    <div className="rounded-xl bg-surface-950/60 border border-surface-800 p-3 flex items-center justify-between gap-3 text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-base">👔</span>
+                                            <div>
+                                                <span className="text-[10px] uppercase font-bold text-surface-400 block leading-tight">Pelatih / Official</span>
+                                                <span className="text-xs font-bold text-surface-200">
+                                                    {team.coach?.name || 'Belum Ditentukan'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right text-[11px] text-surface-400">
+                                            {team.coach?.phone && <span className="block font-mono text-primary-300">📞 {team.coach.phone}</span>}
+                                            {team.coach?.email && <span className="block truncate max-w-[150px]">{team.coach.email}</span>}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Card Bottom: Athlete Roster */}
+                                <div className="p-4 bg-surface-950/40">
+                                    <p className="text-[11px] font-bold uppercase tracking-wider text-surface-400 mb-2.5 flex items-center gap-1.5">
+                                        <span>🏃</span>
+                                        <span>Daftar Atlet & Posisi:</span>
+                                    </p>
+
+                                    {(!team.athletes || team.athletes.length === 0) ? (
+                                        <p className="text-xs text-surface-500 italic py-2">
+                                            Belum ada data atlet yang didaftarkan pada tim ini.
+                                        </p>
+                                    ) : (
+                                        <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
+                                            {team.athletes.map((athlete, aIdx) => {
+                                                const jerseyNo = athlete.jersey_number || athlete.number || (aIdx + 1);
+                                                const posStyle = positionColors[athlete.position] || positionColors.Cadangan;
+
+                                                return (
+                                                    <div
+                                                        key={athlete.id || aIdx}
+                                                        className="flex items-center justify-between gap-2 p-2 rounded-xl bg-surface-900/80 border border-surface-800/80 hover:border-surface-700 transition-colors"
+                                                    >
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <span className="w-6 h-6 rounded-lg bg-surface-800 text-primary-300 font-mono font-black text-xs flex items-center justify-center shrink-0 border border-surface-700">
+                                                                #{jerseyNo}
+                                                            </span>
+                                                            <span className="text-xs font-bold text-surface-200 truncate" title={athlete.name}>
+                                                                {athlete.name}
+                                                            </span>
+                                                        </div>
+
+                                                        {athlete.position && (
+                                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border shrink-0 ${posStyle}`}>
+                                                                {athlete.position}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     )}
-                                    <Link
-                                        href={route('teams.show', team.id)}
-                                        className="p-2 rounded-lg text-surface-450 hover:text-surface-300 hover:bg-surface-800 transition-colors"
-                                    >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                                        </svg>
-                                    </Link>
                                 </div>
                             </div>
                         ))}
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             {/* Add Team Modal */}
             {isModalOpen && (
@@ -581,7 +884,6 @@ function TeamsTab({ teams, availableTeams, tournamentId, status }) {
                             </div>
                         ) : (
                             <form onSubmit={handleAddTeam} className="space-y-4">
-                                {/* Search filter */}
                                 <div>
                                     <label className="block text-xs font-semibold text-surface-400 uppercase tracking-wider mb-2">
                                         Cari Tim
@@ -595,7 +897,6 @@ function TeamsTab({ teams, availableTeams, tournamentId, status }) {
                                     />
                                 </div>
 
-                                {/* Team select */}
                                 <div>
                                     <label className="block text-xs font-semibold text-surface-400 uppercase tracking-wider mb-2">
                                         Pilih Tim
@@ -630,7 +931,6 @@ function TeamsTab({ teams, availableTeams, tournamentId, status }) {
                                     </div>
                                 </div>
 
-                                {/* Actions */}
                                 <div className="flex justify-end gap-3 pt-4 border-t border-surface-800">
                                     <button
                                         type="button"
@@ -642,7 +942,7 @@ function TeamsTab({ teams, availableTeams, tournamentId, status }) {
                                     <button
                                         type="submit"
                                         disabled={!selectedTeamId || processing}
-                                        className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-primary-600 hover:bg-primary-550 disabled:opacity-50 transition-colors"
+                                        className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-primary-600 hover:bg-primary-550 disabled:opacity-50 transition-colors cursor-pointer"
                                     >
                                         {processing ? 'Menambahkan...' : 'Tambah Tim'}
                                     </button>

@@ -10,6 +10,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'match_set_id', 'athlete_id', 'team_id',
     'service_in', 'service_ace', 'service_error',
+    'strike_in', 'strike_ace', 'strike_error',
+    'freeball_in', 'freeball_ace', 'freeball_error',
+    'firstball_in', 'firstball_ace', 'firstball_error',
+    'feeding_in', 'feeding_ace', 'feeding_error',
+    'blocking_in', 'blocking_ace', 'blocking_error',
+    'opponent_mistake',
+    'action_zones',
     'receive_success', 'receive_fail',
     'feeding_success', 'feeding_fail',
     'strike_success', 'strike_fail',
@@ -26,11 +33,21 @@ class SetStat extends Model
 {
     use HasFactory;
 
+    protected $casts = [
+        'action_zones' => 'array',
+    ];
+
     /**
      * All stat columns that can be incremented/decremented by the referee.
      */
     public const STAT_COLUMNS = [
         'service_in', 'service_ace', 'service_error',
+        'strike_in', 'strike_ace', 'strike_error',
+        'freeball_in', 'freeball_ace', 'freeball_error',
+        'firstball_in', 'firstball_ace', 'firstball_error',
+        'feeding_in', 'feeding_ace', 'feeding_error',
+        'blocking_in', 'blocking_ace', 'blocking_error',
+        'opponent_mistake',
         'receive_success', 'receive_fail',
         'feeding_success', 'feeding_fail',
         'strike_success', 'strike_fail',

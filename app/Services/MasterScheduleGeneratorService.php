@@ -689,7 +689,15 @@ class MasterScheduleGeneratorService
             },
             'bye'      => 'BYE',
             'wildcard' => "Wildcard #{$parsed['position']}",
-            'winner'   => "Pemenang #{$parsed['position']}",
+            'winner'   => match ($parsed['stage'] ?? null) {
+                'quarterfinal' => "Pemenang QF #{$parsed['position']}",
+                'semifinal'    => "Pemenang SF #{$parsed['position']}",
+                default        => "Pemenang Match #{$parsed['position']}",
+            },
+            'loser'    => match ($parsed['stage'] ?? null) {
+                'semifinal' => "Kalah SF #{$parsed['position']}",
+                default     => "Kalah Match #{$parsed['position']}",
+            },
             default    => $source,
         };
     }
@@ -706,19 +714,21 @@ class MasterScheduleGeneratorService
             'bye'      => 'BYE',
             'wildcard' => "Wildcard #{$parsed['position']}",
             'winner'   => match ($parsed['stage'] ?? null) {
-                'qf', 'round_of_8' => isset($stageMap[$mode]['quarterfinal'][$parsed['position']])
-                    ? "Pemenang #" . $stageMap[$mode]['quarterfinal'][$parsed['position']]
-                    : "Pemenang QF {$parsed['position']}",
-                'sf', 'semifinal'  => isset($stageMap[$mode]['semifinal'][$parsed['position']])
-                    ? "Pemenang #" . $stageMap[$mode]['semifinal'][$parsed['position']]
-                    : "Pemenang SF {$parsed['position']}",
-                default => "Pemenang #{$parsed['position']}",
+                'quarterfinal', 'qf', 'round_of_8' => isset($stageMap[$mode]['quarterfinal'][$parsed['position']])
+                    ? "Pemenang Match #" . $stageMap[$mode]['quarterfinal'][$parsed['position']]
+                    : "Pemenang QF #{$parsed['position']}",
+                'semifinal', 'sf'  => isset($stageMap[$mode]['semifinal'][$parsed['position']])
+                    ? "Pemenang Match #" . $stageMap[$mode]['semifinal'][$parsed['position']]
+                    : "Pemenang SF #{$parsed['position']}",
+                default => isset($parsed['position']) && isset($stageMap[$mode][$parsed['position']])
+                    ? "Pemenang Match #" . $stageMap[$mode][$parsed['position']]
+                    : "Pemenang Match #" . ($parsed['position'] ?? '?'),
             },
             'loser'    => match ($parsed['stage'] ?? null) {
-                'sf', 'semifinal' => isset($stageMap[$mode]['semifinal'][$parsed['position']])
-                    ? "Kalah #" . $stageMap[$mode]['semifinal'][$parsed['position']]
-                    : "Kalah SF {$parsed['position']}",
-                default => "Kalah #{$parsed['position']}",
+                'semifinal', 'sf' => isset($stageMap[$mode]['semifinal'][$parsed['position']])
+                    ? "Kalah Match #" . $stageMap[$mode]['semifinal'][$parsed['position']]
+                    : "Kalah SF #{$parsed['position']}",
+                default => "Kalah Match #" . ($parsed['position'] ?? '?'),
             },
             default    => $source,
         };
