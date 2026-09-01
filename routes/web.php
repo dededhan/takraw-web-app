@@ -161,6 +161,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/scoring/{match}/update-stat', [ScoringController::class, 'updateStat'])->name('scoring.update-stat');
         Route::post('/scoring/{match}/update-score', [ScoringController::class, 'updateScore'])->name('scoring.update-score');
         Route::post('/scoring/{match}/finish-set', [ScoringController::class, 'finishSet'])->name('scoring.finish-set');
+        Route::post('/scoring/{match}/quick-athlete', [ScoringController::class, 'quickAthlete'])->name('scoring.quick-athlete');
     });
 
     // ─── Shared Read Routes ─────────────────────────

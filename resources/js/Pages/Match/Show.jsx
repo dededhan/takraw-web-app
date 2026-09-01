@@ -187,9 +187,47 @@ export default function MatchShow({ match: m }) {
     const homeTeamId = m.home_team_id || m.home_super_team_id;
     const awayTeamId = m.away_team_id || m.away_super_team_id;
 
+    const isTeamMode = m.match_mode === 'team_regu' || m.match_mode === 'team_double';
+
+    const reguSummaries = useMemo(() => {
+        if (!isTeamMode || !m.sets) return [];
+        return [0, 1, 2].map((rIdx) => {
+            const rSets = m.sets.filter(s => s.set_number >= rIdx * 3 + 1 && s.set_number <= rIdx * 3 + 3);
+            const fSets = rSets.filter(s => s.status === 'finished');
+            const homeWon = fSets.filter(s => s.home_score > s.away_score).length;
+            const awayWon = fSets.filter(s => s.away_score > s.home_score).length;
+            const isFinished = homeWon >= 2 || awayWon >= 2 || (homeWon + awayWon >= 3);
+            const winner = (homeWon >= 2 || (isFinished && homeWon > awayWon)) ? 'home' : ((awayWon >= 2 || (isFinished && awayWon > homeWon)) ? 'away' : null);
+            return {
+                index: rIdx,
+                label: `Regu ${rIdx + 1}`,
+                sets: rSets,
+                homeWon,
+                awayWon,
+                winner,
+                isFinished,
+            };
+        });
+    }, [isTeamMode, m.sets]);
+
+    const superTeamScore = useMemo(() => {
+        if (!isTeamMode) return { home: 0, away: 0 };
+        let home = 0;
+        let away = 0;
+        reguSummaries.forEach(r => {
+            if (r.winner === 'home') home++;
+            else if (r.winner === 'away') away++;
+        });
+        return { home, away };
+    }, [isTeamMode, reguSummaries]);
+
     const finishedSets = m.sets?.filter(s => s.status === 'finished') || [];
-    const setsWonHome = finishedSets.filter(s => s.winner_team_id === m.home_team_id || s.winner_team_id === m.home_super_team_id).length;
-    const setsWonAway = finishedSets.filter(s => s.winner_team_id === m.away_team_id || s.winner_team_id === m.away_super_team_id).length;
+    const setsWonHome = isTeamMode 
+        ? superTeamScore.home 
+        : finishedSets.filter(s => s.home_score > s.away_score).length;
+    const setsWonAway = isTeamMode 
+        ? superTeamScore.away 
+        : finishedSets.filter(s => s.away_score > s.home_score).length;
 
     const homeAthletes = m.home_team?.athletes || m.home_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
     const awayAthletes = m.away_team?.athletes || m.away_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
@@ -345,19 +383,52 @@ export default function MatchShow({ match: m }) {
                 </div>
 
                 {/* Set Scores breakdown */}
-                {finishedSets.length > 0 && (
-                    <div className="flex flex-wrap justify-center gap-2 mt-4 pt-3 border-t border-surface-800">
-                        {m.sets?.filter(s => s.status === 'finished').map((set) => (
-                            <div key={set.id} className="px-3 py-1.5 rounded-xl border border-surface-700/60 bg-surface-900/80 text-center shadow-xs">
-                                <p className="text-[10px] text-surface-400 uppercase font-bold">Set {set.set_number}</p>
-                                <p className="text-xs sm:text-sm font-bold mt-0.5 font-mono">
-                                    <span className={set.winner_team_id === m.home_team_id ? 'text-primary-400 font-black' : 'text-surface-300'}>{set.home_score}</span>
-                                    <span className="text-surface-600 mx-1">-</span>
-                                    <span className={set.winner_team_id === m.away_team_id ? 'text-amber-400 font-black' : 'text-surface-300'}>{set.away_score}</span>
-                                </p>
-                            </div>
-                        ))}
+                {isTeamMode ? (
+                    <div className="space-y-2 mt-4 pt-3 border-t border-surface-800 text-left max-w-xl mx-auto">
+                        <p className="text-[11px] font-black uppercase tracking-wider text-surface-400 text-center mb-1">Rincian Hasil Tiap Sesi Regu</p>
+                        {reguSummaries.map((r) => {
+                            const finishedSetsInR = r.sets.filter(s => s.status === 'finished');
+                            return (
+                                <div key={r.index} className="p-2.5 rounded-xl bg-surface-950/70 border border-surface-800/80 flex items-center justify-between gap-2 text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-extrabold text-white">{r.label}:</span>
+                                        <div className="text-surface-400 text-[11px] font-mono flex flex-wrap gap-1.5">
+                                            {finishedSetsInR.length > 0 ? (
+                                                finishedSetsInR.map(s => (
+                                                    <span key={s.id} className="bg-surface-900 px-2 py-0.5 rounded-md border border-surface-800">
+                                                        Set {s.set_number}: <strong className="text-white">{s.home_score}-{s.away_score}</strong>
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="italic text-surface-500">Belum dimainkan</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <span className={`px-2.5 py-0.5 rounded-lg font-black text-[11px] shrink-0 ${
+                                        r.winner === 'home' ? 'bg-primary-500/20 text-primary-300 border border-primary-500/40' :
+                                        r.winner === 'away' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-surface-800 text-surface-400'
+                                    }`}>
+                                        {r.winner === 'home' ? `Menang ${r.homeWon}-${r.awayWon}` : r.winner === 'away' ? `Kalah ${r.homeWon}-${r.awayWon}` : (r.homeWon + r.awayWon > 0 ? `${r.homeWon}-${r.awayWon}` : '—')}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
+                ) : (
+                    finishedSets.length > 0 && (
+                        <div className="flex flex-wrap justify-center gap-2 mt-4 pt-3 border-t border-surface-800">
+                            {m.sets?.filter(s => s.status === 'finished').map((set) => (
+                                <div key={set.id} className="px-3 py-1.5 rounded-xl border border-surface-700/60 bg-surface-900/80 text-center shadow-xs">
+                                    <p className="text-[10px] text-surface-400 uppercase font-bold">Set {set.set_number}</p>
+                                    <p className="text-xs sm:text-sm font-bold mt-0.5 font-mono">
+                                        <span className={set.home_score > set.away_score ? 'text-primary-400 font-black' : 'text-surface-300'}>{set.home_score}</span>
+                                        <span className="text-surface-600 mx-1">-</span>
+                                        <span className={set.away_score > set.home_score ? 'text-amber-400 font-black' : 'text-surface-300'}>{set.away_score}</span>
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    )
                 )}
 
                 <div className="flex justify-center gap-4 mt-3 text-[11px] text-surface-500 font-medium">

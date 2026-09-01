@@ -119,10 +119,11 @@ class ScoringController extends Controller
         $validated = $request->validate([
             'match_set_id' => 'required|exists:match_sets,id',
             'athlete_id'   => 'required',
-            'stat'         => 'required|in:' . implode(',', SetStat::STAT_COLUMNS),
+            'stat'         => ['required', 'string', \Illuminate\Validation\Rule::in(SetStat::STAT_COLUMNS)],
             'action'       => 'required|in:increment,decrement',
             'zone'         => 'nullable|string',
             'team_id'      => 'nullable',
+            'side'         => 'nullable|in:home,away',
         ]);
 
         $rawAthleteId = $validated['athlete_id'];
@@ -201,13 +202,16 @@ class ScoringController extends Controller
 
         $athleteId = $resolvedAthleteId;
         $teamId = $resolvedTeamId;
+        $column = $validated['stat'];
+        $action = $validated['action'];
+        $zone = $validated['zone'] ?? null;
+        $set = MatchSet::find($validated['match_set_id']);
 
         $stat = SetStat::where('match_set_id', $validated['match_set_id'])
             ->where('athlete_id', $athleteId)
             ->first();
 
         if (!$stat) {
-            // Auto-create if not exists
             $stat = SetStat::create([
                 'match_set_id' => $validated['match_set_id'],
                 'athlete_id'   => $athleteId,
@@ -215,17 +219,23 @@ class ScoringController extends Controller
             ]);
         }
 
-        $column = $validated['stat'];
-        $action = $validated['action'];
-        $zone = $validated['zone'] ?? null;
-        $set = MatchSet::find($validated['match_set_id']);
+        // Determine whether this team/athlete belongs to home or away
+        $side = $validated['side'] ?? null;
+        if (!$side) {
+            if ($match->isTeamMode()) {
+                $homeMemberIds = $match->homeSuperTeam?->members->pluck('id')->all() ?? [];
+                $side = (in_array($teamId, $homeMemberIds) || $teamId === $match->home_super_team_id) ? 'home' : 'away';
+            } else {
+                $side = ($teamId === $match->home_team_id) ? 'home' : 'away';
+            }
+        }
+        $sideCol = ($side === 'home') ? 'home_score' : 'away_score';
 
         if ($action === 'increment') {
             $stat->increment($column);
 
-            // Auto add point +1 for opponent mistake
+            // Auto add point +1 for opponent mistake to the team receiving the mistake point
             if ($column === 'opponent_mistake' && $set) {
-                $sideCol = ($teamId === $match->home_team_id || $teamId === $match->home_super_team_id) ? 'home_score' : 'away_score';
                 $set->increment($sideCol);
             }
 
@@ -315,6 +325,24 @@ class ScoringController extends Controller
             }
         }
 
+        $set->refresh();
+
+        // If the set was finished and score changed, keep winner in sync
+        $isTeam = $match->isTeamMode() || $match->home_super_team_id || $match->away_super_team_id;
+        $homeContestantId = $isTeam ? $match->home_super_team_id : $match->home_team_id;
+        $awayContestantId = $isTeam ? $match->away_super_team_id : $match->away_team_id;
+
+        if ($set->status === 'finished') {
+            $setWinnerId = $set->home_score > $set->away_score
+                ? $homeContestantId
+                : ($set->away_score > $set->home_score ? $awayContestantId : null);
+
+            $set->update([
+                'winner_team_id'        => $isTeam ? null : $setWinnerId,
+                'winner_super_team_id'  => $isTeam ? $setWinnerId : null,
+            ]);
+        }
+
         return response()->json([
             'set' => $set->fresh(),
         ]);
@@ -335,10 +363,10 @@ class ScoringController extends Controller
         $homeContestantId = $isTeam ? $match->home_super_team_id : $match->home_team_id;
         $awayContestantId = $isTeam ? $match->away_super_team_id : $match->away_team_id;
 
-        // Determine winner
+        // Determine set winner accurately based on points
         $setWinnerId = $set->home_score > $set->away_score
             ? $homeContestantId
-            : $awayContestantId;
+            : ($set->away_score > $set->home_score ? $awayContestantId : null);
 
         $set->update([
             'status'                => 'finished',
@@ -347,7 +375,131 @@ class ScoringController extends Controller
             'winner_super_team_id'  => $isTeam ? $setWinnerId : null,
         ]);
 
-        // Check if match is over (best of N)
+        // ─── TEAM MODE MULTI-SESSION HANDLING (Team Regu / Team Double) ───
+        if ($isTeam && $match->sets()->count() > 3) {
+            $subIndex = (int) floor(($set->set_number - 1) / 3);
+            $subStartSet = ($subIndex * 3) + 1;
+            $subEndSet = ($subIndex * 3) + 3;
+
+            // Count sets won in this sub-regu based directly on scores & finished status
+            $subSets = $match->sets()->whereBetween('set_number', [$subStartSet, $subEndSet])
+                ->where('status', 'finished')
+                ->get();
+
+            $subSetsHome = $subSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+            $subSetsAway = $subSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
+
+            $subFinished = ($subSetsHome >= 2 || $subSetsAway >= 2 || ($subSetsHome + $subSetsAway >= 3));
+            $subWinner = $subSetsHome > $subSetsAway ? $homeContestantId : ($subSetsAway > $subSetsHome ? $awayContestantId : null);
+
+            // Calculate overall regus won so far across all 3 regus
+            $regusWonHome = 0;
+            $regusWonAway = 0;
+            for ($r = 0; $r < 3; $r++) {
+                $rStart = ($r * 3) + 1;
+                $rEnd = ($r * 3) + 3;
+                $rSets = $match->sets()->whereBetween('set_number', [$rStart, $rEnd])
+                    ->where('status', 'finished')
+                    ->get();
+                $rH = $rSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+                $rA = $rSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
+                if ($rH >= 2 || ($rH + $rA >= 3 && $rH > $rA)) {
+                    $regusWonHome++;
+                } elseif ($rA >= 2 || ($rH + $rA >= 3 && $rA > $rH)) {
+                    $regusWonAway++;
+                }
+            }
+
+            // A Team match with 3 regus finishes when Regu 3 finishes (or all 3 regus are complete)
+            $matchOver = ($subFinished && $subIndex >= 2) || ($regusWonHome + $regusWonAway >= 3);
+
+            if ($matchOver) {
+                $matchWinner = $regusWonHome > $regusWonAway ? $homeContestantId : $awayContestantId;
+                $match->update([
+                    'status'               => 'finished',
+                    'finished_at'          => now(),
+                    'winner_super_team_id' => $matchWinner,
+                ]);
+
+                if ($match->pool_id) {
+                    \App\Models\PoolStanding::recalculate($match->pool_id);
+                }
+
+                if ($match->next_match_id) {
+                    $nextMatch = Match_::find($match->next_match_id);
+                    if ($nextMatch) {
+                        if (!$nextMatch->home_super_team_id) {
+                            $nextMatch->update(['home_super_team_id' => $matchWinner]);
+                        } else {
+                            $nextMatch->update(['away_super_team_id' => $matchWinner]);
+                        }
+                    }
+                }
+
+                return response()->json([
+                    'matchFinished'   => true,
+                    'winner'          => $matchWinner,
+                    'reguFinished'    => true,
+                    'reguWinner'      => $subWinner,
+                    'regusWonHome'    => $regusWonHome,
+                    'regusWonAway'    => $regusWonAway,
+                    'redirect_url'    => route('matches.show', $match->id),
+                    'match'           => $match->fresh()->load(['homeSuperTeam.members.athletes', 'awaySuperTeam.members.athletes', 'sets.stats.athlete']),
+                ]);
+            }
+
+            // If sub-regu finished (Regu 1 or Regu 2), activate the first set of the NEXT sub-regu (e.g. Set 4 for Regu 2, Set 7 for Regu 3)
+            if ($subFinished) {
+                $nextSubIndex = $subIndex + 1;
+                $nextSetNum = ($nextSubIndex * 3) + 1;
+                $nextSet = $match->sets()->where('set_number', $nextSetNum)->first();
+
+                if ($nextSet) {
+                    $nextSet->update([
+                        'status'     => 'live',
+                        'started_at' => now(),
+                    ]);
+                    $this->initializeSetStats($nextSet, $match);
+                }
+
+                return response()->json([
+                    'matchFinished'   => false,
+                    'reguFinished'    => true,
+                    'reguWinner'      => $subWinner,
+                    'reguIndex'       => $subIndex,
+                    'nextReguIndex'   => $nextSubIndex,
+                    'regusWonHome'    => $regusWonHome,
+                    'regusWonAway'    => $regusWonAway,
+                    'currentSet'      => $nextSet?->fresh(),
+                    'match'           => $match->fresh()->load(['homeSuperTeam.members.athletes', 'awaySuperTeam.members.athletes', 'sets.stats.athlete']),
+                ]);
+            }
+
+            // Otherwise, continue to next set in current sub-regu
+            $nextSetInSub = $match->sets()->whereBetween('set_number', [$subStartSet, $subEndSet])
+                ->where('status', 'pending')
+                ->orderBy('set_number')
+                ->first();
+
+            if ($nextSetInSub) {
+                $nextSetInSub->update([
+                    'status'     => 'live',
+                    'started_at' => now(),
+                ]);
+                $this->initializeSetStats($nextSetInSub, $match);
+            }
+
+            return response()->json([
+                'matchFinished' => false,
+                'reguFinished'  => false,
+                'regusWonHome'  => $regusWonHome,
+                'regusWonAway'  => $regusWonAway,
+                'currentSet'    => $nextSetInSub?->fresh(),
+                'match'         => $match->fresh()->load(['homeSuperTeam.members.athletes', 'awaySuperTeam.members.athletes', 'sets.stats.athlete']),
+            ]);
+        }
+
+        // ─── REGULAR MODE HANDLING (Single Regu / Double / Quadrant) ───
         $setsWonHome = $match->sets()->where('status', 'finished')
             ->where(function ($q) use ($isTeam, $homeContestantId) {
                 if ($isTeam) {
@@ -366,7 +518,7 @@ class ScoringController extends Controller
                 }
             })->count();
 
-        $setsToWin = ceil($match->max_sets / 2);
+        $setsToWin = ceil(($match->max_sets ?: 3) / 2);
 
         if ($setsWonHome >= $setsToWin || $setsWonAway >= $setsToWin) {
             // Match finished
@@ -409,7 +561,7 @@ class ScoringController extends Controller
                 'matchFinished' => true,
                 'winner'        => $matchWinner,
                 'redirect_url'  => route('matches.show', $match->id),
-                'match'         => $match->fresh()->load(['homeTeam', 'awayTeam', 'sets']),
+                'match'         => $match->fresh()->load(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'sets']),
             ]);
         }
 
@@ -435,18 +587,68 @@ class ScoringController extends Controller
     }
 
     /**
+     * Quick add an athlete on-the-fly during scoring (input dadakan nomor punggung).
+     */
+    public function quickAthlete(Request $request, Match_ $match)
+    {
+        $validated = $request->validate([
+            'team_id'       => 'required|exists:teams,id',
+            'jersey_number' => 'required|integer|min:1|max:99',
+            'name'          => 'nullable|string|max:100',
+            'position'      => 'nullable|string|in:Tekong,Feeder,Killer,Cadangan,Pemain',
+        ]);
+
+        $team = \App\Models\Team::findOrFail($validated['team_id']);
+
+        // Check if athlete with this jersey number already exists in this team
+        $athlete = $team->athletes()->where('jersey_number', $validated['jersey_number'])->first();
+
+        if (!$athlete) {
+            $name = !empty($validated['name'])
+                ? $validated['name']
+                : ($validated['position'] ?? 'Pemain') . ' #' . $validated['jersey_number'];
+
+            $athlete = \App\Models\Athlete::create([
+                'team_id'       => $team->id,
+                'jersey_number' => $validated['jersey_number'],
+                'name'          => $name,
+                'position'      => $validated['position'] ?? 'Pemain',
+            ]);
+        }
+
+        // Ensure set stat exists for current active set
+        $activeSet = $match->sets()->where('status', 'live')->first() ?: $match->sets()->first();
+        if ($activeSet) {
+            SetStat::firstOrCreate([
+                'match_set_id' => $activeSet->id,
+                'athlete_id'   => $athlete->id,
+            ], [
+                'team_id'      => $team->id,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'athlete' => $athlete,
+            'team'    => $team->fresh()->load('athletes'),
+            'match'   => $match->fresh()->load([
+                'homeTeam.athletes',
+                'awayTeam.athletes',
+                'homeSuperTeam.members.athletes',
+                'awaySuperTeam.members.athletes',
+                'sets.stats.athlete',
+            ]),
+        ]);
+    }
+
+    /**
      * Initialize stat rows for all athletes in both teams for a given set.
      */
     private function initializeSetStats(MatchSet $set, Match_ $match): void
     {
         if ($match->isTeamMode()) {
-            // Tentukan sub-regu index berdasarkan set_number (1-3: Regu 1, 4-6: Regu 2, 7-9: Regu 3)
-            $subIndex = (int) floor(($set->set_number - 1) / 3);
-            $homeSubTeam = $match->homeSuperTeam?->members[$subIndex] ?? null;
-            $awaySubTeam = $match->awaySuperTeam?->members[$subIndex] ?? null;
-
-            $homeAthletes = $homeSubTeam?->athletes ?? collect();
-            $awayAthletes = $awaySubTeam?->athletes ?? collect();
+            $homeAthletes = $match->homeSuperTeam?->members->flatMap->athletes ?? collect();
+            $awayAthletes = $match->awaySuperTeam?->members->flatMap->athletes ?? collect();
         } else {
             $homeAthletes = $match->homeTeam?->athletes ?? collect();
             $awayAthletes = $match->awayTeam?->athletes ?? collect();

@@ -113,21 +113,28 @@ class PoolStanding extends Model
             $standings[$homeId]['played']++;
             $standings[$awayId]['played']++;
 
-            $winnerId = $match->winner_team_id;
+            $winnerId = $isTeamMode ? $match->winner_super_team_id : $match->winner_team_id;
             if ($isTeamMode) {
-                // For team mode, check match sets won or winner_team_id against super team
-                $homeSets = $match->sets->where('status', 'finished')->filter(fn($s) => $s->winner_team_id === $homeId || $s->home_score > $s->away_score)->count();
-                $awaySets = $match->sets->where('status', 'finished')->filter(fn($s) => $s->winner_team_id === $awayId || $s->away_score > $s->home_score)->count();
-                if ($homeSets > $awaySets) {
+                // Calculate regus won
+                $regusWonHome = 0;
+                $regusWonAway = 0;
+                for ($r = 0; $r < 3; $r++) {
+                    $rStart = ($r * 3) + 1;
+                    $rEnd = ($r * 3) + 3;
+                    $rSets = $match->sets->where('status', 'finished')->filter(fn($s) => $s->set_number >= $rStart && $s->set_number <= $rEnd);
+                    $rH = $rSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+                    $rA = $rSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
+                    if ($rH >= 2 || ($rH + $rA >= 3 && $rH > $rA)) {
+                        $regusWonHome++;
+                    } elseif ($rA >= 2 || ($rH + $rA >= 3 && $rA > $rH)) {
+                        $regusWonAway++;
+                    }
+                }
+
+                if ($regusWonHome > $regusWonAway || $winnerId === $homeId) {
                     $standings[$homeId]['won']++;
                     $standings[$awayId]['lost']++;
-                } elseif ($awaySets > $homeSets) {
-                    $standings[$awayId]['won']++;
-                    $standings[$homeId]['lost']++;
-                } elseif ($winnerId === $homeId) {
-                    $standings[$homeId]['won']++;
-                    $standings[$awayId]['lost']++;
-                } elseif ($winnerId === $awayId) {
+                } elseif ($regusWonAway > $regusWonHome || $winnerId === $awayId) {
                     $standings[$awayId]['won']++;
                     $standings[$homeId]['lost']++;
                 }
@@ -151,10 +158,10 @@ class PoolStanding extends Model
                 $standings[$awayId]['points_for'] += $set->away_score;
                 $standings[$awayId]['points_against'] += $set->home_score;
 
-                if ($set->home_score > $set->away_score || $set->winner_team_id === $homeId) {
+                if ($set->home_score > $set->away_score) {
                     $standings[$homeId]['sets_won']++;
                     $standings[$awayId]['sets_lost']++;
-                } elseif ($set->away_score > $set->home_score || $set->winner_team_id === $awayId) {
+                } elseif ($set->away_score > $set->home_score) {
                     $standings[$awayId]['sets_won']++;
                     $standings[$homeId]['sets_lost']++;
                 }
