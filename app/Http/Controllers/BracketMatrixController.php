@@ -115,9 +115,12 @@ class BracketMatrixController extends Controller
     protected function getBracketStages(int $poolCount): array
     {
         $stages = [];
-        $pools  = range('A', chr(64 + $poolCount));
+        $pools  = range('A', chr(64 + max(1, $poolCount)));
 
-        if ($poolCount === 2) {
+        if ($poolCount <= 1) {
+            // 1 pool → Langsung ke Final (Juara 1 Pool A vs Runner-up Pool A / Bracket A vs Bracket B)
+            $stages[] = $this->makeStage('final', 1, 'pool_A_rank_1', 'pool_A_rank_2');
+        } elseif ($poolCount === 2) {
             // 2 pool → Langsung ke Semifinal + Final
             $stages[] = $this->makeStage('semifinal', 1, 'pool_A_rank_1', 'pool_B_rank_2');
             $stages[] = $this->makeStage('semifinal', 2, 'pool_B_rank_1', 'pool_A_rank_2');

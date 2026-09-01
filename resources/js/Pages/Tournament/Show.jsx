@@ -1255,8 +1255,9 @@ function BracketTab({ tournament }) {
 
     const qfMatches = bracketMatches.filter(m => m.stage === 'quarterfinal' || m.stage === 'round_of_8').sort((a, b) => a.bracket_position - b.bracket_position);
     const sfMatches = bracketMatches.filter(m => m.stage === 'semifinal').sort((a, b) => a.bracket_position - b.bracket_position);
-    const finalMatch = bracketMatches.find(m => m.stage === 'final');
+    const finalMatches = bracketMatches.filter(m => m.stage === 'final').sort((a, b) => a.bracket_position - b.bracket_position);
     const thirdMatch = bracketMatches.find(m => m.stage === 'third_place');
+    const isDirectFinal = qfMatches.length === 0 && sfMatches.length === 0;
 
     return (
         <div className="space-y-4">
@@ -1285,7 +1286,7 @@ function BracketTab({ tournament }) {
             )}
 
             <div className="rounded-xl border border-surface-700/50 bg-surface-900/40 p-6 overflow-x-auto">
-                <div className="min-w-[800px] flex flex-col md:flex-row gap-6 md:gap-12 justify-center items-center py-6">
+                <div className={`flex flex-col md:flex-row gap-6 md:gap-12 justify-center items-center py-6 ${isDirectFinal ? (finalMatches.length > 1 ? 'max-w-2xl mx-auto min-w-0' : 'max-w-md mx-auto min-w-0') : 'min-w-[800px]'}`}>
                     {/* Column 1: Quarterfinals / R8 */}
                     {qfMatches.length > 0 && (
                         <div className="flex flex-col justify-around gap-6 h-[480px] flex-1 max-w-[240px]">
@@ -1307,15 +1308,27 @@ function BracketTab({ tournament }) {
                     )}
 
                     {/* Column 3: Final & 3rd Place */}
-                    <div className="flex flex-col justify-center gap-10 h-[480px] flex-1 max-w-[240px]">
-                        {finalMatch ? (
-                            <div className="space-y-2">
-                                <p className="text-[10px] font-extrabold text-amber-400 uppercase tracking-widest text-center border-b border-amber-500/20 pb-2">🏆 Final ({selectedMode})</p>
-                                <BracketMatchCard match={finalMatch} />
+                    <div className={`flex flex-col justify-center gap-6 ${isDirectFinal ? 'w-full' : 'h-[480px] flex-1 max-w-[240px]'}`}>
+                        {finalMatches.length > 0 ? (
+                            <div className={finalMatches.length > 1 ? "grid grid-cols-1 sm:grid-cols-2 gap-4" : "space-y-2"}>
+                                {finalMatches.map((fm, idx) => (
+                                    <div key={fm.id} className="space-y-2">
+                                        <p className="text-[10px] font-extrabold text-amber-400 uppercase tracking-widest text-center border-b border-amber-500/20 pb-2">
+                                            🏆 {finalMatches.length > 1 ? `Final Bracket ${fm.bracket_position || idx + 1}` : `Final (${selectedMode.replace('_', ' ')})`}
+                                        </p>
+                                        <BracketMatchCard match={fm} />
+                                    </div>
+                                ))}
                             </div>
                         ) : (
                             <div className="text-center py-8 text-surface-500 text-xs italic">
                                 Belum ada bagan final untuk mode ini
+                            </div>
+                        )}
+                        {thirdMatch && (
+                            <div className="space-y-2 pt-4 border-t border-surface-800">
+                                <p className="text-[10px] font-bold text-surface-500 uppercase tracking-widest text-center">🥉 Perebutan Juara 3</p>
+                                <BracketMatchCard match={thirdMatch} />
                             </div>
                         )}
                     </div>
@@ -1325,16 +1338,19 @@ function BracketTab({ tournament }) {
     );
 }
 
-
 function BracketMatchCard({ match }) {
     const isFinished = match.status === 'finished';
-    
-    // Calculate sets won
-    const homeSets = match.sets?.filter(s => s.winner_team_id === match.home_team_id).length || 0;
-    const awaySets = match.sets?.filter(s => s.winner_team_id === match.away_team_id).length || 0;
+    const isTeam = match.match_mode === 'team_regu' || match.match_mode === 'team_double' || !!match.home_super_team_id;
 
-    const isHomeWinner = isFinished && match.winner_team_id === match.home_team_id;
-    const isAwayWinner = isFinished && match.winner_team_id === match.away_team_id;
+    const homeId = isTeam ? match.home_super_team_id : match.home_team_id;
+    const awayId = isTeam ? match.away_super_team_id : match.away_team_id;
+
+    // Calculate sets won
+    const homeSets = match.sets?.filter(s => s.winner_team_id === homeId || s.home_score > s.away_score).length || 0;
+    const awaySets = match.sets?.filter(s => s.winner_team_id === awayId || s.away_score > s.home_score).length || 0;
+
+    const isHomeWinner = isFinished && match.winner_team_id && match.winner_team_id === homeId;
+    const isAwayWinner = isFinished && match.winner_team_id && match.winner_team_id === awayId;
 
     const homeName = match.home_display_name
         || match.home_super_team?.name

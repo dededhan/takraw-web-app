@@ -187,7 +187,18 @@ class MasterScheduleGeneratorService
                         $slot = $this->findNextAvailableSlot($courts, $span = 3, $homeId, $awayId, isSuper: true);
 
                         if (!$slot) {
-                            continue; // Tidak ada slot tersedia, lewati
+                            Match_::create([
+                                'tournament_id'      => $tournament->id,
+                                'pool_id'            => $pool->id,
+                                'match_mode'         => $mode,
+                                'stage'              => 'pool',
+                                'home_super_team_id' => $homeId,
+                                'away_super_team_id' => $awayId,
+                                'slot_span'          => 3,
+                                'status'             => 'scheduled',
+                            ]);
+                            $count++;
+                            continue;
                         }
 
                         $match = Match_::create([
@@ -303,16 +314,13 @@ class MasterScheduleGeneratorService
     {
         $count = 0;
 
-        // Rebuild Bracket Matrix otomatis per mode aktif jika belum sesuai dengan jumlah pool riil
+        // Rebuild Bracket Matrix otomatis per mode aktif HANYA jika belum ada konfigurasi sama sekali
         $activeModes = $tournament->modes()->where('is_active', true)->pluck('match_mode');
         foreach ($activeModes as $mode) {
-            $poolCount = Pool::where('tournament_id', $tournament->id)->where('match_mode', $mode)->count();
-            if ($poolCount === 0) $poolCount = 2; // fallback
-
             $existingMatrixCount = BracketMatrix::where('tournament_id', $tournament->id)->where('match_mode', $mode)->count();
-            $expectedMatrixCount = $poolCount <= 2 ? 4 : 8; // 2 pools = 4 matches (2 SF, 1 Final, 1 3rd); 4 pools = 8 matches (4 QF, 2 SF, 1 Final, 1 3rd)
-
-            if ($existingMatrixCount !== $expectedMatrixCount) {
+            if ($existingMatrixCount === 0) {
+                $poolCount = Pool::where('tournament_id', $tournament->id)->where('match_mode', $mode)->count();
+                if ($poolCount === 0) $poolCount = 1; // fallback
                 app(\App\Http\Controllers\PoolController::class)->syncBracketMatrixForMode($tournament, $mode, $poolCount);
             }
         }

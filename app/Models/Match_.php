@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'tournament_id', 'pool_id', 'stage', 'bracket_position',
     'home_team_id', 'away_team_id', 'referee_id',
-    'court_number', 'max_sets', 'winner_team_id',
+    'court_number', 'max_sets', 'winner_team_id', 'winner_super_team_id',
     'next_match_id', 'status', 'scheduled_at', 'started_at', 'finished_at',
     // Master Schedule fields
     'match_mode', 'court_id', 'time_slot_id', 'day_number', 'slot_span',
@@ -71,6 +71,11 @@ class Match_ extends Model
     public function winner(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'winner_team_id');
+    }
+
+    public function winnerSuperTeam(): BelongsTo
+    {
+        return $this->belongsTo(SuperTeam::class, 'winner_super_team_id');
     }
 
     public function nextMatch(): BelongsTo

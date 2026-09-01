@@ -108,7 +108,9 @@ class PlaceholderResolverService
             ->where('stage', '!=', 'pool')
             ->where(function ($q) use ($poolName) {
                 $q->where('home_placeholder', 'LIKE', "%Pool {$poolName}%")
-                  ->orWhere('away_placeholder', 'LIKE', "%Pool {$poolName}%");
+                  ->orWhere('home_placeholder', 'LIKE', "%Bracket {$poolName}%")
+                  ->orWhere('away_placeholder', 'LIKE', "%Pool {$poolName}%")
+                  ->orWhere('away_placeholder', 'LIKE', "%Bracket {$poolName}%");
             })
             ->get();
 
@@ -116,7 +118,7 @@ class PlaceholderResolverService
             $updated = false;
 
             // Resolve home_placeholder
-            if ($bracketMatch->home_placeholder && str_contains($bracketMatch->home_placeholder, "Pool {$poolName}")) {
+            if ($bracketMatch->home_placeholder && (str_contains($bracketMatch->home_placeholder, "Pool {$poolName}") || str_contains($bracketMatch->home_placeholder, "Bracket {$poolName}"))) {
                 $rank    = $this->extractRankFromPlaceholder($bracketMatch->home_placeholder);
                 $teamId  = $rankMap[$rank] ?? null;
 
@@ -132,7 +134,7 @@ class PlaceholderResolverService
             }
 
             // Resolve away_placeholder
-            if ($bracketMatch->away_placeholder && str_contains($bracketMatch->away_placeholder, "Pool {$poolName}")) {
+            if ($bracketMatch->away_placeholder && (str_contains($bracketMatch->away_placeholder, "Pool {$poolName}") || str_contains($bracketMatch->away_placeholder, "Bracket {$poolName}"))) {
                 $rank   = $this->extractRankFromPlaceholder($bracketMatch->away_placeholder);
                 $teamId = $rankMap[$rank] ?? null;
 
@@ -160,18 +162,29 @@ class PlaceholderResolverService
     /**
      * Ekstrak rank dari string placeholder.
      * "Juara Pool A"       → 1
+     * "Juara 1 Pool A"     → 1
+     * "Juara 2 Pool A"     → 2
      * "Runner-up Pool A"   → 2
      * "Peringkat 3 Pool A" → 3
      */
     protected function extractRankFromPlaceholder(string $placeholder): int
     {
-        if (str_starts_with($placeholder, 'Juara')) {
+        if (preg_match('/Juara\s+1/i', $placeholder)) {
             return 1;
         }
-        if (str_starts_with($placeholder, 'Runner-up')) {
+        if (preg_match('/Juara\s+2/i', $placeholder)) {
+            return 2;
+        }
+        if (str_starts_with($placeholder, 'Juara') || str_starts_with($placeholder, 'Winner')) {
+            return 1;
+        }
+        if (str_starts_with($placeholder, 'Runner-up') || str_starts_with($placeholder, 'Runner up')) {
             return 2;
         }
         if (preg_match('/Peringkat\s+(\d+)/i', $placeholder, $matches)) {
+            return (int) $matches[1];
+        }
+        if (preg_match('/Rank\s+(\d+)/i', $placeholder, $matches)) {
             return (int) $matches[1];
         }
         return 1; // Default ke rank 1 jika tidak bisa di-parse

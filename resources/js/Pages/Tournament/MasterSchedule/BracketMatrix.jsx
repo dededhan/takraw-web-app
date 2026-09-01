@@ -85,16 +85,69 @@ export default function BracketMatrix({ tournament, activeModes, matrices, stage
     const getPoolSources = (mode) => {
         const modeData = activeModes.find(m => m.match_mode === mode);
         const count    = modeData?.pool_count || 2;
-        const pools    = Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i));
+        const pools    = Array.from({ length: Math.max(1, count) }, (_, i) => String.fromCharCode(65 + i));
         const options  = [];
-        pools.forEach(p => {
-            options.push({ value: `pool_${p}_rank_1`, label: `🥇 Juara Pool ${p}` });
-            options.push({ value: `pool_${p}_rank_2`, label: `🥈 Runner-up Pool ${p}` });
-        });
+
+        if (count === 1) {
+            options.push({ value: 'pool_A_rank_1', label: '🥇 Juara 1 Pool A (Bracket A)' });
+            options.push({ value: 'pool_A_rank_2', label: '🥈 Juara 2 Pool A (Bracket B)' });
+            options.push({ value: 'pool_A_rank_3', label: '🥉 Peringkat 3 Pool A' });
+            options.push({ value: 'pool_A_rank_4', label: 'Peringkat 4 Pool A' });
+        } else {
+            pools.forEach(p => {
+                options.push({ value: `pool_${p}_rank_1`, label: `🥇 Juara Pool ${p}` });
+                options.push({ value: `pool_${p}_rank_2`, label: `🥈 Runner-up Pool ${p}` });
+                options.push({ value: `pool_${p}_rank_3`, label: `🥉 Peringkat 3 Pool ${p}` });
+            });
+        }
         options.push({ value: 'bye', label: '⬛ BYE (Langsung Lolos)' });
         options.push({ value: 'wildcard_1', label: '🃏 Wildcard #1' });
         options.push({ value: 'wildcard_2', label: '🃏 Wildcard #2' });
         return options;
+    };
+
+    const applyPreset = (mode, presetType) => {
+        if (presetType === '2pool_two_finals') {
+            setFormData(prev => ({
+                ...prev,
+                [mode]: [
+                    { bracket_stage: 'final', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_A_rank_2' },
+                    { bracket_stage: 'final', bracket_position: 2, home_source: 'pool_B_rank_1', away_source: 'pool_B_rank_2' },
+                ],
+            }));
+        } else if (presetType === '2pool_direct_final') {
+            setFormData(prev => ({
+                ...prev,
+                [mode]: [
+                    { bracket_stage: 'final', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_1' },
+                ],
+            }));
+        } else if (presetType === '2pool_semifinal') {
+            setFormData(prev => ({
+                ...prev,
+                [mode]: [
+                    { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_2' },
+                    { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'pool_B_rank_1', away_source: 'pool_A_rank_2' },
+                    { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
+                ],
+            }));
+        } else if (presetType === '1pool_direct_final') {
+            setFormData(prev => ({
+                ...prev,
+                [mode]: [
+                    { bracket_stage: 'final', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_A_rank_2' },
+                ],
+            }));
+        } else if (presetType === '1pool_semifinal') {
+            setFormData(prev => ({
+                ...prev,
+                [mode]: [
+                    { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_A_rank_4' },
+                    { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'pool_A_rank_2', away_source: 'pool_A_rank_3' },
+                    { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
+                ],
+            }));
+        }
     };
 
     return (
@@ -142,16 +195,68 @@ export default function BracketMatrix({ tournament, activeModes, matrices, stage
                 {/* Bracket Table */}
                 {activeTab && formData[activeTab] && (
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                            <h3 className="font-semibold text-gray-800">
-                                {MODE_LABELS[activeTab]?.icon} Mode {MODE_LABELS[activeTab]?.label}
-                            </h3>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                                {activeModes.find(m => m.match_mode === activeTab)?.pool_count} pool
-                                {activeModes.find(m => m.match_mode === activeTab)?.pool_count === 3 && (
-                                    <span className="ml-1 text-orange-500">⚠️ Jumlah pool ganjil — ada sistem BYE/Wildcard</span>
+                        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                                <h3 className="font-semibold text-gray-800">
+                                    {MODE_LABELS[activeTab]?.icon} Mode {MODE_LABELS[activeTab]?.label}
+                                </h3>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                    {activeModes.find(m => m.match_mode === activeTab)?.pool_count} pool
+                                    {activeModes.find(m => m.match_mode === activeTab)?.pool_count === 3 && (
+                                        <span className="ml-1 text-orange-500">⚠️ Jumlah pool ganjil — ada sistem BYE/Wildcard</span>
+                                    )}
+                                </p>
+                            </div>
+
+                            {/* Preset Buttons */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {activeModes.find(m => m.match_mode === activeTab)?.pool_count === 2 && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => applyPreset(activeTab, '2pool_two_finals')}
+                                            className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                                            title="Final Bracket 1 (A1 vs A2) & Final Bracket 2 (B1 vs B2) — Menghasilkan Juara per Bracket dan langsung selesai"
+                                        >
+                                            🏆 2 Final Terpisah (A1 vs A2, B1 vs B2 — Selesai)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => applyPreset(activeTab, '2pool_direct_final')}
+                                            className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold hover:bg-amber-100 transition-colors flex items-center gap-1"
+                                            title="1 Juara dari Pool A & 1 Juara dari Pool B langsung bertemu di Grand Final"
+                                        >
+                                            🏆 Grand Final (Juara A vs Juara B)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => applyPreset(activeTab, '2pool_semifinal')}
+                                            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-xs font-semibold hover:bg-blue-100 transition-colors"
+                                        >
+                                            ⚔️ Semifinal Silang (Top 2 per Pool)
+                                        </button>
+                                    </>
                                 )}
-                            </p>
+
+                                {activeModes.find(m => m.match_mode === activeTab)?.pool_count === 1 && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => applyPreset(activeTab, '1pool_direct_final')}
+                                            className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold hover:bg-amber-100 transition-colors"
+                                        >
+                                            🏆 Langsung Final (Top 2 / Bracket A vs B)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => applyPreset(activeTab, '1pool_semifinal')}
+                                            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-xs font-semibold hover:bg-blue-100 transition-colors"
+                                        >
+                                            ⚔️ Semifinal (Top 4 Pool)
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
 
                         <div className="p-6">
@@ -168,7 +273,7 @@ export default function BracketMatrix({ tournament, activeModes, matrices, stage
                                 <tbody className="divide-y divide-gray-50">
                                     {formData[activeTab].map((row, i) => {
                                         const sourceOpts = getPoolSources(activeTab);
-                                        const isPoolSelectable = row.home_source.startsWith('pool_') || row.away_source.startsWith('pool_') || row.bracket_stage === 'round_of_8' || (row.bracket_stage === 'semifinal' && (activeModes.find(m => m.match_mode === activeTab)?.pool_count <= 2));
+                                        const isPoolSelectable = row.home_source.startsWith('pool_') || row.away_source.startsWith('pool_') || row.bracket_stage === 'round_of_8' || (row.bracket_stage === 'semifinal') || (row.bracket_stage === 'final' && (!row.home_source.startsWith('winner_') || !row.away_source.startsWith('winner_')));
 
                                         const formatSourceLabel = (src) => {
                                             if (!src) return '—';
@@ -176,7 +281,9 @@ export default function BracketMatrix({ tournament, activeModes, matrices, stage
                                                 const parts = src.split('_');
                                                 const poolLetter = parts[1];
                                                 const rank = parts[3];
-                                                return rank === '1' ? `🥇 Juara Pool ${poolLetter}` : `🥈 Runner-up Pool ${poolLetter}`;
+                                                if (rank === '1') return `🥇 Juara Pool ${poolLetter}`;
+                                                if (rank === '2') return `🥈 Runner-up Pool ${poolLetter}`;
+                                                return `Peringkat ${rank} Pool ${poolLetter}`;
                                             }
                                             if (src.startsWith('winner_qf_')) {
                                                 const pos = src.replace('winner_qf_', '');

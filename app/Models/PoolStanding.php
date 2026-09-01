@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['pool_id', 'team_id', 'played', 'won', 'lost', 'sets_won', 'sets_lost', 'points_for', 'points_against', 'rank'])]
+#[Fillable(['pool_id', 'team_id', 'super_team_id', 'played', 'won', 'lost', 'sets_won', 'sets_lost', 'points_for', 'points_against', 'rank'])]
 class PoolStanding extends Model
 {
     /**
@@ -31,6 +31,11 @@ class PoolStanding extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    public function superTeam(): BelongsTo
+    {
+        return $this->belongsTo(SuperTeam::class);
     }
 
     // ─── Helpers ────────────────────────────────────
@@ -59,23 +64,30 @@ class PoolStanding extends Model
     public static function recalculate(int $poolId): void
     {
         $pool = Pool::findOrFail($poolId);
-        $teams = $pool->teams; // Get all teams in this pool
+        $isTeamMode = in_array($pool->match_mode, ['team_regu', 'team_double']);
+
+        if ($isTeamMode) {
+            $contestants = $pool->superTeams;
+        } else {
+            $contestants = $pool->teams;
+        }
 
         // Initialize standings data
         $standings = [];
-        foreach ($teams as $team) {
-            $standings[$team->id] = [
-                'pool_id' => $poolId,
-                'team_id' => $team->id,
-                'played' => 0,
-                'won' => 0,
-                'lost' => 0,
-                'sets_won' => 0,
-                'sets_lost' => 0,
-                'points_for' => 0,
+        foreach ($contestants as $c) {
+            $standings[$c->id] = [
+                'pool_id'        => $poolId,
+                'team_id'        => $isTeamMode ? null : $c->id,
+                'super_team_id'  => $isTeamMode ? $c->id : null,
+                'played'         => 0,
+                'won'            => 0,
+                'lost'           => 0,
+                'sets_won'       => 0,
+                'sets_lost'      => 0,
+                'points_for'     => 0,
                 'points_against' => 0,
-                'rank' => null,
-                'updated_at' => now(),
+                'rank'           => null,
+                'updated_at'     => now(),
             ];
         }
 
@@ -86,10 +98,14 @@ class PoolStanding extends Model
             ->get();
 
         foreach ($matches as $match) {
-            $homeId = $match->home_team_id;
-            $awayId = $match->away_team_id;
+            $homeId = $isTeamMode ? $match->home_super_team_id : $match->home_team_id;
+            $awayId = $isTeamMode ? $match->away_super_team_id : $match->away_team_id;
 
-            // If team is not in the pool for some reason, skip
+            if (!$homeId || !$awayId) {
+                continue;
+            }
+
+            // If contestant is not in the pool for some reason, skip
             if (!isset($standings[$homeId]) || !isset($standings[$awayId])) {
                 continue;
             }
@@ -97,12 +113,32 @@ class PoolStanding extends Model
             $standings[$homeId]['played']++;
             $standings[$awayId]['played']++;
 
-            if ($match->winner_team_id === $homeId) {
-                $standings[$homeId]['won']++;
-                $standings[$awayId]['lost']++;
-            } elseif ($match->winner_team_id === $awayId) {
-                $standings[$awayId]['won']++;
-                $standings[$homeId]['lost']++;
+            $winnerId = $match->winner_team_id;
+            if ($isTeamMode) {
+                // For team mode, check match sets won or winner_team_id against super team
+                $homeSets = $match->sets->where('status', 'finished')->filter(fn($s) => $s->winner_team_id === $homeId || $s->home_score > $s->away_score)->count();
+                $awaySets = $match->sets->where('status', 'finished')->filter(fn($s) => $s->winner_team_id === $awayId || $s->away_score > $s->home_score)->count();
+                if ($homeSets > $awaySets) {
+                    $standings[$homeId]['won']++;
+                    $standings[$awayId]['lost']++;
+                } elseif ($awaySets > $homeSets) {
+                    $standings[$awayId]['won']++;
+                    $standings[$homeId]['lost']++;
+                } elseif ($winnerId === $homeId) {
+                    $standings[$homeId]['won']++;
+                    $standings[$awayId]['lost']++;
+                } elseif ($winnerId === $awayId) {
+                    $standings[$awayId]['won']++;
+                    $standings[$homeId]['lost']++;
+                }
+            } else {
+                if ($winnerId === $homeId) {
+                    $standings[$homeId]['won']++;
+                    $standings[$awayId]['lost']++;
+                } elseif ($winnerId === $awayId) {
+                    $standings[$awayId]['won']++;
+                    $standings[$homeId]['lost']++;
+                }
             }
 
             foreach ($match->sets as $set) {
@@ -115,10 +151,10 @@ class PoolStanding extends Model
                 $standings[$awayId]['points_for'] += $set->away_score;
                 $standings[$awayId]['points_against'] += $set->home_score;
 
-                if ($set->winner_team_id === $homeId) {
+                if ($set->home_score > $set->away_score || $set->winner_team_id === $homeId) {
                     $standings[$homeId]['sets_won']++;
                     $standings[$awayId]['sets_lost']++;
-                } elseif ($set->winner_team_id === $awayId) {
+                } elseif ($set->away_score > $set->home_score || $set->winner_team_id === $awayId) {
                     $standings[$awayId]['sets_won']++;
                     $standings[$homeId]['sets_lost']++;
                 }
@@ -149,13 +185,22 @@ class PoolStanding extends Model
 
         // Save sorted standings with ranks
         foreach ($sorted as $index => $data) {
-            $teamId = $data['team_id'];
-            $standings[$teamId]['rank'] = $index + 1;
+            $keyId = $isTeamMode ? $data['super_team_id'] : $data['team_id'];
+            if (!$keyId) continue;
 
-            self::updateOrCreate(
-                ['pool_id' => $poolId, 'team_id' => $teamId],
-                $standings[$teamId]
-            );
+            $standings[$keyId]['rank'] = $index + 1;
+
+            if ($isTeamMode) {
+                self::updateOrCreate(
+                    ['pool_id' => $poolId, 'super_team_id' => $keyId],
+                    $standings[$keyId]
+                );
+            } else {
+                self::updateOrCreate(
+                    ['pool_id' => $poolId, 'team_id' => $keyId],
+                    $standings[$keyId]
+                );
+            }
         }
     }
 }

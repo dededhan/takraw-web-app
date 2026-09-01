@@ -270,7 +270,7 @@ export default function PoolIndex({ tournament }) {
                                 type="number"
                                 value={generateForm.data.pool_count}
                                 onChange={(e) => generateForm.setData('pool_count', parseInt(e.target.value))}
-                                min="2"
+                                min="1"
                                 max="8"
                                 className="w-24 px-3 py-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-100 text-sm focus:border-accent-500 focus:ring-1 focus:ring-accent-500"
                             />

@@ -331,29 +331,52 @@ class ScoringController extends Controller
 
         $set = MatchSet::findOrFail($validated['match_set_id']);
 
+        $isTeam = $match->isTeamMode() || $match->home_super_team_id || $match->away_super_team_id;
+        $homeContestantId = $isTeam ? $match->home_super_team_id : $match->home_team_id;
+        $awayContestantId = $isTeam ? $match->away_super_team_id : $match->away_team_id;
+
         // Determine winner
-        $winnerId = $set->home_score > $set->away_score
-            ? $match->home_team_id
-            : $match->away_team_id;
+        $setWinnerId = $set->home_score > $set->away_score
+            ? $homeContestantId
+            : $awayContestantId;
 
         $set->update([
-            'status' => 'finished',
-            'finished_at' => now(),
-            'winner_team_id' => $winnerId,
+            'status'                => 'finished',
+            'finished_at'           => now(),
+            'winner_team_id'        => $isTeam ? null : $setWinnerId,
+            'winner_super_team_id'  => $isTeam ? $setWinnerId : null,
         ]);
 
         // Check if match is over (best of N)
-        $setsWonHome = $match->sets()->where('status', 'finished')->where('winner_team_id', $match->home_team_id)->count();
-        $setsWonAway = $match->sets()->where('status', 'finished')->where('winner_team_id', $match->away_team_id)->count();
+        $setsWonHome = $match->sets()->where('status', 'finished')
+            ->where(function ($q) use ($isTeam, $homeContestantId) {
+                if ($isTeam) {
+                    $q->where('winner_super_team_id', $homeContestantId);
+                } else {
+                    $q->where('winner_team_id', $homeContestantId);
+                }
+            })->count();
+
+        $setsWonAway = $match->sets()->where('status', 'finished')
+            ->where(function ($q) use ($isTeam, $awayContestantId) {
+                if ($isTeam) {
+                    $q->where('winner_super_team_id', $awayContestantId);
+                } else {
+                    $q->where('winner_team_id', $awayContestantId);
+                }
+            })->count();
+
         $setsToWin = ceil($match->max_sets / 2);
 
         if ($setsWonHome >= $setsToWin || $setsWonAway >= $setsToWin) {
             // Match finished
-            $matchWinner = $setsWonHome >= $setsToWin ? $match->home_team_id : $match->away_team_id;
+            $matchWinner = $setsWonHome >= $setsToWin ? $homeContestantId : $awayContestantId;
+
             $match->update([
-                'status' => 'finished',
-                'finished_at' => now(),
-                'winner_team_id' => $matchWinner,
+                'status'               => 'finished',
+                'finished_at'          => now(),
+                'winner_team_id'       => $isTeam ? null : $matchWinner,
+                'winner_super_team_id' => $isTeam ? $matchWinner : null,
             ]);
 
             // Recalculate standings if it's a pool match

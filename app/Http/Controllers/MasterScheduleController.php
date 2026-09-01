@@ -93,7 +93,7 @@ class MasterScheduleController extends Controller
             'modes'                    => 'required|array|min:1',
             'modes.*'                  => 'in:regu,double,quadrant,team_regu,team_double',
             'pool_counts'              => 'required|array',
-            'pool_counts.*'            => 'integer|min:2|max:8',
+            'pool_counts.*'            => 'integer|min:1|max:8',
         ]);
 
         // Hitung durasi ISHOMA

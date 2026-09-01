@@ -67,7 +67,7 @@ class PoolController extends Controller
     public function generateRandom(Request $request, Tournament $tournament)
     {
         $validated = $request->validate([
-            'pool_count' => 'required|integer|min:2|max:8',
+            'pool_count' => 'required|integer|min:1|max:8',
             'match_mode' => 'required|in:regu,double,quadrant,team_regu,team_double',
         ]);
 
@@ -106,6 +106,12 @@ class PoolController extends Controller
             foreach ($superTeams as $index => $st) {
                 $pool = $pools[$index % $poolCount];
                 $st->update(['pool_id' => $pool->id]);
+
+                // Initialize standing
+                PoolStanding::create([
+                    'pool_id'       => $pool->id,
+                    'super_team_id' => $st->id,
+                ]);
             }
         } else {
             // Filter tim agar sub-tim anggota SuperTeam DI-LOCK dan tim mode lain (Regu vs Double) tidak bercampur
@@ -148,8 +154,9 @@ class PoolController extends Controller
 
     /**
      * Auto-sync Bracket Matrix berdasarkan jumlah pool mode tanding.
-     * 2 Pool -> Semifinal (2 Laga) + Final (1 Laga) + Perebutan Juara 3 (1 Laga)
-     * 4 Pool -> Quarterfinal (4 Laga) + Semifinal (2 Laga) + Final (1 Laga) + Perebutan Juara 3
+     * 1 Pool -> Final (1 Laga: A1 vs A2)
+     * 2 Pool -> Semifinal (2 Laga: A1 vs B2, B1 vs A2) + Final (1 Laga)
+     * 4 Pool -> Quarterfinal (4 Laga) + Semifinal (2 Laga) + Final (1 Laga)
      */
     public function syncBracketMatrixForMode(Tournament $tournament, string $matchMode, int $poolCount): void
     {
@@ -157,7 +164,14 @@ class PoolController extends Controller
             ->where('match_mode', $matchMode)
             ->delete();
 
-        if ($poolCount <= 2) {
+        if ($poolCount === 1) {
+            // 1 Pool → Langsung ke Final (A1 vs A2 / Top 2)
+            \App\Models\BracketMatrix::create([
+                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
+                'bracket_stage' => 'final', 'bracket_position' => 1,
+                'home_source'   => 'pool_A_rank_1', 'away_source' => 'pool_A_rank_2',
+            ]);
+        } elseif ($poolCount === 2) {
             // 2 Pool → Langsung ke Semifinal (A1 vs B2, B1 vs A2)
             \App\Models\BracketMatrix::create([
                 'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
@@ -229,6 +243,11 @@ class PoolController extends Controller
 
             \App\Models\SuperTeam::where('id', $validated['super_team_id'])
                 ->update(['pool_id' => $pool->id]);
+
+            PoolStanding::firstOrCreate([
+                'pool_id'       => $pool->id,
+                'super_team_id' => $validated['super_team_id'],
+            ]);
         } else {
             $validated = $request->validate([
                 'team_id' => 'required|exists:teams,id',
@@ -254,6 +273,7 @@ class PoolController extends Controller
 
         if ($isTeamMode) {
             \App\Models\SuperTeam::where('id', $id)->update(['pool_id' => null]);
+            PoolStanding::where('pool_id', $pool->id)->where('super_team_id', $id)->delete();
         } else {
             $pool->teams()->detach($id);
             PoolStanding::where('pool_id', $pool->id)->where('team_id', $id)->delete();

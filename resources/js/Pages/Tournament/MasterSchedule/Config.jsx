@@ -603,8 +603,10 @@ export default function Config({ tournament, preview: initialPreview }) {
                                                         onChange={e => setPoolCount(mode.key, +e.target.value)}
                                                         className="rounded-xl bg-surface-900 border border-surface-700 px-3 py-1.5 text-xs text-surface-100 font-bold focus:border-primary-500"
                                                     >
-                                                        {[2, 3, 4, 6, 8].map(n => (
-                                                            <option key={n} value={n}>{n} Pool ({String.fromCharCode(65)} s/d {String.fromCharCode(64 + n)})</option>
+                                                        {[1, 2, 3, 4, 6, 8].map(n => (
+                                                            <option key={n} value={n}>
+                                                                {n === 1 ? '1 Pool (Pool A — Langsung Final / 2 Bracket)' : `${n} Pool (${String.fromCharCode(65)} s/d ${String.fromCharCode(64 + n)})`}
+                                                            </option>
                                                         ))}
                                                     </select>
                                                 </div>
