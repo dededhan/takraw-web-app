@@ -145,4 +145,41 @@ class SuperTeamUnifiedTest extends TestCase
         $this->assertNotNull($superTeam);
         $this->assertEquals($tournament->id, $superTeam->tournament_id);
     }
+
+    public function test_admin_can_update_unified_super_team(): void
+    {
+        $superTeam = SuperTeam::create([
+            'name' => 'TRA U-18 JAKARTA BARAT',
+            'match_mode' => 'team_regu',
+            'coach_id' => $this->coach->id,
+            'created_by' => $this->admin->id,
+        ]);
+
+        $sub1 = Team::create(['name' => 'TRA U-18 JAKARTA BARAT-1', 'region' => 'JAKARTA BARAT', 'is_super_sub' => true, 'parent_super_team_id' => $superTeam->id]);
+        $sub2 = Team::create(['name' => 'TRA U-18 JAKARTA BARAT-2', 'region' => 'JAKARTA BARAT', 'is_super_sub' => true, 'parent_super_team_id' => $superTeam->id]);
+        $sub3 = Team::create(['name' => 'TRA U-18 JAKARTA BARAT-3', 'region' => 'JAKARTA BARAT', 'is_super_sub' => true, 'parent_super_team_id' => $superTeam->id]);
+        $superTeam->members()->attach([$sub1->id, $sub2->id, $sub3->id]);
+
+        $ath1 = \App\Models\Athlete::create(['team_id' => $sub1->id, 'name' => 'Old Name', 'jersey_number' => 10, 'position' => 'Tekong']);
+
+        $response = $this->actingAs($this->admin)
+            ->post(route('super-teams.update-unified', $superTeam->id), [
+                'name' => 'TRA U-18 JAKARTA BARAT EDITED',
+                'region' => 'JAKARTA UTARA',
+                'athletes' => [
+                    ['id' => $ath1->id, 'name' => 'New Name', 'jersey_number' => 11, 'position' => 'Smash'],
+                    ['name' => 'New Player 2', 'jersey_number' => 22, 'position' => 'Feeder'],
+                ],
+            ]);
+
+        $response->assertSessionHas('success');
+
+        $superTeam->refresh();
+        $this->assertEquals('TRA U-18 JAKARTA BARAT EDITED', $superTeam->name);
+
+        $ath1->refresh();
+        $this->assertEquals('New Name', $ath1->name);
+        $this->assertEquals(11, $ath1->jersey_number);
+        $this->assertEquals('Smash', $ath1->position);
+    }
 }

@@ -951,15 +951,49 @@ function ModeLegend() {
 }
 
 /**
- * RefereeAssignModal — Modal Penugasan Wasit Massal per Ceklis Pertandingan.
+ * RefereeAssignModal — Modal Penugasan Wasit Massal Dikelompokkan per Lapangan.
+ * Admin dapat mencentang satu Lapangan untuk langsung memilih semua laga di lapangan tersebut.
  */
 function RefereeAssignModal({ tournament, matches, referees, onClose }) {
     const [selectedRefereeId, setSelectedRefereeId] = useState(referees[0]?.id || '');
     const [selectedMatchIds,  setSelectedMatchIds]  = useState([]);
     const [filterMode,        setFilterMode]        = useState('all');
+    const [filterDay,         setFilterDay]         = useState('all');
     const [isSaving,          setIsSaving]          = useState(false);
 
-    const filteredMatches = matches.filter(m => filterMode === 'all' || m.match_mode === filterMode);
+    // Kumpulkan seluruh nomor hari yang ada pada matches
+    const availableDays = useMemo(() => {
+        const days = Array.from(new Set(matches.map(m => m.day_number).filter(Boolean))).sort((a, b) => a - b);
+        return days;
+    }, [matches]);
+
+    // Filter matches berdasarkan mode dan hari
+    const filteredMatches = useMemo(() => {
+        return matches.filter(m => {
+            const matchModeOk = filterMode === 'all' || m.match_mode === filterMode;
+            const matchDayOk  = filterDay === 'all' || String(m.day_number) === String(filterDay);
+            return matchModeOk && matchDayOk;
+        });
+    }, [matches, filterMode, filterDay]);
+
+    // Kelompokkan pertandingan per Lapangan (Court)
+    const matchesByCourt = useMemo(() => {
+        const map = {};
+        filteredMatches.forEach(m => {
+            const courtName = m.court?.name || (m.court_number ? `Lapangan ${m.court_number}` : 'Lapangan Belum Ditentukan');
+            const courtOrder = m.court?.court_number || m.court_number || 999;
+            if (!map[courtName]) {
+                map[courtName] = {
+                    name: courtName,
+                    courtNumber: courtOrder,
+                    matches: [],
+                };
+            }
+            map[courtName].matches.push(m);
+        });
+
+        return Object.values(map).sort((a, b) => a.courtNumber - b.courtNumber);
+    }, [filteredMatches]);
 
     const toggleMatch = (id) => {
         setSelectedMatchIds(prev =>
@@ -972,6 +1006,16 @@ function RefereeAssignModal({ tournament, matches, referees, onClose }) {
             setSelectedMatchIds([]);
         } else {
             setSelectedMatchIds(filteredMatches.map(m => m.id));
+        }
+    };
+
+    const toggleCourt = (courtMatches) => {
+        const courtIds = courtMatches.map(m => m.id);
+        const allSelected = courtIds.every(id => selectedMatchIds.includes(id));
+        if (allSelected) {
+            setSelectedMatchIds(prev => prev.filter(id => !courtIds.includes(id)));
+        } else {
+            setSelectedMatchIds(prev => Array.from(new Set([...prev, ...courtIds])));
         }
     };
 
@@ -1003,29 +1047,40 @@ function RefereeAssignModal({ tournament, matches, referees, onClose }) {
         );
     };
 
+    const selectedReferee = referees.find(r => r.id === Number(selectedRefereeId)) || referees[0];
+
     return (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-surface-900 border border-surface-700 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-                <div className="px-6 py-4 bg-surface-800 border-b border-surface-700 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xl">🧑‍⚖️</span>
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-surface-900 border border-surface-700 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                {/* Modal Header */}
+                <div className="px-6 py-4 bg-surface-850 border-b border-surface-700/80 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-lg">
+                            🧑‍⚖️
+                        </div>
                         <div>
-                            <h3 className="text-base font-bold text-surface-100">Penugasan Wasit Massal</h3>
-                            <p className="text-xs text-surface-400">Pilih akun wasit lalu centang nomor pertandingan yang ingin ditugaskan.</p>
+                            <h3 className="text-base font-extrabold text-surface-100 flex items-center gap-2">
+                                Penugasan Wasit per Lapangan
+                            </h3>
+                            <p className="text-xs text-surface-400">
+                                Pilih wasit lalu centang Lapangan untuk menugaskan wasit ke seluruh pertandingan di lapangan tersebut.
+                            </p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
-                        className="text-surface-400 hover:text-surface-200 text-lg font-bold p-1"
+                        className="text-surface-400 hover:text-surface-200 text-sm font-bold p-2 rounded-xl hover:bg-surface-800 transition-colors cursor-pointer"
                     >
                         ✕
                     </button>
                 </div>
 
-                <div className="p-6 overflow-y-auto space-y-6 flex-1">
-                    <div className="bg-surface-800/80 p-4 rounded-xl border border-surface-700 space-y-3">
+                {/* Modal Body */}
+                <div className="p-6 overflow-y-auto space-y-5 flex-1 pr-3">
+                    {/* Step 1: Select Referee */}
+                    <div className="bg-surface-800/90 p-4 rounded-2xl border border-surface-700/80 space-y-2.5">
                         <label className="block text-xs font-bold text-surface-300 uppercase tracking-wider">
-                            1. Pilih Akun Wasit:
+                            1. Pilih Akun Wasit yang Ditugaskan:
                         </label>
                         <div className="flex items-center gap-3 flex-wrap">
                             <select
@@ -1034,111 +1089,235 @@ function RefereeAssignModal({ tournament, matches, referees, onClose }) {
                                     const id = Number(e.target.value);
                                     selectMatchesForReferee(id);
                                 }}
-                                className="flex-1 bg-surface-900 border border-surface-600 rounded-xl px-3 py-2 text-sm font-semibold text-surface-100 focus:ring-2 focus:ring-primary-500"
+                                className="flex-1 bg-surface-950 border border-surface-600 rounded-xl px-4 py-2.5 text-xs font-bold text-surface-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
                             >
+                                {referees.length === 0 && (
+                                    <option value="">— Belum ada akun wasit aktif terdaftar —</option>
+                                )}
                                 {referees.map(r => (
                                     <option key={r.id} value={r.id}>
-                                        🧑‍⚖️ {r.name} ({r.email}) [{r.role}]
+                                        🧑‍⚖️ {r.name} ({r.email})
                                     </option>
                                 ))}
                             </select>
+                            {selectedReferee && (
+                                <span className="text-xs font-semibold px-3 py-2 rounded-xl bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                                    Saat ini memimpin: <strong>{matches.filter(m => m.referee_id === selectedReferee.id).length} laga</strong>
+                                </span>
+                            )}
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
+                    {/* Step 2: Filters & Select All Toolbar */}
+                    <div className="flex items-center justify-between flex-wrap gap-3 pt-1">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-bold text-surface-400">Filter Mode:</span>
-                            {['all', 'regu', 'double', 'team_regu'].map(mode => (
+                            {['all', 'regu', 'double', 'quadrant', 'team_regu', 'team_double'].map(mode => (
                                 <button
                                     key={mode}
+                                    type="button"
                                     onClick={() => setFilterMode(mode)}
-                                    className={`px-3 py-1 rounded-lg text-xs font-bold capitalize transition-colors ${
-                                        filterMode === mode ? 'bg-primary-600 text-white' : 'bg-surface-800 text-surface-400 hover:text-surface-200'
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-colors cursor-pointer border ${
+                                        filterMode === mode
+                                            ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                                            : 'bg-surface-800/80 text-surface-400 border-surface-700 hover:text-surface-200'
                                     }`}
                                 >
                                     {mode.replace('_', ' ')}
                                 </button>
                             ))}
+
+                            {availableDays.length > 1 && (
+                                <div className="flex items-center gap-1.5 ml-2">
+                                    <span className="text-xs font-bold text-surface-400">Hari:</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFilterDay('all')}
+                                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer border ${
+                                            filterDay === 'all'
+                                                ? 'bg-primary-600 text-white border-primary-500'
+                                                : 'bg-surface-800 text-surface-400 border-surface-700 hover:text-surface-200'
+                                        }`}
+                                    >
+                                        Semua
+                                    </button>
+                                    {availableDays.map(day => (
+                                        <button
+                                            key={day}
+                                            type="button"
+                                            onClick={() => setFilterDay(String(day))}
+                                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer border ${
+                                                String(filterDay) === String(day)
+                                                    ? 'bg-primary-600 text-white border-primary-500'
+                                                    : 'bg-surface-800 text-surface-400 border-surface-700 hover:text-surface-200'
+                                            }`}
+                                        >
+                                            H-{day}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={toggleSelectAll}
-                                className="px-3 py-1 bg-surface-800 hover:bg-surface-700 text-surface-200 rounded-lg text-xs font-bold border border-surface-700"
-                            >
-                                {selectedMatchIds.length === filteredMatches.length ? '⬜ Batal Centang Semua' : '☑️ Centang Semua Match'}
-                            </button>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={toggleSelectAll}
+                            className="px-3.5 py-1.5 bg-surface-800 hover:bg-surface-700 text-surface-200 rounded-xl text-xs font-bold border border-surface-700 transition-colors cursor-pointer"
+                        >
+                            {selectedMatchIds.length === filteredMatches.length && filteredMatches.length > 0
+                                ? '⬜ Batal Pilih Semua'
+                                : '☑️ Pilih Seluruh Match'}
+                        </button>
                     </div>
 
-                    <div className="border border-surface-700 rounded-xl overflow-hidden bg-surface-950/40">
-                        <div className="max-h-72 overflow-y-auto">
-                            <table className="w-full text-left text-xs">
-                                <thead className="bg-surface-800 text-surface-400 sticky top-0 border-b border-surface-700">
-                                    <tr>
-                                        <th className="p-3 text-center w-10">Ceklis</th>
-                                        <th className="p-3">#Match</th>
-                                        <th className="p-3">Mode</th>
-                                        <th className="p-3">Hari & Jam</th>
-                                        <th className="p-3">Pertandingan</th>
-                                        <th className="p-3">Wasit Saat Ini</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-surface-800">
-                                    {filteredMatches.map(match => {
-                                        const isChecked = selectedMatchIds.includes(match.id);
-                                        const home = match.home_display_name || match.home_team?.name || match.home_placeholder || 'TBD';
-                                        const away = match.away_display_name || match.away_team?.name || match.away_placeholder || 'TBD';
+                    {/* Step 3: Courts Groups */}
+                    <div className="space-y-4">
+                        {matchesByCourt.length === 0 ? (
+                            <div className="text-center py-12 rounded-2xl border border-dashed border-surface-700/60 bg-surface-950/40">
+                                <p className="text-surface-400 text-xs font-medium">Tidak ada pertandingan yang sesuai dengan filter saat ini.</p>
+                            </div>
+                        ) : (
+                            matchesByCourt.map(group => {
+                                const courtMatchIds = group.matches.map(m => m.id);
+                                const selectedInCourt = courtMatchIds.filter(id => selectedMatchIds.includes(id));
+                                const isAllCourtSelected = courtMatchIds.length > 0 && selectedInCourt.length === courtMatchIds.length;
+                                const isPartialSelected = selectedInCourt.length > 0 && selectedInCourt.length < courtMatchIds.length;
 
-                                        return (
-                                            <tr
-                                                key={match.id}
-                                                onClick={() => toggleMatch(match.id)}
-                                                className={`cursor-pointer transition-colors ${
-                                                    isChecked ? 'bg-primary-500/15' : 'hover:bg-surface-800/50'
-                                                }`}
-                                            >
-                                                <td className="p-3 text-center">
+                                return (
+                                    <div
+                                        key={group.name}
+                                        className={`rounded-2xl border transition-all duration-200 overflow-hidden shadow-sm ${
+                                            isAllCourtSelected
+                                                ? 'border-purple-500/60 bg-purple-950/15 ring-1 ring-purple-500/30'
+                                                : 'border-surface-700/60 bg-surface-950/40 hover:border-surface-600'
+                                        }`}
+                                    >
+                                        {/* Court Group Header with Master Checkbox */}
+                                        <div
+                                            onClick={() => toggleCourt(group.matches)}
+                                            className={`px-5 py-3.5 border-b flex items-center justify-between cursor-pointer select-none transition-colors ${
+                                                isAllCourtSelected
+                                                    ? 'bg-purple-600/20 border-purple-500/40 text-purple-100'
+                                                    : 'bg-surface-800/60 border-surface-700/60 text-surface-200 hover:bg-surface-800/90'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center justify-center">
                                                     <input
                                                         type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={() => {}}
-                                                        className="rounded border-surface-600 text-primary-600 focus:ring-primary-500"
+                                                        checked={isAllCourtSelected}
+                                                        ref={el => {
+                                                            if (el) el.indeterminate = isPartialSelected;
+                                                        }}
+                                                        onChange={() => {}} // Handled by container onClick
+                                                        className="w-4 h-4 rounded border-surface-600 text-purple-600 focus:ring-purple-500 cursor-pointer"
                                                     />
-                                                </td>
-                                                <td className="p-3 font-bold font-mono text-primary-300">#{match.match_number || match.id}</td>
-                                                <td className="p-3 uppercase font-semibold text-surface-400">{match.match_mode}</td>
-                                                <td className="p-3 font-mono text-surface-300">
-                                                    Hari {match.day_number} ({match.time_slot?.label?.split(' - ')[0] || '—'})
-                                                </td>
-                                                <td className="p-3 font-medium text-surface-200">
-                                                    {home} <span className="text-surface-500 font-normal">vs</span> {away}
-                                                </td>
-                                                <td className="p-3">
-                                                    {match.referee?.name ? (
-                                                        <span className="text-emerald-400 font-semibold">🧑‍⚖️ {match.referee.name}</span>
-                                                    ) : (
-                                                        <span className="text-surface-500 italic">Belum ada</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-sm font-extrabold flex items-center gap-2">
+                                                        <span>🏟️</span> {group.name}
+                                                    </h4>
+                                                    <p className="text-[11px] text-surface-400 mt-0.5">
+                                                        Klik untuk <strong>pilih/batal semua match</strong> di lapangan ini
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2.5">
+                                                <span className={`text-xs px-3 py-1 rounded-xl font-bold font-mono ${
+                                                    isAllCourtSelected
+                                                        ? 'bg-purple-600 text-white'
+                                                        : selectedInCourt.length > 0
+                                                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                                        : 'bg-surface-900 text-surface-400 border border-surface-700'
+                                                }`}>
+                                                    {selectedInCourt.length} / {group.matches.length} Laga Dipilih
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Matches List in Court */}
+                                        <div className="divide-y divide-surface-800/80">
+                                            {group.matches.map(match => {
+                                                const isChecked = selectedMatchIds.includes(match.id);
+                                                const home = match.home_display_name || match.home_team?.name || match.home_placeholder || 'TBD';
+                                                const away = match.away_display_name || match.away_team?.name || match.away_placeholder || 'TBD';
+
+                                                return (
+                                                    <div
+                                                        key={match.id}
+                                                        onClick={() => toggleMatch(match.id)}
+                                                        className={`px-5 py-3 flex items-center justify-between gap-4 cursor-pointer transition-colors ${
+                                                            isChecked
+                                                                ? 'bg-purple-500/15 hover:bg-purple-500/20'
+                                                                : 'hover:bg-surface-800/40'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isChecked}
+                                                                onChange={() => {}} // Handled by row onClick
+                                                                className="w-4 h-4 rounded border-surface-600 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
+                                                            />
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <span className="font-bold font-mono text-purple-300 text-xs bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded">
+                                                                    #{match.match_number || match.id}
+                                                                </span>
+                                                                <span className="text-[10px] uppercase font-bold text-surface-400 bg-surface-800 px-2 py-0.5 rounded">
+                                                                    {match.match_mode?.replace('_', ' ')}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="font-medium text-surface-100 text-xs truncate min-w-0">
+                                                                <span className="font-bold">{home}</span>
+                                                                <span className="text-surface-500 mx-1.5 font-normal">vs</span>
+                                                                <span className="font-bold">{away}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-4 shrink-0 text-right">
+                                                            <span className="text-[11px] font-mono text-surface-300">
+                                                                Hari {match.day_number} ({match.time_slot?.label?.split(' - ')[0] || '—'})
+                                                            </span>
+
+                                                            <div className="w-36 text-right">
+                                                                {match.referee?.name ? (
+                                                                    <span className={`text-[11px] font-semibold truncate block ${
+                                                                        match.referee.id === Number(selectedRefereeId)
+                                                                            ? 'text-purple-300 font-bold'
+                                                                            : 'text-emerald-400'
+                                                                    }`}>
+                                                                        🧑‍⚖️ {match.referee.name}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[11px] text-surface-500 italic">Belum ada wasit</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
                 </div>
 
-                <div className="px-6 py-4 bg-surface-800 border-t border-surface-700 flex items-center justify-between">
-                    <span className="text-xs text-surface-300 font-bold">
-                        {selectedMatchIds.length} pertandingan terpilih
-                    </span>
+                {/* Modal Footer */}
+                <div className="px-6 py-4 bg-surface-850 border-t border-surface-700/80 flex items-center justify-between flex-wrap gap-3">
+                    <div className="text-xs text-surface-300">
+                        Total: <strong className="text-purple-300 font-bold text-sm">{selectedMatchIds.length}</strong> pertandingan dipilih untuk{' '}
+                        <strong className="text-white">{selectedReferee?.name || 'Wasit'}</strong>
+                    </div>
+
                     <div className="flex items-center gap-3">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 rounded-xl text-xs font-bold bg-surface-700 hover:bg-surface-600 text-surface-300"
+                            className="px-4 py-2.5 rounded-xl text-xs font-bold bg-surface-800 hover:bg-surface-700 text-surface-300 transition-colors cursor-pointer"
                         >
                             Batal
                         </button>
@@ -1146,9 +1325,9 @@ function RefereeAssignModal({ tournament, matches, referees, onClose }) {
                             type="button"
                             onClick={handleSave}
                             disabled={isSaving || selectedMatchIds.length === 0}
-                            className="px-5 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 transition-colors shadow-md flex items-center gap-1.5"
+                            className="px-6 py-2.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95 text-white disabled:opacity-50 transition-all shadow-lg shadow-purple-600/30 flex items-center gap-2 cursor-pointer"
                         >
-                            {isSaving ? 'Menyimpan...' : `💾 Simpan Penugasan Wasit (${selectedMatchIds.length})`}
+                            <span>{isSaving ? 'Menyimpan...' : `💾 Simpan Penugasan Wasit (${selectedMatchIds.length} Laga)`}</span>
                         </button>
                     </div>
                 </div>

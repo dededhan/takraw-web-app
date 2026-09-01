@@ -14,6 +14,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
     const [deletingTeamId, setDeletingTeamId] = useState(null);
     const [deletingSuperTeamId, setDeletingSuperTeamId] = useState(null);
     const [isSuperTeamModalOpen, setIsSuperTeamModalOpen] = useState(false);
+    const [editingSuperTeam, setEditingSuperTeam] = useState(null);
 
     // Initial athletes roster template (same clean format as regular team)
     const emptyAthlete = () => ({ name: '', jersey_number: '', position: 'Cadangan', photo: null });
@@ -25,6 +26,43 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
         tournament_id: '',
         athletes: [emptyAthlete()],
     });
+
+    const handleOpenCreateModal = () => {
+        setEditingSuperTeam(null);
+        resetSt();
+        setStData({
+            name: '',
+            region: '',
+            coach_id: '',
+            tournament_id: '',
+            athletes: [emptyAthlete()],
+        });
+        setIsSuperTeamModalOpen(true);
+    };
+
+    const handleOpenEditModal = (st) => {
+        setEditingSuperTeam(st);
+        const allAthletes = (st.members || []).flatMap(m => m.athletes || []);
+        const formattedAthletes = allAthletes.length > 0
+            ? allAthletes.map(a => ({
+                id: a.id,
+                name: a.name,
+                jersey_number: String(a.jersey_number),
+                position: a.position || 'Cadangan',
+                photo: null,
+                photo_url: a.photo ? `/storage/${a.photo}` : null,
+            }))
+            : [emptyAthlete()];
+
+        setStData({
+            name: st.name,
+            region: st.members?.[0]?.region || '',
+            coach_id: st.coach_id || '',
+            tournament_id: st.tournament_id || '',
+            athletes: formattedAthletes,
+        });
+        setIsSuperTeamModalOpen(true);
+    };
 
     const addAthlete = () => {
         const nextJersey = stData.athletes.length + 1;
@@ -56,7 +94,8 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
             if (cols.length < 2) continue;
             const name = cols[0];
             const jersey = parseInt(cols[1], 10);
-            const position = cols[2] || 'Cadangan';
+            let position = cols[2] || 'Cadangan';
+            if (position.toLowerCase() === 'killer') position = 'Smash';
             if (name && !isNaN(jersey)) {
                 out.push({ name, jersey_number: jersey, position, photo: null });
             }
@@ -94,7 +133,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
         });
     };
 
-    const handleCreateSuperTeam = (e) => {
+    const handleSaveSuperTeam = (e) => {
         e.preventDefault();
 
         // Check for duplicate jersey numbers
@@ -107,12 +146,22 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
             return;
         }
 
-        postSt(route('super-teams.store-unified'), {
-            onSuccess: () => {
-                setIsSuperTeamModalOpen(false);
-                resetSt();
-            },
-        });
+        if (editingSuperTeam) {
+            postSt(route('super-teams.update-unified', editingSuperTeam.id), {
+                onSuccess: () => {
+                    setIsSuperTeamModalOpen(false);
+                    setEditingSuperTeam(null);
+                    resetSt();
+                },
+            });
+        } else {
+            postSt(route('super-teams.store-unified'), {
+                onSuccess: () => {
+                    setIsSuperTeamModalOpen(false);
+                    resetSt();
+                },
+            });
+        }
     };
 
     return (
@@ -140,7 +189,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
 
                     {canManageSuperTeams && (
                         <button
-                            onClick={() => setIsSuperTeamModalOpen(true)}
+                            onClick={handleOpenCreateModal}
                             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 cursor-pointer"
                         >
                             <span>🏆 + Buat Super Team</span>
@@ -335,7 +384,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                             </p>
                             {canManageSuperTeams && (
                                 <button
-                                    onClick={() => setIsSuperTeamModalOpen(true)}
+                                    onClick={handleOpenCreateModal}
                                     className="inline-block mt-4 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
                                 >
                                     + Buat Super Team Pertama
@@ -368,16 +417,35 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                                     </div>
                                                 </div>
 
-                                                {/* Action Delete */}
-                                                {!st.is_locked && canManageSuperTeams && (
-                                                    <button
-                                                        onClick={() => setDeletingSuperTeamId(st.id)}
-                                                        className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer shrink-0"
-                                                        title="Hapus Super Team"
-                                                    >
-                                                        🗑️
-                                                    </button>
-                                                )}
+                                                {/* Action Edit & Delete Buttons */}
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    {!st.is_locked && canManageSuperTeams && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleOpenEditModal(st)}
+                                                                className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors cursor-pointer"
+                                                                title="Edit Super Team"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setDeletingSuperTeamId(st.id)}
+                                                                className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer"
+                                                                title="Hapus Super Team"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {st.is_locked && (
+                                                        <span
+                                                            className="text-xs text-surface-500 p-1.5 cursor-help"
+                                                            title="Super Team terkunci karena sudah memiliki riwayat penilaian pertandingan."
+                                                        >
+                                                            🔒
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             {/* Badge & Coach */}
@@ -444,28 +512,33 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                 </div>
             )}
 
-            {/* Modal Create Super Team (Clean Single Form) */}
+            {/* Modal Create & Edit Super Team (Clean Single Form) */}
             {isSuperTeamModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/80 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="w-full max-w-3xl bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
                         <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/40">
                             <div>
                                 <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
-                                    <span>🏆 Buat Super Team Baru</span>
+                                    <span>{editingSuperTeam ? '✏️ Edit Super Team' : '🏆 Buat Super Team Baru'}</span>
                                 </h3>
                                 <p className="text-xs text-surface-400 mt-0.5">
-                                    Input data tim dan daftar atlet sebagai 1 kesatuan (otomatis dialokasikan 3 sesi di jadwal).
+                                    {editingSuperTeam
+                                        ? 'Perbarui data tim dan roster atlet.'
+                                        : 'Input data tim dan daftar atlet sebagai 1 kesatuan (otomatis dialokasikan 3 sesi di jadwal).'}
                                 </p>
                             </div>
                             <button
-                                onClick={() => setIsSuperTeamModalOpen(false)}
+                                onClick={() => {
+                                    setIsSuperTeamModalOpen(false);
+                                    setEditingSuperTeam(null);
+                                }}
                                 className="text-surface-400 hover:text-surface-200 p-1.5 rounded-lg hover:bg-surface-800 transition-colors cursor-pointer"
                             >
                                 ✕
                             </button>
                         </div>
 
-                        <form onSubmit={handleCreateSuperTeam} className="p-6 space-y-4 flex flex-col flex-1 overflow-hidden" encType="multipart/form-data">
+                        <form onSubmit={handleSaveSuperTeam} className="p-6 space-y-4 flex flex-col flex-1 overflow-hidden" encType="multipart/form-data">
                             {/* General Details */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
@@ -614,6 +687,12 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                                         alt="Preview"
                                                         className="w-full h-full object-cover"
                                                     />
+                                                ) : athlete.photo_url ? (
+                                                    <img
+                                                        src={athlete.photo_url}
+                                                        alt="Foto Atlet"
+                                                        className="w-full h-full object-cover"
+                                                    />
                                                 ) : (
                                                     <span>#{athlete.jersey_number || idx + 1}</span>
                                                 )}
@@ -679,7 +758,10 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                 <div className="flex items-center gap-3">
                                     <button
                                         type="button"
-                                        onClick={() => setIsSuperTeamModalOpen(false)}
+                                        onClick={() => {
+                                            setIsSuperTeamModalOpen(false);
+                                            setEditingSuperTeam(null);
+                                        }}
                                         className="px-4 py-2 rounded-xl border border-surface-700 text-surface-400 text-xs font-semibold hover:bg-surface-800 transition-colors cursor-pointer"
                                     >
                                         Batal
@@ -689,7 +771,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                         disabled={stProcessing}
                                         className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 disabled:opacity-50 cursor-pointer"
                                     >
-                                        {stProcessing ? 'Menyimpan...' : '✓ Daftarkan Super Team'}
+                                        {stProcessing ? 'Menyimpan...' : (editingSuperTeam ? '✓ Simpan Perubahan' : '✓ Daftarkan Super Team')}
                                     </button>
                                 </div>
                             </div>

@@ -146,8 +146,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/templates/athletes-csv', [TeamController::class, 'downloadCsvTemplate'])->name('templates.athletes-csv');
         Route::post('/teams/{team}/import-athletes', [TeamController::class, 'importAthletes'])->name('teams.import-athletes');
 
-        // Super Teams (Unified Creation & Deletion)
+        // Super Teams (Unified Creation, Update & Deletion)
         Route::post('/super-teams/unified', [SuperTeamController::class, 'storeUnified'])->name('super-teams.store-unified');
+        Route::match(['put', 'post'], '/super-teams/{superTeam}/unified', [SuperTeamController::class, 'updateUnified'])->name('super-teams.update-unified');
         Route::delete('/super-teams/{superTeam}', [SuperTeamController::class, 'destroy'])->name('super-teams.destroy');
     });
 

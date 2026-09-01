@@ -194,6 +194,169 @@ class SuperTeamController extends Controller
     }
 
     /**
+     * Update Super Team (1 kesatuan dengan roster atlet tunggal).
+     */
+    public function updateUnified(Request $request, SuperTeam $superTeam)
+    {
+        $user = $request->user();
+        if (!$user->isAdmin() && $superTeam->coach_id !== $user->id && $superTeam->created_by !== $user->id) {
+            return back()->with('error', 'Anda tidak memiliki wewenang untuk mengubah Super Team ini.');
+        }
+
+        if ($superTeam->isRosterLocked()) {
+            return back()->with('error', 'Super Team ini tidak dapat diubah karena sudah memiliki riwayat penilaian dalam pertandingan.');
+        }
+
+        $validated = $request->validate([
+            'name'                     => 'required|string|max:100',
+            'region'                   => 'required|string|max:100',
+            'match_mode'               => 'nullable|string|max:50',
+            'tournament_id'            => 'nullable|exists:tournaments,id',
+            'coach_id'                 => 'nullable|exists:users,id',
+            'athletes'                 => 'required|array|min:1',
+            'athletes.*.id'            => 'nullable|exists:athletes,id',
+            'athletes.*.name'          => 'required|string|max:100',
+            'athletes.*.jersey_number' => 'required|integer|min:1|max:999',
+            'athletes.*.position'      => 'nullable|string|max:50',
+            'athletes.*.photo'         => 'nullable|image|max:2048',
+            'athletes.*.sub_regu'      => 'nullable|integer|min:1|max:3',
+        ], [
+            'name.required'                     => 'Nama Super Team wajib diisi.',
+            'region.required'                   => 'Daerah / asal tim wajib diisi.',
+            'athletes.required'                 => 'Daftar atlet wajib diisi.',
+            'athletes.min'                      => 'Super Team harus memiliki minimal 1 atlet.',
+            'athletes.*.name.required'          => 'Nama setiap atlet wajib diisi.',
+            'athletes.*.jersey_number.required' => 'Nomor punggung setiap atlet wajib diisi.',
+            'athletes.*.jersey_number.min'      => 'Nomor punggung minimal 1.',
+            'athletes.*.jersey_number.max'      => 'Nomor punggung maksimal 999.',
+        ]);
+
+        // Cek duplikasi nomor punggung
+        $jerseys = array_map('intval', array_column($validated['athletes'], 'jersey_number'));
+        if (count($jerseys) !== count(array_unique($jerseys))) {
+            $duplicates = array_diff_assoc($jerseys, array_unique($jerseys));
+            $dupStr = implode(', #', array_unique($duplicates));
+            return back()->withErrors([
+                'athletes' => "Nomor punggung atlet tidak boleh ada yang kembar dalam satu Super Team (duplikat: #{$dupStr}).",
+            ])->with('error', "Nomor punggung atlet tidak boleh ada yang kembar (#{$dupStr}).");
+        }
+
+        $coachId = $user->isCoach() ? $user->id : ($validated['coach_id'] ?? $superTeam->coach_id);
+        $tournamentId = !empty($validated['tournament_id']) ? $validated['tournament_id'] : null;
+
+        DB::transaction(function () use ($validated, $request, $superTeam, $coachId, $tournamentId) {
+            $superTeam->update([
+                'name'          => $validated['name'],
+                'coach_id'      => $coachId,
+                'tournament_id' => $tournamentId,
+            ]);
+
+            // Ambil atau buat 3 sub-teams
+            $subTeams = $superTeam->members()->orderBy('teams.id')->get();
+            $subTeamMap = [];
+
+            for ($i = 1; $i <= 3; $i++) {
+                if (isset($subTeams[$i - 1])) {
+                    $sub = $subTeams[$i - 1];
+                    $sub->update([
+                        'name'     => "{$validated['name']}-{$i}",
+                        'region'   => $validated['region'],
+                        'coach_id' => $coachId,
+                    ]);
+                    $subTeamMap[$i] = $sub;
+                } else {
+                    $sub = Team::create([
+                        'name'                 => "{$validated['name']}-{$i}",
+                        'region'               => $validated['region'],
+                        'coach_id'             => $coachId,
+                        'is_super_sub'         => true,
+                        'parent_super_team_id' => $superTeam->id,
+                    ]);
+                    $superTeam->members()->attach($sub->id);
+                    $subTeamMap[$i] = $sub;
+                }
+            }
+
+            // Sync athletes
+            $totalAthletes = count($validated['athletes']);
+            $perRegu = (int) ceil($totalAthletes / 3);
+
+            $submittedIds = array_values(array_filter(
+                array_column($validated['athletes'], 'id'),
+                fn($id) => !empty($id)
+            ));
+
+            // Hapus atlet yang tidak ada di form lagi dari seluruh 3 sub-tim
+            foreach ($subTeamMap as $subTeam) {
+                $subTeam->athletes()->whereNotIn('id', $submittedIds)->delete();
+            }
+
+            // Park jersey numbers temporarily to avoid unique constraints collision
+            if (!empty($submittedIds)) {
+                $existingAthletes = Athlete::whereIn('id', $submittedIds)->get();
+                foreach ($existingAthletes as $existingAth) {
+                    $existingAth->update([
+                        'jersey_number' => 50000 + ($existingAth->id % 10000),
+                    ]);
+                }
+            }
+
+            $validPositions = ['Tekong', 'Feeder', 'Smash', 'Killer', 'Cadangan'];
+
+            foreach ($validated['athletes'] as $index => $athleteData) {
+                $targetRegu = !empty($athleteData['sub_regu'])
+                    ? (int) $athleteData['sub_regu']
+                    : min(3, intdiv($index, max(1, $perRegu)) + 1);
+
+                if (!isset($subTeamMap[$targetRegu])) {
+                    $targetRegu = 1;
+                }
+
+                $targetTeam = $subTeamMap[$targetRegu];
+
+                $photoPath = $request->hasFile("athletes.{$index}.photo")
+                    ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
+                    : null;
+
+                $position = !empty($athleteData['position']) ? ucfirst(strtolower(trim($athleteData['position']))) : 'Cadangan';
+                if ($position === 'Killer') {
+                    $position = 'Smash';
+                }
+                if (!in_array($position, $validPositions)) {
+                    $position = 'Cadangan';
+                }
+
+                if (!empty($athleteData['id'])) {
+                    $athlete = Athlete::find($athleteData['id']);
+                    if ($athlete) {
+                        $updateData = [
+                            'team_id'       => $targetTeam->id,
+                            'name'          => trim($athleteData['name']),
+                            'jersey_number' => (int) $athleteData['jersey_number'],
+                            'position'      => $position,
+                        ];
+                        if ($photoPath) {
+                            $updateData['photo'] = $photoPath;
+                        }
+                        $athlete->update($updateData);
+                        continue;
+                    }
+                }
+
+                Athlete::create([
+                    'team_id'       => $targetTeam->id,
+                    'name'          => trim($athleteData['name']),
+                    'jersey_number' => (int) $athleteData['jersey_number'],
+                    'position'      => $position,
+                    'photo'         => $photoPath,
+                ]);
+            }
+        });
+
+        return back()->with('success', "Super Team \"{$superTeam->name}\" berhasil diperbarui.");
+    }
+
+    /**
      * Hapus Super Team.
      */
     public function destroy(Request $request, SuperTeam $superTeam)

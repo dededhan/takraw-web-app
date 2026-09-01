@@ -309,8 +309,8 @@ export default function MatchCard({
 
             {/* Referee badge */}
             {match.referee?.name && (
-                <div className="bg-black/10 text-gray-700 text-[9px] font-bold px-1.5 py-0.5 shrink-0 flex items-center justify-between border-t border-black/5">
-                    <span className="truncate">🧑‍⚖️ {match.referee.name}</span>
+                <div className="bg-slate-950/85 text-white text-[9px] font-bold px-1.5 py-0.5 shrink-0 flex items-center justify-between border-t border-black/15">
+                    <span className="truncate text-white font-extrabold tracking-wide">🧑‍⚖️ {match.referee.name}</span>
                 </div>
             )}
         </div>

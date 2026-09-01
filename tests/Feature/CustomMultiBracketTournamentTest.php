@@ -177,4 +177,78 @@ class CustomMultiBracketTournamentTest extends TestCase
         $this->assertGreaterThan(0, $scheduleStats['pool_matches_scheduled']);
         $this->assertGreaterThan(0, $scheduleStats['bracket_matches_created']);
     }
+
+    /**
+     * Test keyword filtering where only teams matching the bracket's keyword are assigned to that bracket.
+     */
+    public function test_generate_multi_bracket_pools_with_keyword_filter(): void
+    {
+        $tournament = Tournament::create([
+            'name'                     => 'Kejurnas Usia Dini',
+            'start_date'               => now()->toDateString(),
+            'end_date'                 => now()->addDays(2)->toDateString(),
+            'mode'                     => 'regu',
+            'status'                   => 'pool_stage',
+            'created_by'               => $this->admin->id,
+        ]);
+
+        $tournament->modes()->create([
+            'match_mode' => 'regu',
+            'pool_count' => 4,
+            'is_active'  => true,
+        ]);
+
+        // Create 4 teams with 'TPA U18' prefix
+        for ($i = 1; $i <= 4; $i++) {
+            $t = Team::create([
+                'name'       => "TPA U18 Tim-{$i}",
+                'region'     => 'Jakarta',
+                'created_by' => $this->admin->id,
+            ]);
+            $tournament->teams()->attach($t->id, ['match_mode' => 'regu']);
+        }
+
+        // Create 4 teams with 'TRA U15' prefix
+        for ($i = 1; $i <= 4; $i++) {
+            $t = Team::create([
+                'name'       => "TRA U15 Tim-{$i}",
+                'region'     => 'Bandung',
+                'created_by' => $this->admin->id,
+            ]);
+            $tournament->teams()->attach($t->id, ['match_mode' => 'regu']);
+        }
+
+        $payload = [
+            'match_mode' => 'regu',
+            'brackets'   => [
+                ['name' => 'Kategori TPA U-18', 'pool_count' => 2, 'keyword' => 'TPA U18'],
+                ['name' => 'Kategori TRA U-15', 'pool_count' => 2, 'keyword' => 'TRA U15'],
+            ],
+        ];
+
+        $response = $this->actingAs($this->admin)->post(
+            route('pools.generate-multi-bracket', $tournament->id),
+            $payload
+        );
+
+        $response->assertRedirect(route('pools.index', $tournament->id));
+
+        // Check Bracket 1 pools: must only contain TPA U18 teams
+        $b1Pools = Pool::where('tournament_id', $tournament->id)->where('bracket_name', 'Kategori TPA U-18')->with('teams')->get();
+        $this->assertCount(2, $b1Pools);
+        foreach ($b1Pools as $pool) {
+            foreach ($pool->teams as $team) {
+                $this->assertStringContainsString('TPA U18', $team->name);
+            }
+        }
+
+        // Check Bracket 2 pools: must only contain TRA U15 teams
+        $b2Pools = Pool::where('tournament_id', $tournament->id)->where('bracket_name', 'Kategori TRA U-15')->with('teams')->get();
+        $this->assertCount(2, $b2Pools);
+        foreach ($b2Pools as $pool) {
+            foreach ($pool->teams as $team) {
+                $this->assertStringContainsString('TRA U15', $team->name);
+            }
+        }
+    }
 }

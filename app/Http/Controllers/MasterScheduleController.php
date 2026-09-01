@@ -237,7 +237,8 @@ class MasterScheduleController extends Controller
             ->orderBy('court_number')
             ->get();
 
-        $referees = \App\Models\User::whereIn('role', ['referee', 'admin'])
+        $referees = \App\Models\User::where('role', 'referee')
+            ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'role']);
 
@@ -400,11 +401,14 @@ class MasterScheduleController extends Controller
             'match_ids.*' => 'exists:matches,id',
         ]);
 
+        $referee = \App\Models\User::findOrFail($validated['referee_id']);
+        if (!$referee->isReferee()) {
+            return back()->withErrors(['referee_id' => 'Pengguna yang dipilih bukan wasit!']);
+        }
+
         Match_::whereIn('id', $validated['match_ids'])
             ->where('tournament_id', $tournament->id)
             ->update(['referee_id' => $validated['referee_id']]);
-
-        $referee = \App\Models\User::find($validated['referee_id']);
 
         return back()->with('success', "Wasit \"{$referee->name}\" berhasil ditugaskan ke " . count($validated['match_ids']) . " pertandingan!");
     }

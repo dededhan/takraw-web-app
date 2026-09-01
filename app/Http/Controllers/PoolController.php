@@ -80,6 +80,7 @@ class PoolController extends Controller
             'brackets'              => 'required|array|min:1|max:6',
             'brackets.*.name'       => 'required|string|max:50',
             'brackets.*.pool_count' => 'required|integer|min:1|max:8',
+            'brackets.*.keyword'    => 'nullable|string|max:50',
         ]);
 
         $matchMode = $validated['match_mode'];
@@ -93,13 +94,18 @@ class PoolController extends Controller
             }
         })->delete();
 
-        $allCreatedPools = [];
-        $bracketIndex = 1;
+        $bracketPoolsMap = [];
+        $bracketKeywordMap = [];
         $totalPoolsCreated = 0;
 
-        foreach ($bracketsConfig as $bCfg) {
+        foreach ($bracketsConfig as $bIdx => $bCfg) {
+            $bracketIndex = $bIdx + 1;
             $bracketName = trim($bCfg['name']) ?: "Bracket {$bracketIndex}";
             $poolCount = (int) $bCfg['pool_count'];
+            $keyword = !empty($bCfg['keyword']) ? trim($bCfg['keyword']) : null;
+            $bracketKeywordMap[$bracketIndex] = $keyword;
+            $bracketPoolsMap[$bracketIndex] = [];
+
             $poolLabels = range('A', chr(64 + $poolCount));
 
             foreach ($poolLabels as $label) {
@@ -110,28 +116,71 @@ class PoolController extends Controller
                     'bracket_number' => $bracketIndex,
                     'match_mode'     => $matchMode,
                 ]);
-                $allCreatedPools[] = $pool;
+                $bracketPoolsMap[$bracketIndex][] = $pool;
                 $totalPoolsCreated++;
             }
-            $bracketIndex++;
         }
 
         $isTeamMode = in_array($matchMode, ['team_regu', 'team_double']);
 
         if ($isTeamMode) {
-            $superTeams = $tournament->superTeams()
+            $availableSuperTeams = $tournament->superTeams()
                 ->where('match_mode', $matchMode)
-                ->get()
-                ->shuffle();
+                ->get();
 
-            foreach ($superTeams as $index => $st) {
-                $pool = $allCreatedPools[$index % count($allCreatedPools)];
-                $st->update(['pool_id' => $pool->id]);
+            $assignedSuperTeamIds = [];
 
-                PoolStanding::create([
-                    'pool_id'       => $pool->id,
-                    'super_team_id' => $st->id,
-                ]);
+            // Phase 1: Brackets with specific keyword
+            foreach ($bracketPoolsMap as $bIndex => $pools) {
+                $keyword = $bracketKeywordMap[$bIndex];
+                if (!$keyword || empty($pools)) continue;
+
+                $matching = $availableSuperTeams
+                    ->reject(fn($st) => in_array($st->id, $assignedSuperTeamIds))
+                    ->filter(function ($st) use ($keyword) {
+                        return stripos($st->name, $keyword) !== false;
+                    })
+                    ->shuffle()
+                    ->values();
+
+                foreach ($matching as $mIdx => $st) {
+                    $targetPool = $pools[$mIdx % count($pools)];
+                    $st->update(['pool_id' => $targetPool->id]);
+                    PoolStanding::create([
+                        'pool_id'       => $targetPool->id,
+                        'super_team_id' => $st->id,
+                    ]);
+                    $assignedSuperTeamIds[] = $st->id;
+                }
+            }
+
+            // Phase 2: Brackets without keyword (take remaining unassigned)
+            $unassignedSuperTeams = $availableSuperTeams
+                ->reject(fn($st) => in_array($st->id, $assignedSuperTeamIds))
+                ->shuffle()
+                ->values();
+
+            $openBrackets = array_filter(
+                array_keys($bracketPoolsMap),
+                fn($bIndex) => empty($bracketKeywordMap[$bIndex])
+            );
+
+            if (!empty($openBrackets) && $unassignedSuperTeams->isNotEmpty()) {
+                $openPools = [];
+                foreach ($openBrackets as $bIndex) {
+                    $openPools = array_merge($openPools, $bracketPoolsMap[$bIndex]);
+                }
+
+                if (!empty($openPools)) {
+                    foreach ($unassignedSuperTeams as $mIdx => $st) {
+                        $targetPool = $openPools[$mIdx % count($openPools)];
+                        $st->update(['pool_id' => $targetPool->id]);
+                        PoolStanding::create([
+                            'pool_id'       => $targetPool->id,
+                            'super_team_id' => $st->id,
+                        ]);
+                    }
+                }
             }
         } else {
             $superTeamMemberIds = \Illuminate\Support\Facades\DB::table('super_team_members')
@@ -140,7 +189,7 @@ class PoolController extends Controller
                 ->pluck('super_team_members.team_id')
                 ->toArray();
 
-            $teams = $tournament->teams
+            $availableTeams = $tournament->teams
                 ->reject(fn($team) => in_array($team->id, $superTeamMemberIds))
                 ->filter(function ($team) use ($matchMode) {
                     $nameLower = strtolower($team->name);
@@ -148,17 +197,61 @@ class PoolController extends Controller
                     if ($matchMode === 'double' && str_contains($nameLower, 'regu') && !str_contains($nameLower, 'double')) return false;
                     if ($matchMode === 'quadrant' && (str_contains($nameLower, 'regu') || str_contains($nameLower, 'double'))) return false;
                     return true;
-                })
-                ->shuffle();
+                });
 
-            foreach ($teams as $index => $team) {
-                $pool = $allCreatedPools[$index % count($allCreatedPools)];
-                $pool->teams()->attach($team->id);
+            $assignedTeamIds = [];
 
-                PoolStanding::create([
-                    'pool_id' => $pool->id,
-                    'team_id' => $team->id,
-                ]);
+            // Phase 1: Brackets with specific keyword
+            foreach ($bracketPoolsMap as $bIndex => $pools) {
+                $keyword = $bracketKeywordMap[$bIndex];
+                if (!$keyword || empty($pools)) continue;
+
+                $matching = $availableTeams
+                    ->reject(fn($t) => in_array($t->id, $assignedTeamIds))
+                    ->filter(function ($t) use ($keyword) {
+                        return stripos($t->name, $keyword) !== false;
+                    })
+                    ->shuffle()
+                    ->values();
+
+                foreach ($matching as $mIdx => $team) {
+                    $targetPool = $pools[$mIdx % count($pools)];
+                    $targetPool->teams()->attach($team->id);
+                    PoolStanding::create([
+                        'pool_id' => $targetPool->id,
+                        'team_id' => $team->id,
+                    ]);
+                    $assignedTeamIds[] = $team->id;
+                }
+            }
+
+            // Phase 2: Brackets without keyword (take remaining unassigned)
+            $unassignedTeams = $availableTeams
+                ->reject(fn($t) => in_array($t->id, $assignedTeamIds))
+                ->shuffle()
+                ->values();
+
+            $openBrackets = array_filter(
+                array_keys($bracketPoolsMap),
+                fn($bIndex) => empty($bracketKeywordMap[$bIndex])
+            );
+
+            if (!empty($openBrackets) && $unassignedTeams->isNotEmpty()) {
+                $openPools = [];
+                foreach ($openBrackets as $bIndex) {
+                    $openPools = array_merge($openPools, $bracketPoolsMap[$bIndex]);
+                }
+
+                if (!empty($openPools)) {
+                    foreach ($unassignedTeams as $mIdx => $team) {
+                        $targetPool = $openPools[$mIdx % count($openPools)];
+                        $targetPool->teams()->attach($team->id);
+                        PoolStanding::create([
+                            'pool_id' => $targetPool->id,
+                            'team_id' => $team->id,
+                        ]);
+                    }
+                }
             }
         }
 
