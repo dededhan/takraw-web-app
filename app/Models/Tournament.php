@@ -54,6 +54,7 @@ class Tournament extends Model
     public function teams(): BelongsToMany
     {
         return $this->belongsToMany(Team::class, 'tournament_teams')
+                    ->where('teams.is_super_sub', false)
                     ->withPivot(['registered_at', 'match_mode']);
     }
 

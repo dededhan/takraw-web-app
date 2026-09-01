@@ -4,53 +4,45 @@ import ConfirmDialog from '@/Components/ConfirmDialog';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
-export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }) {
+export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], coaches = [], tournaments = [] }) {
     const { auth } = usePage().props;
     const isCoach = auth.user?.role === 'coach';
+    const isAdmin = auth.user?.role === 'admin';
+    const canManageSuperTeams = isAdmin || isCoach;
 
     const [activeTab, setActiveTab] = useState('single'); // single, super
     const [deletingTeamId, setDeletingTeamId] = useState(null);
     const [deletingSuperTeamId, setDeletingSuperTeamId] = useState(null);
     const [isSuperTeamModalOpen, setIsSuperTeamModalOpen] = useState(false);
 
-    // Form for creating Super Team
-    const emptyAthlete = () => ({ name: '', jersey_number: '', position: '', photo: null });
-    const emptySubTeam = () => ({ name: '', region: '', athletes: [emptyAthlete()] });
+    // Initial athletes roster template (same clean format as regular team)
+    const emptyAthlete = () => ({ name: '', jersey_number: '', position: 'Cadangan', photo: null });
 
     const { data: stData, setData: setStData, post: postSt, processing: stProcessing, errors: stErrors, reset: resetSt } = useForm({
         name: '',
-        match_mode: 'team_regu',
-        sub_teams: [emptySubTeam(), emptySubTeam(), emptySubTeam()],
+        region: '',
+        coach_id: '',
+        tournament_id: '',
+        athletes: [emptyAthlete()],
     });
 
-    const updateSubTeam = (subIdx, field, value) => {
-        const updated = [...stData.sub_teams];
-        updated[subIdx] = { ...updated[subIdx], [field]: value };
-        setStData('sub_teams', updated);
+    const addAthlete = () => {
+        const nextJersey = stData.athletes.length + 1;
+        setStData('athletes', [
+            ...stData.athletes,
+            { name: '', jersey_number: String(nextJersey), position: 'Cadangan', photo: null },
+        ]);
     };
 
-    const addSubTeamAthlete = (subIdx) => {
-        const updated = [...stData.sub_teams];
-        updated[subIdx] = { ...updated[subIdx], athletes: [...updated[subIdx].athletes, emptyAthlete()] };
-        setStData('sub_teams', updated);
+    const removeAthlete = (index) => {
+        if (stData.athletes.length <= 1) return;
+        setStData('athletes', stData.athletes.filter((_, i) => i !== index));
     };
 
-    const removeSubTeamAthlete = (subIdx, athleteIdx) => {
-        const updated = [...stData.sub_teams];
-        if (updated[subIdx].athletes.length <= 1) return;
-        updated[subIdx] = {
-            ...updated[subIdx],
-            athletes: updated[subIdx].athletes.filter((_, i) => i !== athleteIdx),
-        };
-        setStData('sub_teams', updated);
-    };
-
-    const updateSubTeamAthlete = (subIdx, athleteIdx, field, value) => {
-        const updated = [...stData.sub_teams];
-        const athletes = [...updated[subIdx].athletes];
-        athletes[athleteIdx] = { ...athletes[athleteIdx], [field]: value };
-        updated[subIdx] = { ...updated[subIdx], athletes };
-        setStData('sub_teams', updated);
+    const updateAthlete = (index, field, value) => {
+        const updated = [...stData.athletes];
+        updated[index] = { ...updated[index], [field]: value };
+        setStData('athletes', updated);
     };
 
     const parseCsvForAthletes = (text) => {
@@ -64,7 +56,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
             if (cols.length < 2) continue;
             const name = cols[0];
             const jersey = parseInt(cols[1], 10);
-            const position = cols[2] || '';
+            const position = cols[2] || 'Cadangan';
             if (name && !isNaN(jersey)) {
                 out.push({ name, jersey_number: jersey, position, photo: null });
             }
@@ -72,18 +64,18 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
         return out;
     };
 
-    const handleSubTeamCsvUpload = (subIdx, file) => {
+    const handleCsvUpload = (file) => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (event) => {
             const imported = parseCsvForAthletes(event.target.result);
             if (imported.length === 0) {
-                alert('File CSV kosong atau format tidak valid. Pastikan header: name,jersey_number,position');
+                alert('File CSV kosong atau format tidak valid. Pastikan format CSV: name,jersey_number,position');
                 return;
             }
-            const updated = [...stData.sub_teams];
-            updated[subIdx] = { ...updated[subIdx], athletes: [...updated[subIdx].athletes, ...imported] };
-            setStData('sub_teams', updated);
+
+            setStData('athletes', imported);
+            alert(`✅ Berhasil membaca ${imported.length} atlet dari CSV!`);
         };
         reader.readAsText(file);
     };
@@ -97,7 +89,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
 
     const handleDeleteSuperTeam = () => {
         if (!deletingSuperTeamId) return;
-        router.delete(route('coach.super-teams.destroy', deletingSuperTeamId), {
+        router.delete(route('super-teams.destroy', deletingSuperTeamId), {
             onFinish: () => setDeletingSuperTeamId(null),
         });
     };
@@ -105,19 +97,17 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
     const handleCreateSuperTeam = (e) => {
         e.preventDefault();
 
-        // Check for duplicate jersey numbers in each sub-team
-        for (let i = 0; i < stData.sub_teams.length; i++) {
-            const jerseys = stData.sub_teams[i].athletes
-                .map(a => (a.jersey_number !== '' && a.jersey_number !== null && a.jersey_number !== undefined) ? parseInt(a.jersey_number, 10) : null)
-                .filter(n => n !== null && !isNaN(n));
-            const dups = jerseys.filter((n, idx) => jerseys.indexOf(n) !== idx);
-            if (dups.length > 0) {
-                alert(`Sub-Tim ${i + 1} (${stData.sub_teams[i].name || 'Sub-Tim ' + (i + 1)}) memiliki nomor punggung duplikat (#${dups.join(', #')}). Pastikan semua nomor punggung unik dalam satu sub-tim.`);
-                return;
-            }
+        // Check for duplicate jersey numbers
+        const jerseys = stData.athletes
+            .map(a => (a.jersey_number !== '' && a.jersey_number !== null && a.jersey_number !== undefined) ? parseInt(a.jersey_number, 10) : null)
+            .filter(n => n !== null && !isNaN(n));
+        const dups = jerseys.filter((n, idx) => jerseys.indexOf(n) !== idx);
+        if (dups.length > 0) {
+            alert(`Terdapat nomor punggung duplikat (#${Array.from(new Set(dups)).join(', #')}). Pastikan seluruh nomor punggung unik dalam satu tim.`);
+            return;
         }
 
-        postSt(route('coach.super-teams.store'), {
+        postSt(route('super-teams.store-unified'), {
             onSuccess: () => {
                 setIsSuperTeamModalOpen(false);
                 resetSt();
@@ -125,20 +115,9 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
         });
     };
 
-    const formatTournamentMode = (mode) => {
-        switch (mode) {
-            case 'regu': return 'Regu (3v3)';
-            case 'double': return 'Double (2v2)';
-            case 'quadrant': return 'Quadrant (4v4)';
-            case 'team_regu': return 'Team Regu (Super Team 3x3)';
-            case 'team_double': return 'Team Double (Super Team 3x2)';
-            default: return mode;
-        }
-    };
-
     return (
         <AuthenticatedLayout header="Manajemen Tim">
-            <Head title="Tim Saya" />
+            <Head title="Manajemen Tim & Super Team" />
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -147,7 +126,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                         <span>👥 Tim & Super Team</span>
                     </h2>
                     <p className="text-sm text-surface-400 mt-1">
-                        Kelola tim reguler dan bentuk Super Team (Team Regu / Team Double) untuk turnamen.
+                        Kelola tim reguler serta Super Team untuk turnamen.
                     </p>
                 </div>
 
@@ -159,7 +138,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                         <span>+ Daftarkan Tim Reguler</span>
                     </Link>
 
-                    {isCoach && (
+                    {canManageSuperTeams && (
                         <button
                             onClick={() => setIsSuperTeamModalOpen(true)}
                             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 cursor-pointer"
@@ -196,7 +175,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                             : 'bg-surface-900 text-surface-400 hover:text-surface-200 border border-surface-800'
                     }`}
                 >
-                    <span>🏆 Super Team (Team Regu / Team Double)</span>
+                    <span>🏆 Super Team</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
                         activeTab === 'super' ? 'bg-black/30 text-white' : 'bg-surface-800 text-surface-400'
                     }`}>
@@ -334,15 +313,15 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                 </div>
             )}
 
-            {/* TAB 2: SUPER TEAMS (TEAM REGU / TEAM DOUBLE) */}
+            {/* TAB 2: SUPER TEAMS */}
             {activeTab === 'super' && (
                 <div>
                     <div className="mb-4 p-4 rounded-2xl border border-purple-500/20 bg-purple-500/10 text-xs text-purple-200 flex items-start gap-2.5">
                         <span className="text-base shrink-0">💡</span>
                         <div>
-                            <p className="font-bold text-purple-100">Informasi Super Team (Team Regu & Team Double):</p>
+                            <p className="font-bold text-purple-100">Super Team:</p>
                             <p className="text-purple-300/80 mt-0.5">
-                                Mode Team Regu dan Team Double mewajibkan penggabungan <strong>3 Sub-Tim binaan</strong> (Regu 1, Regu 2, Regu 3) dalam 1 bendera Super Team. Setiap pertandingan Team Regu berdurasi 3 sesi (3 slot lapangan) sekaligus.
+                                Super Team diinput sebagai <strong>1 kesatuan tim</strong> persis seperti tim reguler. Pada jadwal turnamen (Master Schedule), setiap pertandingan Super Team otomatis dialokasikan <strong>3 kotak waktu (3 sesi)</strong>.
                             </p>
                         </div>
                     </div>
@@ -352,9 +331,9 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                             <div className="text-5xl mb-4">🏆</div>
                             <h3 className="text-base font-bold text-surface-200">Belum Ada Super Team</h3>
                             <p className="text-surface-400 text-xs mt-1 max-w-md mx-auto">
-                                Buat Super Team dengan menggabungkan 3 Sub-Tim binaan Anda untuk didaftarkan ke turnamen kategori Team Regu atau Team Double.
+                                Daftarkan Super Team untuk turnamen kategori Super Team (3 sesi pertandingan).
                             </p>
-                            {isCoach && (
+                            {canManageSuperTeams && (
                                 <button
                                     onClick={() => setIsSuperTeamModalOpen(true)}
                                     className="inline-block mt-4 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
@@ -364,324 +343,355 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                             )}
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-                            {superTeams.map((st) => (
-                                <div
-                                    key={st.id}
-                                    className="rounded-2xl border border-purple-500/30 bg-surface-900/60 backdrop-blur-sm p-5 shadow-lg flex flex-col justify-between"
-                                >
-                                    <div>
-                                        {/* Top Header */}
-                                        <div className="flex items-start justify-between gap-3 mb-3">
-                                            <div>
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <h3 className="text-base font-bold text-purple-200">
-                                                        {st.name}
-                                                    </h3>
-                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-black uppercase border border-purple-500/30">
-                                                        {formatTournamentMode(st.match_mode)}
-                                                    </span>
-                                                </div>
-                                                <p className="text-xs text-surface-400 mt-1">
-                                                    {st.tournament ? (
-                                                        <span className="text-blue-300 font-medium">
-                                                            🏆 Terdaftar di Turnamen: <strong>{st.tournament.name}</strong>
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-surface-500">
-                                                            🔓 Belum terdaftar di turnamen (Siap Didaftarkan)
-                                                        </span>
-                                                    )}
-                                                </p>
-                                            </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+                            {superTeams.map((st) => {
+                                const allAthletes = (st.members || []).flatMap((m) => m.athletes || []);
+                                const region = st.members?.[0]?.region || 'Daerah Tim';
 
-                                            {/* Action Delete */}
-                                            {!st.is_locked && isCoach && (
-                                                <button
-                                                    onClick={() => setDeletingSuperTeamId(st.id)}
-                                                    className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer"
-                                                    title="Hapus Super Team"
-                                                >
-                                                    🗑️
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {/* 3 Sub-Teams List */}
-                                        <div className="mt-4 pt-3 border-t border-surface-800">
-                                            <p className="text-xs font-bold uppercase tracking-wider text-surface-400 mb-2.5 flex items-center gap-1.5">
-                                                <span>👥 3 Sub-Tim Anggota:</span>
-                                            </p>
-                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                                {(st.members || []).map((subTeam, idx) => (
-                                                    <div
-                                                        key={subTeam.id}
-                                                        className="p-2.5 rounded-xl bg-surface-950/50 border border-surface-850 text-xs text-center"
-                                                    >
-                                                        <span className="text-[10px] uppercase font-extrabold text-purple-400 block mb-0.5">
-                                                            Regu {idx + 1}
-                                                        </span>
-                                                        <p className="font-bold text-surface-200 truncate">{subTeam.name}</p>
-                                                        <p className="text-[10px] text-surface-500">{subTeam.athletes?.length || 0} Atlet</p>
+                                return (
+                                    <div
+                                        key={st.id}
+                                        className="rounded-2xl border border-purple-500/30 bg-surface-900/60 backdrop-blur-sm overflow-hidden hover:border-purple-500/50 transition-all duration-200 flex flex-col justify-between shadow-md"
+                                    >
+                                        <div className="p-5">
+                                            {/* Top Header */}
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/25 to-indigo-600/15 flex items-center justify-center text-lg font-bold text-purple-300 shrink-0 border border-purple-500/30">
+                                                        {st.name.charAt(0)}
                                                     </div>
-                                                ))}
+                                                    <div className="min-w-0">
+                                                        <h3 className="text-base font-bold text-purple-100 truncate">
+                                                            {st.name}
+                                                        </h3>
+                                                        <p className="text-xs text-surface-400">📍 {region}</p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Action Delete */}
+                                                {!st.is_locked && canManageSuperTeams && (
+                                                    <button
+                                                        onClick={() => setDeletingSuperTeamId(st.id)}
+                                                        className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer shrink-0"
+                                                        title="Hapus Super Team"
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Badge & Coach */}
+                                            <div className="mt-3.5 flex items-center gap-2 flex-wrap">
+                                                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold uppercase">
+                                                    🏆 Super Team
+                                                </span>
+
+                                                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-semibold">
+                                                    ⏱️ 3 Sesi / Match
+                                                </span>
+
+                                                {st.coach && (
+                                                    <span className="text-[11px] text-surface-400">
+                                                        🧑‍🏫 {st.coach.name}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Tournament Status */}
+                                            <div className="mt-2.5 text-xs">
+                                                {st.tournament ? (
+                                                    <span className="text-blue-300 font-medium">
+                                                        🏆 Terdaftar di Turnamen: <strong>{st.tournament.name}</strong>
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-surface-500">
+                                                        🔓 Belum didaftarkan ke turnamen
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
-                                    </div>
 
-                                    {/* Bottom Footer */}
-                                    <div className="mt-4 pt-3 border-t border-surface-800/80 flex items-center justify-between text-xs">
-                                        <span className="text-surface-500 font-mono text-[11px]">
-                                            Total {st.members?.reduce((acc, m) => acc + (m.athletes?.length || 0), 0) || 0} Atlet Terdaftar
-                                        </span>
-                                        {st.is_locked ? (
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 font-medium">
-                                                🔒 Roster Terkunci
+                                        {/* Athletes Preview Footer */}
+                                        <div className="px-5 py-3 bg-surface-950/40 border-t border-surface-800 flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-surface-500">Atlet:</span>
+                                                <div className="flex -space-x-1">
+                                                    {allAthletes.slice(0, 4).map((a) => (
+                                                        <div
+                                                            key={a.id}
+                                                            className="w-6 h-6 rounded-full bg-surface-800 border border-surface-700 flex items-center justify-center text-[10px] font-bold text-surface-300 shadow-sm"
+                                                            title={`${a.name} (#${a.jersey_number} - ${a.position || 'Pemain'})`}
+                                                        >
+                                                            {a.jersey_number}
+                                                        </div>
+                                                    ))}
+                                                    {allAthletes.length > 4 && (
+                                                        <div className="w-6 h-6 rounded-full bg-surface-800 border border-surface-700 flex items-center justify-center text-[10px] text-surface-400">
+                                                            +{allAthletes.length - 4}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <span className="text-xs font-semibold text-purple-400">
+                                                {allAthletes.length} total atlet
                                             </span>
-                                        ) : (
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-medium">
-                                                ✓ Siap Tanding
-                                            </span>
-                                        )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
             )}
 
-            {/* Modal Create Super Team */}
+            {/* Modal Create Super Team (Clean Single Form) */}
             {isSuperTeamModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="w-full max-w-3xl bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-                        <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/30">
-                            <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
-                                <span>🏆 Buat Super Team Baru</span>
-                            </h3>
+                    <div className="w-full max-w-3xl bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                        <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/40">
+                            <div>
+                                <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
+                                    <span>🏆 Buat Super Team Baru</span>
+                                </h3>
+                                <p className="text-xs text-surface-400 mt-0.5">
+                                    Input data tim dan daftar atlet sebagai 1 kesatuan (otomatis dialokasikan 3 sesi di jadwal).
+                                </p>
+                            </div>
                             <button
                                 onClick={() => setIsSuperTeamModalOpen(false)}
-                                className="text-surface-400 hover:text-surface-200 p-1 rounded-lg hover:bg-surface-800 transition-colors"
+                                className="text-surface-400 hover:text-surface-200 p-1.5 rounded-lg hover:bg-surface-800 transition-colors cursor-pointer"
                             >
                                 ✕
                             </button>
                         </div>
 
                         <form onSubmit={handleCreateSuperTeam} className="p-6 space-y-4 flex flex-col flex-1 overflow-hidden" encType="multipart/form-data">
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
-                                    Nama Super Team <span className="text-red-400">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={stData.name}
-                                    onChange={(e) => setStData('name', e.target.value)}
-                                    placeholder="Contoh: PSTG Garuda Perkasa"
-                                    className="w-full px-4 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
-                                    required
-                                />
-                                {stErrors.name && <p className="text-red-400 text-xs mt-1">{stErrors.name}</p>}
+                            {/* General Details */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
+                                        Nama Super Team <span className="text-red-400">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={stData.name}
+                                        onChange={(e) => setStData('name', e.target.value)}
+                                        placeholder="Contoh: Tim Harimau Perkasa"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                                        required
+                                    />
+                                    {stErrors.name && <p className="text-red-400 text-xs mt-1">{stErrors.name}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
+                                        Daerah <span className="text-red-400">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={stData.region}
+                                        onChange={(e) => setStData('region', e.target.value)}
+                                        placeholder="Contoh: Jakarta"
+                                        className="w-full px-4 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                                        required
+                                    />
+                                    {stErrors.region && <p className="text-red-400 text-xs mt-1">{stErrors.region}</p>}
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
+                                        Daftarkan ke Turnamen (Opsional)
+                                    </label>
+                                    <select
+                                        value={stData.tournament_id}
+                                        onChange={(e) => setStData('tournament_id', e.target.value)}
+                                        className="w-full px-3 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
+                                    >
+                                        <option value="">— Tidak didaftarkan sekarang —</option>
+                                        {tournaments.map((t) => (
+                                            <option key={t.id} value={t.id}>
+                                                🏆 {t.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {stErrors.tournament_id && <p className="text-red-400 text-xs mt-1">{stErrors.tournament_id}</p>}
+                                </div>
+
+                                {isAdmin ? (
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
+                                            Pelatih Penanggung Jawab
+                                        </label>
+                                        <select
+                                            value={stData.coach_id}
+                                            onChange={(e) => setStData('coach_id', e.target.value)}
+                                            className="w-full px-3 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
+                                        >
+                                            <option value="">— Pilih Pelatih (Opsional) —</option>
+                                            {coaches.map((c) => (
+                                                <option key={c.id} value={c.id}>
+                                                    🧑‍🏫 {c.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center text-xs text-purple-300/80 p-2.5 rounded-xl bg-purple-950/20 border border-purple-900/30 self-end">
+                                        <span>🧑‍🏫 Pelatih: <strong>{auth.user?.name}</strong></span>
+                                    </div>
+                                )}
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
-                                    Kategori Mode Pertandingan <span className="text-red-400">*</span>
-                                </label>
-                                <div className="grid grid-cols-2 gap-3">
+                            {/* Athletes Section Header */}
+                            <div className="pt-2 border-t border-surface-800 flex items-center justify-between">
+                                <div>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-surface-300">
+                                        Daftar Atlet <span className="text-red-400">*</span>
+                                    </label>
+                                    <p className="text-[11px] text-surface-500">
+                                        Minimal 1 atlet. Nomor punggung harus unik dalam satu tim.
+                                    </p>
+                                </div>
+
+                                <div className="flex items-center gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => setStData('match_mode', 'team_regu')}
-                                        className={`p-3 rounded-xl border text-left transition-all ${
-                                            stData.match_mode === 'team_regu'
-                                                ? 'border-purple-500 bg-purple-500/15 text-purple-200 shadow-md'
-                                                : 'border-surface-700 bg-surface-950/40 text-surface-400 hover:border-surface-600'
-                                        }`}
+                                        onClick={() => document.getElementById('unified-csv-upload').click()}
+                                        className="text-xs px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all font-semibold flex items-center gap-1.5 cursor-pointer"
+                                        title="Import daftar atlet dari file CSV"
                                     >
-                                        <p className="text-xs font-bold">Team Regu (3x3)</p>
-                                        <p className="text-[10px] text-surface-500 mt-0.5">3 Regu x 3 Pemain</p>
+                                        <span>📥 Import CSV</span>
                                     </button>
+                                    <input
+                                        type="file"
+                                        id="unified-csv-upload"
+                                        accept=".csv,text/csv"
+                                        onChange={(e) => {
+                                            handleCsvUpload(e.target.files[0]);
+                                            e.target.value = '';
+                                        }}
+                                        className="hidden"
+                                    />
 
                                     <button
                                         type="button"
-                                        onClick={() => setStData('match_mode', 'team_double')}
-                                        className={`p-3 rounded-xl border text-left transition-all ${
-                                            stData.match_mode === 'team_double'
-                                                ? 'border-purple-500 bg-purple-500/15 text-purple-200 shadow-md'
-                                                : 'border-surface-700 bg-surface-950/40 text-surface-400 hover:border-surface-600'
-                                        }`}
+                                        onClick={addAthlete}
+                                        className="text-xs px-3 py-1.5 rounded-xl bg-primary-600/20 text-primary-300 border border-primary-500/30 hover:bg-primary-600/30 transition-all font-semibold flex items-center gap-1.5 cursor-pointer"
                                     >
-                                        <p className="text-xs font-bold">Team Double (3x2)</p>
-                                        <p className="text-[10px] text-surface-500 mt-0.5">3 Regu x 2 Pemain</p>
+                                        <span>+ Tambah Atlet</span>
                                     </button>
                                 </div>
                             </div>
 
-                            {/* 3 Sub-Teams independen (buat sendiri + atlet) */}
-                            <div className="space-y-4 overflow-y-auto pr-1">
-                                <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/20 text-[11px] text-purple-200/90">
-                                    💡 Setiap Sub-Tim dibuat <strong>independen</strong> (bukan memakai tim reguler yang sudah ada).
-                                    Isi nama, daerah, dan daftar atlet masing-masing — bisa lewat <strong>input manual</strong> atau <strong>Import CSV</strong>.
-                                </div>
+                            {stErrors.athletes && (
+                                <p className="text-red-400 text-xs">{stErrors.athletes}</p>
+                            )}
 
-                                {stData.sub_teams.map((sub, subIdx) => (
-                                    <div key={subIdx} className="rounded-xl border border-surface-700 bg-surface-950/40 p-4 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <label className="block text-xs font-bold uppercase tracking-wider text-purple-300">
-                                                Sub-Tim #{subIdx + 1} (Regu {subIdx + 1}) <span className="text-red-400">*</span>
-                                            </label>
-                                            {stErrors[`sub_teams.${subIdx}.name`] && (
-                                                <p className="text-red-400 text-[11px]">{stErrors[`sub_teams.${subIdx}.name`]}</p>
-                                            )}
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-[11px] font-semibold text-surface-400 mb-1">Nama Sub-Tim</label>
-                                                <input
-                                                    type="text"
-                                                    value={sub.name}
-                                                    onChange={(e) => updateSubTeam(subIdx, 'name', e.target.value)}
-                                                    placeholder={`Contoh: ${stData.name || 'Super Team'} - Regu ${subIdx + 1}`}
-                                                    className="w-full px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
-                                                    required
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[11px] font-semibold text-surface-400 mb-1">Daerah</label>
-                                                <input
-                                                    type="text"
-                                                    value={sub.region}
-                                                    onChange={(e) => updateSubTeam(subIdx, 'region', e.target.value)}
-                                                    placeholder="Contoh: Kab. Bandung"
-                                                    className="w-full px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
-                                                    required
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Athletes of this sub-team */}
-                                        <div>
-                                            <div className="flex items-center justify-between mb-2">
-                                                <label className="text-[11px] font-semibold text-surface-400">
-                                                    Daftar Atlet <span className="text-red-400">*</span>
-                                                </label>
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => document.getElementById(`sub-csv-${subIdx}`).click()}
-                                                        className="text-[11px] px-2.5 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all font-semibold"
-                                                        title="Import daftar atlet dari file CSV"
-                                                    >
-                                                        📥 Import CSV
-                                                    </button>
-                                                    <input
-                                                        type="file"
-                                                        id={`sub-csv-${subIdx}`}
-                                                        accept=".csv,text/csv"
-                                                        onChange={(e) => {
-                                                            handleSubTeamCsvUpload(subIdx, e.target.files[0]);
-                                                            e.target.value = '';
-                                                        }}
-                                                        className="hidden"
+                            {/* Athletes Table / List */}
+                            <div className="space-y-2 overflow-y-auto pr-1 flex-1 max-h-[38vh]">
+                                {stData.athletes.map((athlete, idx) => (
+                                    <div
+                                        key={idx}
+                                        className="flex items-center gap-2.5 p-2 rounded-xl border border-surface-700 bg-surface-950/50"
+                                    >
+                                        {/* Photo Upload */}
+                                        <div className="relative shrink-0">
+                                            <input
+                                                type="file"
+                                                id={`ath-photo-${idx}`}
+                                                accept="image/*"
+                                                onChange={(e) => updateAthlete(idx, 'photo', e.target.files[0] || null)}
+                                                className="hidden"
+                                            />
+                                            <label
+                                                htmlFor={`ath-photo-${idx}`}
+                                                className="w-9 h-9 rounded-lg bg-surface-800 flex items-center justify-center text-xs font-bold text-surface-400 cursor-pointer overflow-hidden border border-surface-700 hover:border-purple-500 transition-colors block"
+                                                title="Unggah foto atlet (opsional)"
+                                            >
+                                                {athlete.photo ? (
+                                                    <img
+                                                        src={URL.createObjectURL(athlete.photo)}
+                                                        alt="Preview"
+                                                        className="w-full h-full object-cover"
                                                     />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => addSubTeamAthlete(subIdx)}
-                                                        className="text-[11px] px-2.5 py-1.5 rounded-lg bg-primary-600/20 text-primary-300 border border-primary-500/30 hover:bg-primary-600/30 transition-all font-semibold"
-                                                    >
-                                                        + Tambah Atlet
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                {sub.athletes.map((athlete, athleteIdx) => (
-                                                    <div key={athleteIdx} className="flex items-center gap-2">
-                                                        {/* Photo */}
-                                                        <div className="relative shrink-0 mt-1">
-                                                            <input
-                                                                type="file"
-                                                                id={`sub-photo-${subIdx}-${athleteIdx}`}
-                                                                accept="image/*"
-                                                                onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'photo', e.target.files[0] || null)}
-                                                                className="hidden"
-                                                            />
-                                                            <label
-                                                                htmlFor={`sub-photo-${subIdx}-${athleteIdx}`}
-                                                                className="w-9 h-9 rounded-lg bg-surface-800 flex items-center justify-center text-xs font-bold text-surface-400 cursor-pointer overflow-hidden border border-surface-600 hover:border-purple-500 transition-colors block"
-                                                                title="Unggah foto atlet"
-                                                            >
-                                                                {athlete.photo ? (
-                                                                    <img
-                                                                        src={URL.createObjectURL(athlete.photo)}
-                                                                        alt="Preview"
-                                                                        className="w-full h-full object-cover"
-                                                                    />
-                                                                ) : (
-                                                                    <span>{athleteIdx + 1}</span>
-                                                                )}
-                                                            </label>
-                                                        </div>
-
-                                                        <input
-                                                            type="text"
-                                                            value={athlete.name}
-                                                            onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'name', e.target.value)}
-                                                            placeholder="Nama atlet"
-                                                            className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
-                                                            required
-                                                        />
-                                                        <input
-                                                            type="number"
-                                                            value={athlete.jersey_number}
-                                                            onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'jersey_number', e.target.value)}
-                                                            placeholder="No"
-                                                            min="1"
-                                                            className="w-16 px-2 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs text-center focus:border-purple-500 transition-colors"
-                                                            required
-                                                        />
-                                                        <input
-                                                            type="text"
-                                                            value={athlete.position}
-                                                            onChange={(e) => updateSubTeamAthlete(subIdx, athleteIdx, 'position', e.target.value)}
-                                                            placeholder="Posisi"
-                                                            className="w-24 min-w-0 px-3 py-2 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => removeSubTeamAthlete(subIdx, athleteIdx)}
-                                                            disabled={sub.athletes.length <= 1}
-                                                            className="shrink-0 w-8 h-8 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                            title="Hapus atlet"
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            {stErrors[`sub_teams.${subIdx}.athletes`] && (
-                                                <p className="text-red-400 text-[11px] mt-1">{stErrors[`sub_teams.${subIdx}.athletes`]}</p>
-                                            )}
+                                                ) : (
+                                                    <span>#{athlete.jersey_number || idx + 1}</span>
+                                                )}
+                                            </label>
                                         </div>
+
+                                        {/* Name */}
+                                        <input
+                                            type="text"
+                                            value={athlete.name}
+                                            onChange={(e) => updateAthlete(idx, 'name', e.target.value)}
+                                            placeholder="Nama Atlet"
+                                            className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-surface-900 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
+                                            required
+                                        />
+
+                                        {/* Jersey Number */}
+                                        <input
+                                            type="number"
+                                            value={athlete.jersey_number}
+                                            onChange={(e) => updateAthlete(idx, 'jersey_number', e.target.value)}
+                                            placeholder="No"
+                                            min="1"
+                                            max="999"
+                                            className="w-16 px-2 py-2 rounded-xl bg-surface-900 border border-surface-700 text-surface-100 text-xs text-center font-bold focus:border-purple-500 transition-colors"
+                                            required
+                                            title="Nomor Punggung"
+                                        />
+
+                                        {/* Position */}
+                                        <select
+                                            value={athlete.position || 'Cadangan'}
+                                            onChange={(e) => updateAthlete(idx, 'position', e.target.value)}
+                                            className="w-28 px-2 py-2 rounded-xl bg-surface-900 border border-surface-700 text-surface-200 text-xs focus:border-purple-500 transition-colors"
+                                        >
+                                            <option value="Tekong">Tekong</option>
+                                            <option value="Feeder">Feeder</option>
+                                            <option value="Smash">Smash</option>
+                                            <option value="Cadangan">Cadangan</option>
+                                        </select>
+
+                                        {/* Remove Button */}
+                                        {stData.athletes.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => removeAthlete(idx)}
+                                                className="shrink-0 w-8 h-8 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500/20 transition-colors cursor-pointer"
+                                                title="Hapus atlet"
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
 
-                            <div className="pt-4 border-t border-surface-800 flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsSuperTeamModalOpen(false)}
-                                    className="px-4 py-2 rounded-xl border border-surface-700 text-surface-400 text-xs font-semibold hover:bg-surface-800 transition-colors"
-                                >
-                                    Batal
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={stProcessing}
-                                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md disabled:opacity-50 cursor-pointer"
-                                >
-                                    {stProcessing ? 'Menyimpan...' : '✨ Buat Super Team'}
-                                </button>
+                            {/* Modal Footer */}
+                            <div className="pt-4 border-t border-surface-800 flex items-center justify-between">
+                                <div className="text-xs text-surface-400 font-mono">
+                                    Total: <strong>{stData.athletes.length}</strong> Atlet
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSuperTeamModalOpen(false)}
+                                        className="px-4 py-2 rounded-xl border border-surface-700 text-surface-400 text-xs font-semibold hover:bg-surface-800 transition-colors cursor-pointer"
+                                    >
+                                        Batal
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={stProcessing}
+                                        className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {stProcessing ? 'Menyimpan...' : '✓ Daftarkan Super Team'}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>
@@ -702,7 +712,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                 onClose={() => setDeletingSuperTeamId(null)}
                 onConfirm={handleDeleteSuperTeam}
                 title="Hapus Super Team"
-                message="Super Team beserta ketiga Sub-Tim anggotanya dan seluruh data atletnya akan dihapus. Aksi ini hanya dapat dilakukan jika Super Team belum pernah mengikuti turnamen."
+                message="Super Team beserta seluruh data atletnya akan dihapus permanen. Aksi ini hanya dapat dilakukan jika Super Team belum pernah mengikuti turnamen."
             />
         </AuthenticatedLayout>
     );

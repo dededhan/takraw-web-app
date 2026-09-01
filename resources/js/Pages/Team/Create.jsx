@@ -118,6 +118,7 @@ export default function TeamCreate({ coaches, tournaments }) {
                     // Standardize position to match options
                     if (position) {
                         position = position.charAt(0).toUpperCase() + position.slice(1).toLowerCase();
+                        if (position === 'Killer') position = 'Smash';
                     }
                     importedAthletes.push({
                         name,
@@ -308,13 +309,16 @@ export default function TeamCreate({ coaches, tournaments }) {
                                                         {athleteJerseyError && <p className="text-red-400 text-xs mt-1">{athleteJerseyError}</p>}
                                                     </div>
                                                     <div>
-                                                        <input
-                                                            type="text"
-                                                            value={athlete.position}
+                                                        <select
+                                                            value={athlete.position || 'Cadangan'}
                                                             onChange={(e) => updateAthlete(index, 'position', e.target.value)}
-                                                            className="w-full px-3 py-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-100 text-sm placeholder-surface-600 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                                                            placeholder="Posisi (Tekong, Feeder, dll)"
-                                                        />
+                                                            className="w-full px-3 py-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-100 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                                                        >
+                                                            <option value="Tekong">Tekong</option>
+                                                            <option value="Feeder">Feeder</option>
+                                                            <option value="Smash">Smash</option>
+                                                            <option value="Cadangan">Cadangan</option>
+                                                        </select>
                                                     </div>
                                                 </div>
                                                 {data.athletes.length > 1 && (

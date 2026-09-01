@@ -99,11 +99,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 ->name('super-teams.store');
         });
 
-        // Super Team: update, delete, member management (tanpa prefix tournament)
+        // Super Team: update, member management (tanpa prefix tournament)
         Route::put('super-teams/{superTeam}', [SuperTeamController::class, 'update'])
             ->name('super-teams.update');
-        Route::delete('super-teams/{superTeam}', [SuperTeamController::class, 'destroy'])
-            ->name('super-teams.destroy');
         Route::post('super-teams/{superTeam}/members', [SuperTeamController::class, 'addMember'])
             ->name('super-teams.members.add');
         Route::delete('super-teams/{superTeam}/members/{team}', [SuperTeamController::class, 'removeMember'])
@@ -147,6 +145,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/templates/athletes', [TeamController::class, 'downloadTemplate'])->name('templates.athletes');
         Route::get('/templates/athletes-csv', [TeamController::class, 'downloadCsvTemplate'])->name('templates.athletes-csv');
         Route::post('/teams/{team}/import-athletes', [TeamController::class, 'importAthletes'])->name('teams.import-athletes');
+
+        // Super Teams (Unified Creation & Deletion)
+        Route::post('/super-teams/unified', [SuperTeamController::class, 'storeUnified'])->name('super-teams.store-unified');
+        Route::delete('/super-teams/{superTeam}', [SuperTeamController::class, 'destroy'])->name('super-teams.destroy');
     });
 
     // ─── Referee & Admin Routes ─────────────────────

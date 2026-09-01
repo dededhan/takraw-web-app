@@ -23,7 +23,7 @@ class TeamController extends Controller
             $query->where('coach_id', $request->user()->id);
         }
 
-        $superTeamsQuery = \App\Models\SuperTeam::with(['members.athletes', 'tournament']);
+        $superTeamsQuery = \App\Models\SuperTeam::with(['members.athletes', 'tournament', 'coach']);
         if ($request->user()->isCoach()) {
             $superTeamsQuery->where('coach_id', $request->user()->id);
         }
@@ -32,10 +32,19 @@ class TeamController extends Controller
             ? Team::where('coach_id', $request->user()->id)->get(['id', 'name', 'region'])
             : Team::get(['id', 'name', 'region']);
 
+        $coaches = $request->user()->isAdmin()
+            ? User::where('role', 'coach')->where('is_active', true)->get(['id', 'name'])
+            : [];
+
+        $tournaments = Tournament::whereIn('status', ['draft', 'registration', 'pool_stage'])
+            ->get(['id', 'name', 'status']);
+
         return Inertia::render('Team/Index', [
             'teams' => $query->latest()->paginate(12),
             'superTeams' => $superTeamsQuery->latest()->get(),
             'allCoachTeams' => $allCoachTeams,
+            'coaches' => $coaches,
+            'tournaments' => $tournaments,
         ]);
     }
 
@@ -311,8 +320,11 @@ class TeamController extends Controller
                 continue;
             }
 
-            $validPositions = ['Tekong', 'Feeder', 'Killer', 'Cadangan'];
+            $validPositions = ['Tekong', 'Feeder', 'Smash', 'Killer', 'Cadangan'];
             $posFormatted = ucfirst(strtolower($position));
+            if ($posFormatted === 'Killer') {
+                $posFormatted = 'Smash';
+            }
             if (!in_array($posFormatted, $validPositions)) {
                 $posFormatted = 'Cadangan';
             }

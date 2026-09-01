@@ -79,7 +79,7 @@ class AthleteExcelService
         $sampleData = [
             ['Budi Santoso', 10, 'Tekong', 'L', 'Kapten Tim / Servis Utama'],
             ['Andi Wijaya', 7, 'Feeder', 'L', 'Pengumpan / Toss'],
-            ['Candra Saputra', 3, 'Killer', 'L', 'Spiker Utama'],
+            ['Candra Saputra', 3, 'Smash', 'L', 'Spiker / Smasher Utama'],
             ['Dedi Hermawan', 12, 'Cadangan', 'L', 'Pemain Cadangan'],
         ];
 
@@ -120,7 +120,7 @@ class AthleteExcelService
         $instructions = [
             '1. Kolom dengan tanda bintang (*) WAJIB diisi.',
             '2. Nomor Punggung harus berupa ANGKA positif (1-99) dan tidak boleh sama/duplikat dalam satu tim.',
-            '3. Posisi yang didukung: Tekong, Feeder, Killer, atau Cadangan (jika kosong akan otomatis diset sebagai Cadangan).',
+            '3. Posisi yang didukung: Tekong, Feeder, Smash, atau Cadangan (jika kosong akan otomatis diset sebagai Cadangan).',
             '4. Jangan mengubah baris Header (Baris 4). Anda dapat langsung mengganti atau menambahkan data atlet mulai Baris 5 ke bawah.',
             '5. Simpan file ini dalam format .xlsx atau .csv lalu upload pada menu Tim Saya → Import Atlet.',
         ];
@@ -155,7 +155,7 @@ class AthleteExcelService
             ['Nama Lengkap', 'Nomor Punggung', 'Posisi'],
             ['Budi Santoso', 10, 'Tekong'],
             ['Andi Wijaya', 7, 'Feeder'],
-            ['Candra Saputra', 3, 'Killer'],
+            ['Candra Saputra', 3, 'Smash'],
             ['Dedi Hermawan', 12, 'Cadangan'],
         ];
 
@@ -218,6 +218,9 @@ class AthleteExcelService
 
                 $jersey = (int)trim((string)($row[$jerseyCol] ?? 0));
                 $position = trim((string)($row[$posCol] ?? 'Cadangan'));
+                if (strcasecmp($position, 'killer') === 0) {
+                    $position = 'Smash';
+                }
 
                 $athletes[] = [
                     'name' => $name,
@@ -237,6 +240,9 @@ class AthleteExcelService
 
                     $jersey = (int)trim($row[1] ?? 0);
                     $position = trim($row[2] ?? 'Cadangan');
+                    if (strcasecmp($position, 'killer') === 0) {
+                        $position = 'Smash';
+                    }
 
                     $athletes[] = [
                         'name' => $name,

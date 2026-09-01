@@ -573,6 +573,7 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
     const positionColors = {
         Tekong: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
         Feeder: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        Smash: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
         Killer: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
         Cadangan: 'bg-surface-700/60 text-surface-300 border-surface-600/50',
     };

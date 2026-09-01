@@ -78,7 +78,8 @@ class TournamentController extends Controller
 
         // Get all teams in the system that are NOT registered in this tournament
         $registeredTeamIds = $tournament->teams->pluck('id');
-        $availableTeams = Team::whereNotIn('id', $registeredTeamIds)
+        $availableTeams = Team::where('is_super_sub', false)
+            ->whereNotIn('id', $registeredTeamIds)
             ->orderBy('name')
             ->get();
 

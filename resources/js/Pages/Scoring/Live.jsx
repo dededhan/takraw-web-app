@@ -634,7 +634,7 @@ function TeamSide({ team, athletes = [], selectedAthlete, onSelectAthlete, onSta
         : [
             { id: `temp-${team?.id || 1}-1`, name: 'Tekong', jersey_number: 1 },
             { id: `temp-${team?.id || 1}-2`, name: 'Feeder', jersey_number: 2 },
-            { id: `temp-${team?.id || 1}-3`, name: 'Killer', jersey_number: 3 },
+            { id: `temp-${team?.id || 1}-3`, name: 'Smash', jersey_number: 3 },
         ];
 
     useEffect(() => {

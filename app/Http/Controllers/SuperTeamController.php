@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Athlete;
 use App\Models\SuperTeam;
 use App\Models\Team;
 use App\Models\Tournament;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -19,7 +21,7 @@ class SuperTeamController extends Controller
         $tournament->load(['modes']);
 
         $superTeams = SuperTeam::where('tournament_id', $tournament->id)
-            ->with(['members.athletes', 'creator'])
+            ->with(['members.athletes', 'creator', 'coach'])
             ->withCount('members')
             ->get()
             ->groupBy('match_mode');
@@ -28,7 +30,7 @@ class SuperTeamController extends Controller
         $availableTeams = $tournament->teams()->with('athletes')->get();
 
         // Tim yang sudah menjadi anggota super team mana pun
-        $usedTeamIds = \App\Models\SuperTeam::where('tournament_id', $tournament->id)
+        $usedTeamIds = SuperTeam::where('tournament_id', $tournament->id)
             ->with('members')
             ->get()
             ->flatMap(fn($st) => $st->members->pluck('id'))
@@ -44,7 +46,116 @@ class SuperTeamController extends Controller
     }
 
     /**
-     * Buat Super Team baru.
+     * Buat Super Team baru (1 kesatuan dengan roster atlet tunggal, otomatis dibuatkan 3 sub-tim).
+     * Dapat dipanggil oleh Admin maupun Coach di halaman Manajemen Tim.
+     */
+    public function storeUnified(Request $request)
+    {
+        $validated = $request->validate([
+            'name'                     => 'required|string|max:100',
+            'region'                   => 'required|string|max:100',
+            'match_mode'               => 'nullable|string|max:50',
+            'tournament_id'            => 'nullable|exists:tournaments,id',
+            'coach_id'                 => 'nullable|exists:users,id',
+            'athletes'                 => 'required|array|min:1',
+            'athletes.*.name'          => 'required|string|max:100',
+            'athletes.*.jersey_number' => 'required|integer|min:1|max:999',
+            'athletes.*.position'      => 'nullable|string|max:50',
+            'athletes.*.photo'         => 'nullable|image|max:2048',
+            'athletes.*.sub_regu'      => 'nullable|integer|min:1|max:3',
+        ], [
+            'name.required'                     => 'Nama Super Team wajib diisi.',
+            'region.required'                   => 'Daerah / asal tim wajib diisi.',
+            'athletes.required'                 => 'Daftar atlet wajib diisi.',
+            'athletes.min'                      => 'Super Team harus memiliki minimal 1 atlet.',
+            'athletes.*.name.required'          => 'Nama setiap atlet wajib diisi.',
+            'athletes.*.jersey_number.required' => 'Nomor punggung setiap atlet wajib diisi.',
+            'athletes.*.jersey_number.min'      => 'Nomor punggung minimal 1.',
+            'athletes.*.jersey_number.max'      => 'Nomor punggung maksimal 999.',
+        ]);
+
+        // Cek duplikasi nomor punggung di seluruh Super Team (sebagai 1 kesatuan tim)
+        $jerseys = array_map('intval', array_column($validated['athletes'], 'jersey_number'));
+        if (count($jerseys) !== count(array_unique($jerseys))) {
+            $duplicates = array_diff_assoc($jerseys, array_unique($jerseys));
+            $dupStr = implode(', #', array_unique($duplicates));
+            return back()->withErrors([
+                'athletes' => "Nomor punggung atlet tidak boleh ada yang kembar dalam satu Super Team (duplikat: #{$dupStr}).",
+            ])->with('error', "Nomor punggung atlet tidak boleh ada yang kembar (#{$dupStr}).");
+        }
+
+        // Tentukan coach_id: jika user coach, wajib id dirinya; jika admin, ambil dari input
+        $coachId = $request->user()->isCoach() ? $request->user()->id : ($validated['coach_id'] ?? null);
+        $matchMode = !empty($validated['match_mode']) ? $validated['match_mode'] : 'team_regu';
+        $tournamentId = !empty($validated['tournament_id']) ? $validated['tournament_id'] : null;
+
+        $superTeam = DB::transaction(function () use ($validated, $request, $coachId, $matchMode, $tournamentId) {
+            $superTeam = SuperTeam::create([
+                'tournament_id' => $tournamentId,
+                'name'          => $validated['name'],
+                'match_mode'    => $matchMode,
+                'coach_id'      => $coachId,
+                'created_by'    => $request->user()->id,
+            ]);
+
+            // Buat 3 Sub-Tim otomatis: [Nama]-1, [Nama]-2, [Nama]-3
+            $subTeams = [];
+            for ($i = 1; $i <= 3; $i++) {
+                $subTeams[$i] = Team::create([
+                    'name'                 => "{$validated['name']}-{$i}",
+                    'region'               => $validated['region'],
+                    'coach_id'             => $coachId,
+                    'is_super_sub'         => true,
+                    'parent_super_team_id' => $superTeam->id,
+                ]);
+            }
+
+            $superTeam->members()->attach([$subTeams[1]->id, $subTeams[2]->id, $subTeams[3]->id]);
+
+            // Distribusikan atlet ke 3 sub-tim
+            $totalAthletes = count($validated['athletes']);
+            $perRegu = (int) ceil($totalAthletes / 3);
+
+            foreach ($validated['athletes'] as $index => $athleteData) {
+                // Tentukan target sub-team (1, 2, atau 3)
+                $targetRegu = !empty($athleteData['sub_regu'])
+                    ? (int) $athleteData['sub_regu']
+                    : min(3, intdiv($index, max(1, $perRegu)) + 1);
+
+                if (!isset($subTeams[$targetRegu])) {
+                    $targetRegu = 1;
+                }
+
+                $photoPath = $request->hasFile("athletes.{$index}.photo")
+                    ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
+                    : null;
+
+                $validPositions = ['Tekong', 'Feeder', 'Smash', 'Killer', 'Cadangan'];
+                $position = !empty($athleteData['position']) ? ucfirst(strtolower(trim($athleteData['position']))) : 'Cadangan';
+                if ($position === 'Killer') {
+                    $position = 'Smash';
+                }
+                if (!in_array($position, $validPositions)) {
+                    $position = 'Cadangan';
+                }
+
+                Athlete::create([
+                    'team_id'       => $subTeams[$targetRegu]->id,
+                    'name'          => trim($athleteData['name']),
+                    'jersey_number' => (int) $athleteData['jersey_number'],
+                    'position'      => $position,
+                    'photo'         => $photoPath,
+                ]);
+            }
+
+            return $superTeam;
+        });
+
+        return back()->with('success', "Super Team \"{$superTeam->name}\" berhasil dibuat sebagai 1 kesatuan (3 Sub-Tim otomatis dibuat)!");
+    }
+
+    /**
+     * Buat Super Team baru (legacy per-tournament).
      */
     public function store(Request $request, Tournament $tournament)
     {
@@ -85,21 +196,30 @@ class SuperTeamController extends Controller
     /**
      * Hapus Super Team.
      */
-    public function destroy(SuperTeam $superTeam)
+    public function destroy(Request $request, SuperTeam $superTeam)
     {
-        // Cek apakah sudah ada match yang menggunakan super team ini
-        $hasMatches = \App\Models\Match_::where('home_super_team_id', $superTeam->id)
-            ->orWhere('away_super_team_id', $superTeam->id)
-            ->where('status', '!=', 'scheduled')
-            ->exists();
-
-        if ($hasMatches) {
-            return back()->with('error', 'Super Team tidak bisa dihapus karena sudah ada pertandingan yang berjalan.');
+        $user = $request->user();
+        if (!$user->isAdmin() && $superTeam->coach_id !== $user->id && $superTeam->created_by !== $user->id) {
+            return back()->with('error', 'Anda tidak memiliki wewenang untuk menghapus Super Team ini.');
         }
 
-        $superTeam->delete();
+        if ($superTeam->isRosterLocked()) {
+            return back()->with('error', 'Super Team ini tidak dapat dihapus karena sudah memiliki riwayat penilaian dalam pertandingan.');
+        }
 
-        return back()->with('success', 'Super Team berhasil dihapus.');
+        DB::transaction(function () use ($superTeam) {
+            $subTeamIds = $superTeam->members()->pluck('teams.id')->all();
+            $superTeam->members()->detach();
+            $superTeam->delete();
+
+            if (!empty($subTeamIds)) {
+                Team::whereIn('id', $subTeamIds)
+                    ->where('is_super_sub', true)
+                    ->delete();
+            }
+        });
+
+        return back()->with('success', "Super Team \"{$superTeam->name}\" berhasil dihapus.");
     }
 
     /**

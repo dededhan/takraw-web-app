@@ -25,6 +25,7 @@ export default function TeamShow({ team }) {
     const positionColors = {
         'Tekong': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
         'Feeder': 'bg-primary-500/20 text-primary-300 border-primary-500/30',
+        'Smash': 'bg-red-500/20 text-red-300 border-red-500/30',
         'Killer': 'bg-red-500/20 text-red-300 border-red-500/30',
         'Cadangan': 'bg-surface-600/30 text-surface-300 border-surface-500/30',
     };
@@ -252,7 +253,7 @@ export default function TeamShow({ team }) {
                                 <ul className="list-disc list-inside space-y-1 text-[11px] text-surface-400">
                                     <li>Mendukung file Excel <strong>.xlsx, .xls</strong> dan file <strong>.csv</strong></li>
                                     <li>Kolom wajib: <strong>Nama Lengkap</strong> dan <strong>Nomor Punggung</strong></li>
-                                    <li>Posisi valid: <strong>Tekong, Feeder, Killer, Cadangan</strong></li>
+                                    <li>Posisi valid: <strong>Tekong, Feeder, Smash, Cadangan</strong></li>
                                     <li>Untuk CSV, gunakan template CSV di atas — jangan simpan template .xlsx sebagai .csv karena akan merusak format.</li>
                                 </ul>
                             </div>
