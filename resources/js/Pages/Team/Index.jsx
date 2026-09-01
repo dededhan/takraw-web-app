@@ -104,6 +104,19 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
 
     const handleCreateSuperTeam = (e) => {
         e.preventDefault();
+
+        // Check for duplicate jersey numbers in each sub-team
+        for (let i = 0; i < stData.sub_teams.length; i++) {
+            const jerseys = stData.sub_teams[i].athletes
+                .map(a => (a.jersey_number !== '' && a.jersey_number !== null && a.jersey_number !== undefined) ? parseInt(a.jersey_number, 10) : null)
+                .filter(n => n !== null && !isNaN(n));
+            const dups = jerseys.filter((n, idx) => jerseys.indexOf(n) !== idx);
+            if (dups.length > 0) {
+                alert(`Sub-Tim ${i + 1} (${stData.sub_teams[i].name || 'Sub-Tim ' + (i + 1)}) memiliki nomor punggung duplikat (#${dups.join(', #')}). Pastikan semua nomor punggung unik dalam satu sub-tim.`);
+                return;
+            }
+        }
+
         postSt(route('coach.super-teams.store'), {
             onSuccess: () => {
                 setIsSuperTeamModalOpen(false);

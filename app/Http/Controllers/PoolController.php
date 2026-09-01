@@ -185,16 +185,10 @@ class PoolController extends Controller
         foreach ($bracketsConfig as $bCfg) {
             $poolCount = (int) $bCfg['pool_count'];
 
-            if ($poolCount === 1) {
-                // 1 Pool per bracket -> Final (A1 vs A2)
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_stage'    => 'final',
-                    'bracket_position' => $bracketPosition++,
-                    'home_source'      => "pool_A_rank_1",
-                    'away_source'      => "pool_A_rank_2",
-                ]);
+            if ($poolCount <= 1) {
+                // 1 Pool per bracket -> Full Round Robin (Setengah Kompetisi).
+                // Pemenang bracket ini langsung ditentukan dari poin klasemen akhir (tanpa laga final adu).
+                continue;
             } elseif ($poolCount === 2) {
                 // 2 Pool per bracket -> Direct Final (Juara Pool A vs Juara Pool B)
                 \App\Models\BracketMatrix::create([
@@ -283,39 +277,45 @@ class PoolController extends Controller
                 $pool = $pools[$index % $poolCount];
                 $st->update(['pool_id' => $pool->id]);
 
-                // Initialize standing
-                PoolStanding::create([
+                // Inisialisasi standing Super Team
+                PoolStanding::firstOrCreate([
                     'pool_id'       => $pool->id,
                     'super_team_id' => $st->id,
+                ], [
+                    'played'        => 0,
+                    'won'           => 0,
+                    'lost'          => 0,
+                    'points'        => 0,
+                    'sets_won'      => 0,
+                    'sets_lost'     => 0,
+                    'scores_for'    => 0,
+                    'scores_against'=> 0,
                 ]);
             }
         } else {
-            // Filter tim agar sub-tim anggota SuperTeam DI-LOCK dan tim mode lain (Regu vs Double) tidak bercampur
-            $superTeamMemberIds = \Illuminate\Support\Facades\DB::table('super_team_members')
-                ->join('super_teams', 'super_teams.id', '=', 'super_team_members.super_team_id')
-                ->where('super_teams.tournament_id', $tournament->id)
-                ->pluck('super_team_members.team_id')
-                ->toArray();
-
-            $teams = $tournament->teams
-                ->reject(fn($team) => in_array($team->id, $superTeamMemberIds))
-                ->filter(function ($team) use ($matchMode) {
-                    $nameLower = strtolower($team->name);
-                    if ($matchMode === 'regu' && str_contains($nameLower, 'double')) return false;
-                    if ($matchMode === 'double' && str_contains($nameLower, 'regu') && !str_contains($nameLower, 'double')) return false;
-                    if ($matchMode === 'quadrant' && (str_contains($nameLower, 'regu') || str_contains($nameLower, 'double'))) return false;
-                    return true;
-                })
+            // Distribusi Tim Tunggal (Regu, Double, Quadrant)
+            $teams = $tournament->teams()
+                ->wherePivot('match_mode', $matchMode)
+                ->get()
                 ->shuffle();
 
             foreach ($teams as $index => $team) {
                 $pool = $pools[$index % $poolCount];
-                $pool->teams()->attach($team->id);
+                $team->update(['pool_id' => $pool->id]);
 
-                // Initialize standing
-                PoolStanding::create([
-                    'pool_id' => $pool->id,
-                    'team_id' => $team->id,
+                // Inisialisasi standing Tim Tunggal
+                PoolStanding::firstOrCreate([
+                    'pool_id'   => $pool->id,
+                    'team_id'   => $team->id,
+                ], [
+                    'played'    => 0,
+                    'won'       => 0,
+                    'lost'      => 0,
+                    'points'    => 0,
+                    'sets_won'  => 0,
+                    'sets_lost' => 0,
+                    'scores_for'=> 0,
+                    'scores_against'=> 0,
                 ]);
             }
         }
@@ -330,7 +330,7 @@ class PoolController extends Controller
 
     /**
      * Auto-sync Bracket Matrix berdasarkan jumlah pool mode tanding.
-     * 1 Pool -> Final (1 Laga: A1 vs A2)
+     * 1 Pool -> Full Round Robin (Setengah Kompetisi, juara ditentukan langsung dari klasemen)
      * 2 Pool -> Semifinal (2 Laga: A1 vs B2, B1 vs A2) + Final (1 Laga)
      * 4 Pool -> Quarterfinal (4 Laga) + Semifinal (2 Laga) + Final (1 Laga)
      */
@@ -340,13 +340,9 @@ class PoolController extends Controller
             ->where('match_mode', $matchMode)
             ->delete();
 
-        if ($poolCount === 1) {
-            // 1 Pool → Langsung ke Final (A1 vs A2 / Top 2)
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'final', 'bracket_position' => 1,
-                'home_source'   => 'pool_A_rank_1', 'away_source' => 'pool_A_rank_2',
-            ]);
+        if ($poolCount <= 1) {
+            // 1 Pool → Full Round Robin (tidak ada laga adu gugur, juara dari klasemen)
+            return;
         } elseif ($poolCount === 2) {
             // 2 Pool → Langsung ke Semifinal (A1 vs B2, B1 vs A2)
             \App\Models\BracketMatrix::create([

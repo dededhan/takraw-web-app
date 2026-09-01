@@ -306,19 +306,26 @@ export default function PoolIndex({ tournament }) {
                                                 onChange={e => updateBracket(idx, 'pool_count', parseInt(e.target.value))}
                                                 className="w-full px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-700 text-surface-100 text-xs font-semibold focus:border-purple-500"
                                             >
-                                                {[1, 2, 3, 4, 5, 6].map(num => (
-                                                    <option key={num} value={num}>
-                                                        {num} Pool ({poolLetters.slice(0, num).join(', ')})
-                                                    </option>
-                                                ))}
+                                                <option value={1}>1 Pool (Full Round Robin — Juara dari Klasemen Pool)</option>
+                                                <option value={2}>2 Pool (Pool A & B — Final Juara A vs B)</option>
+                                                <option value={3}>3 Pool (Pool A, B, C — Babak Gugur)</option>
+                                                <option value={4}>4 Pool (Pool A, B, C, D — QF & Semifinal)</option>
+                                                <option value={5}>5 Pool (Pool A s/d E)</option>
+                                                <option value={6}>6 Pool (Pool A s/d F)</option>
                                             </select>
                                         </div>
 
                                         <div className="pt-2 border-t border-surface-800/60 flex items-center justify-between text-[10px] text-surface-400">
-                                            <span>Sub-pool yang dibuat:</span>
-                                            <span className="font-mono text-purple-300 font-bold">
-                                                {poolLetters.map(p => `Pool ${p}`).join(', ')}
-                                            </span>
+                                            <span>Format:</span>
+                                            {b.pool_count === 1 ? (
+                                                <span className="font-mono text-amber-300 font-bold">
+                                                    Pool A (Round Robin Murni)
+                                                </span>
+                                            ) : (
+                                                <span className="font-mono text-purple-300 font-bold">
+                                                    {poolLetters.map(p => `Pool ${p}`).join(', ')}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 );

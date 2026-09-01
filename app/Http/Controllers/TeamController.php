@@ -56,9 +56,17 @@ class TeamController extends Controller
             'tournament_id' => 'nullable|exists:tournaments,id',
             'athletes' => 'required|array|min:1',
             'athletes.*.name' => 'required|string|max:100',
-            'athletes.*.jersey_number' => 'required|integer|min:1',
+            'athletes.*.jersey_number' => 'required|integer|min:1|max:999|distinct',
             'athletes.*.position' => 'nullable|string|max:50',
             'athletes.*.photo' => 'nullable|image|max:2048',
+        ], [
+            'athletes.required' => 'Daftar atlet wajib diisi.',
+            'athletes.min' => 'Tim harus memiliki minimal 1 atlet.',
+            'athletes.*.name.required' => 'Nama atlet wajib diisi.',
+            'athletes.*.jersey_number.required' => 'Nomor punggung wajib diisi.',
+            'athletes.*.jersey_number.min' => 'Nomor punggung minimal 1.',
+            'athletes.*.jersey_number.max' => 'Nomor punggung maksimal 999.',
+            'athletes.*.jersey_number.distinct' => 'Nomor punggung tidak boleh sama dalam satu tim.',
         ]);
 
         // Auto-assign coach if user is a coach
@@ -66,31 +74,35 @@ class TeamController extends Controller
             $validated['coach_id'] = $request->user()->id;
         }
 
-        $team = Team::create([
-            'name' => $validated['name'],
-            'region' => $validated['region'],
-            'coach_id' => $validated['coach_id'] ?? null,
-        ]);
-
-        foreach ($validated['athletes'] as $index => $athleteData) {
-            $photoPath = $request->hasFile("athletes.{$index}.photo")
-                ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
-                : null;
-
-            Athlete::create([
-                'team_id' => $team->id,
-                'name' => $athleteData['name'],
-                'jersey_number' => $athleteData['jersey_number'],
-                'position' => $athleteData['position'] ?? null,
-                'photo' => $photoPath,
+        $team = \DB::transaction(function () use ($request, $validated) {
+            $team = Team::create([
+                'name' => $validated['name'],
+                'region' => $validated['region'],
+                'coach_id' => $validated['coach_id'] ?? null,
             ]);
-        }
 
-        // Register team to tournament if specified
-        if (!empty($validated['tournament_id'])) {
-            $tournament = Tournament::findOrFail($validated['tournament_id']);
-            $tournament->teams()->attach($team->id);
-        }
+            foreach ($validated['athletes'] as $index => $athleteData) {
+                $photoPath = $request->hasFile("athletes.{$index}.photo")
+                    ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
+                    : null;
+
+                Athlete::create([
+                    'team_id' => $team->id,
+                    'name' => $athleteData['name'],
+                    'jersey_number' => (int) $athleteData['jersey_number'],
+                    'position' => $athleteData['position'] ?? null,
+                    'photo' => $photoPath,
+                ]);
+            }
+
+            // Register team to tournament if specified
+            if (!empty($validated['tournament_id'])) {
+                $tournament = Tournament::findOrFail($validated['tournament_id']);
+                $tournament->teams()->attach($team->id);
+            }
+
+            return $team;
+        });
 
         return redirect()->route('teams.show', $team)
             ->with('success', 'Tim berhasil didaftarkan!');
@@ -125,52 +137,79 @@ class TeamController extends Controller
             'name' => 'required|string|max:100',
             'region' => 'required|string|max:100',
             'coach_id' => 'nullable|exists:users,id',
-            'athletes' => 'sometimes|array',
+            'athletes' => 'sometimes|array|min:1',
             'athletes.*.id' => 'nullable|exists:athletes,id',
             'athletes.*.name' => 'required|string|max:100',
-            'athletes.*.jersey_number' => 'required|integer|min:1',
+            'athletes.*.jersey_number' => 'required|integer|min:1|max:999|distinct',
             'athletes.*.position' => 'nullable|string|max:50',
             'athletes.*.photo' => 'nullable|image|max:2048',
+        ], [
+            'athletes.min' => 'Tim harus memiliki minimal 1 atlet.',
+            'athletes.*.name.required' => 'Nama atlet wajib diisi.',
+            'athletes.*.jersey_number.required' => 'Nomor punggung wajib diisi.',
+            'athletes.*.jersey_number.min' => 'Nomor punggung minimal 1.',
+            'athletes.*.jersey_number.max' => 'Nomor punggung maksimal 999.',
+            'athletes.*.jersey_number.distinct' => 'Nomor punggung tidak boleh sama dalam satu tim.',
         ]);
 
-        $team->update([
-            'name' => $validated['name'],
-            'region' => $validated['region'],
-            'coach_id' => $validated['coach_id'] ?? $team->coach_id,
-        ]);
+        \DB::transaction(function () use ($request, $team, $validated) {
+            $team->update([
+                'name' => $validated['name'],
+                'region' => $validated['region'],
+                'coach_id' => $validated['coach_id'] ?? $team->coach_id,
+            ]);
 
-        // Sync athletes if provided
-        if (isset($validated['athletes'])) {
-            $existingIds = [];
-            foreach ($validated['athletes'] as $index => $athleteData) {
-                $photoPath = $request->hasFile("athletes.{$index}.photo")
-                    ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
-                    : null;
+            // Sync athletes if provided
+            if (isset($validated['athletes'])) {
+                $submittedIds = array_values(array_filter(
+                    array_column($validated['athletes'], 'id'),
+                    fn($id) => !empty($id)
+                ));
 
-                if (!empty($athleteData['id'])) {
-                    $athlete = Athlete::findOrFail($athleteData['id']);
-                    $athlete->update([
-                        'name' => $athleteData['name'],
-                        'jersey_number' => $athleteData['jersey_number'],
-                        'position' => $athleteData['position'] ?? null,
-                        'photo' => $photoPath ?? $athlete->photo,
-                    ]);
-                    $existingIds[] = $athlete->id;
-                } else {
-                    $athlete = Athlete::create([
+                // 1. Delete removed athletes first so their jersey numbers and records are freed immediately
+                $team->athletes()->whereNotIn('id', $submittedIds)->delete();
+
+                // 2. Temporarily park existing athletes' jersey numbers with a unique offset (50000 + id % 10000)
+                // This eliminates UNIQUE constraint violation on (team_id, jersey_number) when swapping or reordering numbers
+                if (!empty($submittedIds)) {
+                    $existingAthletes = $team->athletes()->whereIn('id', $submittedIds)->get();
+                    foreach ($existingAthletes as $existingAth) {
+                        $existingAth->update([
+                            'jersey_number' => 50000 + ($existingAth->id % 10000),
+                        ]);
+                    }
+                }
+
+                // 3. Update existing athletes or create new ones
+                foreach ($validated['athletes'] as $index => $athleteData) {
+                    $photoPath = $request->hasFile("athletes.{$index}.photo")
+                        ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
+                        : null;
+
+                    if (!empty($athleteData['id'])) {
+                        $athlete = Athlete::where('team_id', $team->id)->find($athleteData['id']);
+                        if ($athlete) {
+                            $athlete->update([
+                                'name' => $athleteData['name'],
+                                'jersey_number' => (int) $athleteData['jersey_number'],
+                                'position' => $athleteData['position'] ?? null,
+                                'photo' => $photoPath ?? $athlete->photo,
+                            ]);
+                            continue;
+                        }
+                    }
+
+                    // If id is null or does not exist in this team, create new athlete
+                    Athlete::create([
                         'team_id' => $team->id,
                         'name' => $athleteData['name'],
-                        'jersey_number' => $athleteData['jersey_number'],
+                        'jersey_number' => (int) $athleteData['jersey_number'],
                         'position' => $athleteData['position'] ?? null,
                         'photo' => $photoPath,
                     ]);
-                    $existingIds[] = $athlete->id;
                 }
             }
-
-            // Remove athletes not in the updated list
-            $team->athletes()->whereNotIn('id', $existingIds)->delete();
-        }
+        });
 
         return redirect()->route('teams.show', $team)
             ->with('success', 'Tim berhasil diupdate!');

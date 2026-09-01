@@ -239,39 +239,48 @@ export default function BracketMatrix({ tournament, activeModes, matrices, stage
                                 )}
 
                                 {activeModes.find(m => m.match_mode === activeTab)?.pool_count === 1 && (
-                                    <>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData(prev => ({ ...prev, [activeTab]: [] }))}
+                                            className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                                        >
+                                            🏆 Full Round Robin (Tanpa Laga Gugur — Juara dari Klasemen)
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={() => applyPreset(activeTab, '1pool_direct_final')}
-                                            className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold hover:bg-amber-100 transition-colors"
+                                            className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 border border-gray-200 text-xs font-semibold hover:bg-gray-200 transition-colors"
                                         >
-                                            🏆 Langsung Final (Top 2 / Bracket A vs B)
+                                            ⚔️ Opsi Tambahan: Playoff Final (A1 vs A2)
                                         </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => applyPreset(activeTab, '1pool_semifinal')}
-                                            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-xs font-semibold hover:bg-blue-100 transition-colors"
-                                        >
-                                            ⚔️ Semifinal (Top 4 Pool)
-                                        </button>
-                                    </>
+                                    </div>
                                 )}
                             </div>
                         </div>
 
                         <div className="p-6">
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="text-xs text-gray-500 uppercase tracking-wide">
-                                        <th className="text-left pb-3 w-32">Babak</th>
-                                        <th className="text-left pb-3 w-8 text-center">#</th>
-                                        <th className="text-left pb-3">Tim A (Home)</th>
-                                        <th className="text-center pb-3 w-8">vs</th>
-                                        <th className="text-left pb-3">Tim B (Away)</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    {formData[activeTab].map((row, i) => {
+                            {formData[activeTab].length === 0 ? (
+                                <div className="p-8 text-center bg-gray-50/80 rounded-2xl border border-dashed border-gray-200">
+                                    <div className="text-3xl mb-2">🏆</div>
+                                    <h4 className="font-bold text-gray-800 text-sm">Format Full Round Robin (Setengah Kompetisi)</h4>
+                                    <p className="text-gray-500 text-xs max-w-md mx-auto mt-1.5 leading-relaxed">
+                                        Mode ini berjalan penuh di babak pool. Seluruh tim saling bertemu, dan <strong>Pemenang / Juara 1</strong> langsung ditentukan berdasarkan perolehan poin klasemen tertinggi tanpa perlu babak gugur lanjutan.
+                                    </p>
+                                </div>
+                            ) : (
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="text-xs text-gray-500 uppercase tracking-wide">
+                                            <th className="text-left pb-3 w-32">Babak</th>
+                                            <th className="text-left pb-3 w-8 text-center">#</th>
+                                            <th className="text-left pb-3">Tim A (Home)</th>
+                                            <th className="text-center pb-3 w-8">vs</th>
+                                            <th className="text-left pb-3">Tim B (Away)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {formData[activeTab].map((row, i) => {
                                         const sourceOpts = getPoolSources(activeTab);
                                         const isPoolSelectable = row.home_source.startsWith('pool_') || row.away_source.startsWith('pool_') || row.bracket_stage === 'round_of_8' || (row.bracket_stage === 'semifinal') || (row.bracket_stage === 'final' && (!row.home_source.startsWith('winner_') || !row.away_source.startsWith('winner_')));
 
@@ -351,6 +360,7 @@ export default function BracketMatrix({ tournament, activeModes, matrices, stage
                                     })}
                                 </tbody>
                             </table>
+                            )}
                         </div>
                     </div>
                 )}

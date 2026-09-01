@@ -317,7 +317,7 @@ class CoachTournamentController extends Controller
             'sub_teams.*.region'          => 'required|string|max:100',
             'sub_teams.*.athletes'        => 'required|array|min:1',
             'sub_teams.*.athletes.*.name' => 'required|string|max:100',
-            'sub_teams.*.athletes.*.jersey_number' => 'required|integer|min:1',
+            'sub_teams.*.athletes.*.jersey_number' => 'required|integer|min:1|max:999',
             'sub_teams.*.athletes.*.position'      => 'nullable|string|max:50',
             'sub_teams.*.athletes.*.photo'         => 'nullable|image|max:2048',
         ], [
@@ -327,7 +327,19 @@ class CoachTournamentController extends Controller
             'sub_teams.*.athletes.min'             => 'Setiap Sub-Tim harus memiliki minimal 1 atlet.',
             'sub_teams.*.athletes.*.name.required' => 'Nama atlet wajib diisi.',
             'sub_teams.*.athletes.*.jersey_number.required' => 'Nomor punggung atlet wajib diisi.',
+            'sub_teams.*.athletes.*.jersey_number.min'      => 'Nomor punggung minimal 1.',
+            'sub_teams.*.athletes.*.jersey_number.max'      => 'Nomor punggung maksimal 999.',
         ]);
+
+        // Ensure jersey numbers within each sub-team are unique
+        foreach ($validated['sub_teams'] as $subIdx => $subData) {
+            $jerseys = array_map('intval', array_column($subData['athletes'], 'jersey_number'));
+            if (count($jerseys) !== count(array_unique($jerseys))) {
+                return back()->withErrors([
+                    "sub_teams.{$subIdx}.athletes" => "Nomor punggung atlet di Sub-Tim " . ($subIdx + 1) . " tidak boleh ada yang kembar.",
+                ])->with('error', "Nomor punggung atlet di Sub-Tim " . ($subIdx + 1) . " tidak boleh ada yang kembar.");
+            }
+        }
 
         $coachId = $request->user()->id;
 

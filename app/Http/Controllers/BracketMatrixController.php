@@ -48,7 +48,7 @@ class BracketMatrixController extends Controller
     public function store(Request $request, Tournament $tournament)
     {
         $validated = $request->validate([
-            'matrices'                        => 'required|array',
+            'matrices'                        => 'nullable|array',
             'matrices.*.match_mode'           => 'required|in:regu,double,quadrant,team_regu,team_double',
             'matrices.*.bracket_stage'        => 'required|in:round_of_16,round_of_8,semifinal,third_place,final',
             'matrices.*.bracket_position'     => 'required|integer|min:1',
@@ -59,16 +59,18 @@ class BracketMatrixController extends Controller
         // Hapus konfigurasi lama untuk turnamen ini
         BracketMatrix::where('tournament_id', $tournament->id)->delete();
 
-        // Insert konfigurasi baru
-        foreach ($validated['matrices'] as $matrixData) {
-            BracketMatrix::create([
-                'tournament_id'    => $tournament->id,
-                'match_mode'       => $matrixData['match_mode'],
-                'bracket_stage'    => $matrixData['bracket_stage'],
-                'bracket_position' => $matrixData['bracket_position'],
-                'home_source'      => $matrixData['home_source'],
-                'away_source'      => $matrixData['away_source'],
-            ]);
+        // Insert konfigurasi baru jika ada
+        if (!empty($validated['matrices'])) {
+            foreach ($validated['matrices'] as $matrixData) {
+                BracketMatrix::create([
+                    'tournament_id'    => $tournament->id,
+                    'match_mode'       => $matrixData['match_mode'],
+                    'bracket_stage'    => $matrixData['bracket_stage'],
+                    'bracket_position' => $matrixData['bracket_position'],
+                    'home_source'      => $matrixData['home_source'],
+                    'away_source'      => $matrixData['away_source'],
+                ]);
+            }
         }
 
         return redirect()
@@ -104,6 +106,7 @@ class BracketMatrixController extends Controller
     /**
      * Tentukan struktur bracket stages berdasarkan jumlah pool.
      *
+     * 1 pool  → Full Round Robin ([] - tidak ada babak gugur, juara dari klasemen)
      * 2 pool  → SF (4 tim) + Final
      * 3 pool  → Bye/Wildcard + SF + Final (pool ganjil)
      * 4 pool  → QF (8 tim) + SF + Final
@@ -118,8 +121,8 @@ class BracketMatrixController extends Controller
         $pools  = range('A', chr(64 + max(1, $poolCount)));
 
         if ($poolCount <= 1) {
-            // 1 pool → Langsung ke Final (Juara 1 Pool A vs Runner-up Pool A / Bracket A vs Bracket B)
-            $stages[] = $this->makeStage('final', 1, 'pool_A_rank_1', 'pool_A_rank_2');
+            // 1 pool → Full Round Robin (Setengah Kompetisi, juara dari klasemen akhir)
+            return [];
         } elseif ($poolCount === 2) {
             // 2 pool → Langsung ke Semifinal + Final
             $stages[] = $this->makeStage('semifinal', 1, 'pool_A_rank_1', 'pool_B_rank_2');
