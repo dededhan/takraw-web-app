@@ -49,6 +49,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/tournaments/{tournament}/pools', [PoolController::class, 'index'])->name('pools.index');
         Route::post('/tournaments/{tournament}/pools/create-custom', [PoolController::class, 'createCustom'])->name('pools.create-custom');
         Route::post('/tournaments/{tournament}/pools/generate-random', [PoolController::class, 'generateRandom'])->name('pools.generate-random');
+        Route::post('/tournaments/{tournament}/pools/generate-multi-bracket', [PoolController::class, 'generateMultiBracket'])->name('pools.generate-multi-bracket');
         Route::post('/tournaments/{tournament}/pools/generate-matches', [PoolController::class, 'generateMatches'])->name('pools.generate-matches');
         Route::post('/pools/{pool}/assign-team', [PoolController::class, 'assignTeam'])->name('pools.assign-team');
         Route::delete('/pools/{pool}/teams/{team}', [PoolController::class, 'removeTeam'])->name('pools.remove-team');

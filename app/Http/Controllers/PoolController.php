@@ -23,7 +23,7 @@ class PoolController extends Controller
             'superTeams.members',
             'pools.teams',
             'pools.superTeams.members',
-            'pools.standings' => fn($q) => $q->with('team')->orderBy('rank'),
+            'pools.standings' => fn($q) => $q->with(['team', 'superTeam'])->orderBy('rank'),
         ]);
 
         return Inertia::render('Pool/Index', [
@@ -37,28 +37,204 @@ class PoolController extends Controller
     public function createCustom(Request $request, Tournament $tournament)
     {
         $validated = $request->validate([
-            'name'       => 'required|string|max:10',
-            'match_mode' => 'required|in:regu,double,quadrant,team_regu,team_double',
+            'name'         => 'required|string|max:20',
+            'bracket_name' => 'nullable|string|max:50',
+            'match_mode'   => 'required|in:regu,double,quadrant,team_regu,team_double',
         ]);
 
         $name = strtoupper(trim($validated['name']));
+        $bracketName = $validated['bracket_name'] ? trim($validated['bracket_name']) : null;
 
         $exists = Pool::where('tournament_id', $tournament->id)
             ->where('match_mode', $validated['match_mode'])
             ->where('name', $name)
+            ->where('bracket_name', $bracketName)
             ->exists();
 
         if ($exists) {
-            return back()->withErrors(['name' => "Pool {$name} sudah ada untuk mode ini!"]);
+            return back()->withErrors(['name' => "Pool {$name}" . ($bracketName ? " di {$bracketName}" : "") . " sudah ada untuk mode ini!"]);
         }
 
         Pool::create([
             'tournament_id' => $tournament->id,
             'name'          => $name,
+            'bracket_name'  => $bracketName,
             'match_mode'    => $validated['match_mode'],
         ]);
 
-        return back()->with('success', "Pool \"{$name}\" untuk mode {$validated['match_mode']} berhasil dibuat!");
+        return back()->with('success', "Pool \"{$name}\"" . ($bracketName ? " ({$bracketName})" : "") . " untuk mode {$validated['match_mode']} berhasil dibuat!");
+    }
+
+    /**
+     * Auto-generate custom multi-bracket pools with custom pool counts per bracket.
+     * e.g.
+     * brackets: [
+     *   {"name": "Bracket 1", "pool_count": 2},
+     *   {"name": "Bracket 2", "pool_count": 3}
+     * ]
+     */
+    public function generateMultiBracket(Request $request, Tournament $tournament)
+    {
+        $validated = $request->validate([
+            'match_mode'            => 'required|in:regu,double,quadrant,team_regu,team_double',
+            'brackets'              => 'required|array|min:1|max:6',
+            'brackets.*.name'       => 'required|string|max:50',
+            'brackets.*.pool_count' => 'required|integer|min:1|max:8',
+        ]);
+
+        $matchMode = $validated['match_mode'];
+        $bracketsConfig = $validated['brackets'];
+
+        // Hapus pool lama KHUSUS mode ini
+        $tournament->pools()->where(function ($q) use ($matchMode) {
+            $q->where('match_mode', $matchMode);
+            if ($matchMode === 'regu') {
+                $q->orWhereNull('match_mode');
+            }
+        })->delete();
+
+        $allCreatedPools = [];
+        $bracketIndex = 1;
+        $totalPoolsCreated = 0;
+
+        foreach ($bracketsConfig as $bCfg) {
+            $bracketName = trim($bCfg['name']) ?: "Bracket {$bracketIndex}";
+            $poolCount = (int) $bCfg['pool_count'];
+            $poolLabels = range('A', chr(64 + $poolCount));
+
+            foreach ($poolLabels as $label) {
+                $pool = Pool::create([
+                    'tournament_id'  => $tournament->id,
+                    'name'           => $label,
+                    'bracket_name'   => $bracketName,
+                    'bracket_number' => $bracketIndex,
+                    'match_mode'     => $matchMode,
+                ]);
+                $allCreatedPools[] = $pool;
+                $totalPoolsCreated++;
+            }
+            $bracketIndex++;
+        }
+
+        $isTeamMode = in_array($matchMode, ['team_regu', 'team_double']);
+
+        if ($isTeamMode) {
+            $superTeams = $tournament->superTeams()
+                ->where('match_mode', $matchMode)
+                ->get()
+                ->shuffle();
+
+            foreach ($superTeams as $index => $st) {
+                $pool = $allCreatedPools[$index % count($allCreatedPools)];
+                $st->update(['pool_id' => $pool->id]);
+
+                PoolStanding::create([
+                    'pool_id'       => $pool->id,
+                    'super_team_id' => $st->id,
+                ]);
+            }
+        } else {
+            $superTeamMemberIds = \Illuminate\Support\Facades\DB::table('super_team_members')
+                ->join('super_teams', 'super_teams.id', '=', 'super_team_members.super_team_id')
+                ->where('super_teams.tournament_id', $tournament->id)
+                ->pluck('super_team_members.team_id')
+                ->toArray();
+
+            $teams = $tournament->teams
+                ->reject(fn($team) => in_array($team->id, $superTeamMemberIds))
+                ->filter(function ($team) use ($matchMode) {
+                    $nameLower = strtolower($team->name);
+                    if ($matchMode === 'regu' && str_contains($nameLower, 'double')) return false;
+                    if ($matchMode === 'double' && str_contains($nameLower, 'regu') && !str_contains($nameLower, 'double')) return false;
+                    if ($matchMode === 'quadrant' && (str_contains($nameLower, 'regu') || str_contains($nameLower, 'double'))) return false;
+                    return true;
+                })
+                ->shuffle();
+
+            foreach ($teams as $index => $team) {
+                $pool = $allCreatedPools[$index % count($allCreatedPools)];
+                $pool->teams()->attach($team->id);
+
+                PoolStanding::create([
+                    'pool_id' => $pool->id,
+                    'team_id' => $team->id,
+                ]);
+            }
+        }
+
+        // Update pool_count pada tournament_modes
+        $tournament->modes()->where('match_mode', $matchMode)->update(['pool_count' => $totalPoolsCreated]);
+        $this->syncMultiBracketMatrix($tournament, $matchMode, $bracketsConfig);
+
+        return redirect()->route('pools.index', $tournament)
+            ->with('success', count($bracketsConfig) . " Bracket (" . $totalPoolsCreated . " Pool) untuk mode \"{$matchMode}\" berhasil dibuat!");
+    }
+
+    /**
+     * Auto-sync Bracket Matrix untuk struktur multi-bracket.
+     */
+    public function syncMultiBracketMatrix(Tournament $tournament, string $matchMode, array $bracketsConfig): void
+    {
+        \App\Models\BracketMatrix::where('tournament_id', $tournament->id)
+            ->where('match_mode', $matchMode)
+            ->delete();
+
+        $bracketPosition = 1;
+        $bracketNum = 1;
+
+        foreach ($bracketsConfig as $bCfg) {
+            $poolCount = (int) $bCfg['pool_count'];
+
+            if ($poolCount === 1) {
+                // 1 Pool per bracket -> Final (A1 vs A2)
+                \App\Models\BracketMatrix::create([
+                    'tournament_id'    => $tournament->id,
+                    'match_mode'       => $matchMode,
+                    'bracket_stage'    => 'final',
+                    'bracket_position' => $bracketPosition++,
+                    'home_source'      => "pool_A_rank_1",
+                    'away_source'      => "pool_A_rank_2",
+                ]);
+            } elseif ($poolCount === 2) {
+                // 2 Pool per bracket -> Direct Final (Juara Pool A vs Juara Pool B)
+                \App\Models\BracketMatrix::create([
+                    'tournament_id'    => $tournament->id,
+                    'match_mode'       => $matchMode,
+                    'bracket_stage'    => 'final',
+                    'bracket_position' => $bracketPosition++,
+                    'home_source'      => "pool_A_rank_1",
+                    'away_source'      => "pool_B_rank_1",
+                ]);
+            } else {
+                // > 2 Pool per bracket -> Semifinal + Final
+                \App\Models\BracketMatrix::create([
+                    'tournament_id'    => $tournament->id,
+                    'match_mode'       => $matchMode,
+                    'bracket_stage'    => 'semifinal',
+                    'bracket_position' => $bracketPosition,
+                    'home_source'      => "pool_A_rank_1",
+                    'away_source'      => "pool_B_rank_2",
+                ]);
+                \App\Models\BracketMatrix::create([
+                    'tournament_id'    => $tournament->id,
+                    'match_mode'       => $matchMode,
+                    'bracket_stage'    => 'semifinal',
+                    'bracket_position' => $bracketPosition + 1,
+                    'home_source'      => "pool_B_rank_1",
+                    'away_source'      => "pool_A_rank_2",
+                ]);
+                \App\Models\BracketMatrix::create([
+                    'tournament_id'    => $tournament->id,
+                    'match_mode'       => $matchMode,
+                    'bracket_stage'    => 'final',
+                    'bracket_position' => $bracketPosition,
+                    'home_source'      => 'winner_sf_1',
+                    'away_source'      => 'winner_sf_2',
+                ]);
+                $bracketPosition += 2;
+            }
+            $bracketNum++;
+        }
     }
 
     /**

@@ -87,14 +87,23 @@ class MasterScheduleController extends Controller
             'session_start_time'       => 'required|date_format:H:i',
             'session_end_time'         => 'required|date_format:H:i|after:session_start_time',
             'session_duration_minutes' => 'required|integer|min:10|max:180',
-            'break_duration_minutes'   => 'required|integer|min:0|max:60',
+            'break_duration_minutes'   => 'nullable|integer|min:0|max:60',
             'ishoma_start_time'        => 'nullable|date_format:H:i',
             'ishoma_end_time'          => 'nullable|date_format:H:i|after:ishoma_start_time',
             'modes'                    => 'required|array|min:1',
             'modes.*'                  => 'in:regu,double,quadrant,team_regu,team_double',
             'pool_counts'              => 'required|array',
             'pool_counts.*'            => 'integer|min:1|max:8',
+            'day_overrides'            => 'nullable|array',
+            'day_overrides.*.session_start_time'       => 'nullable|date_format:H:i',
+            'day_overrides.*.session_end_time'         => 'nullable|date_format:H:i',
+            'day_overrides.*.has_ishoma'               => 'nullable|boolean',
+            'day_overrides.*.ishoma_start_time'        => 'nullable|date_format:H:i',
+            'day_overrides.*.ishoma_end_time'          => 'nullable|date_format:H:i',
+            'day_overrides.*.session_duration_minutes' => 'nullable|integer|min:10|max:180',
         ]);
+
+        $breakDuration = isset($validated['break_duration_minutes']) ? (int) $validated['break_duration_minutes'] : 0;
 
         // Hitung durasi ISHOMA
         $ishomaMinutes = null;
@@ -111,10 +120,11 @@ class MasterScheduleController extends Controller
             'session_start_time'       => $validated['session_start_time'] . ':00',
             'session_end_time'         => $validated['session_end_time'] . ':00',
             'session_duration_minutes' => $validated['session_duration_minutes'],
-            'break_duration_minutes'   => $validated['break_duration_minutes'],
+            'break_duration_minutes'   => $breakDuration,
             'ishoma_start_time'        => $validated['ishoma_start_time'] ? $validated['ishoma_start_time'] . ':00' : null,
             'ishoma_end_time'          => $validated['ishoma_end_time'] ? $validated['ishoma_end_time'] . ':00' : null,
             'ishoma_duration_minutes'  => $ishomaMinutes,
+            'day_overrides'            => !empty($validated['day_overrides']) ? $validated['day_overrides'] : null,
         ]);
 
         // Sync tournament modes

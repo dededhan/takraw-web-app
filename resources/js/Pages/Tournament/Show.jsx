@@ -1117,7 +1117,9 @@ function PoolsTab({ pools, tournamentId }) {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {modePools.map((pool) => (
                                     <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 p-5">
-                                        <h4 className="text-sm font-semibold text-accent-300 mb-3">Pool {pool.name}</h4>
+                                        <h4 className="text-sm font-semibold text-accent-300 mb-3">
+                                            {pool.display_name || (pool.bracket_name ? `${pool.bracket_name} - Pool ${pool.name}` : `Pool ${pool.name}`)}
+                                        </h4>
                                         <div className="space-y-2">
                                             {pool.teams?.map((team) => (
                                                 <div key={team.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-800/50">
@@ -1125,6 +1127,14 @@ function PoolsTab({ pools, tournamentId }) {
                                                         {team.name.charAt(0)}
                                                     </div>
                                                     <span className="text-sm text-surface-300">{team.name}</span>
+                                                </div>
+                                            ))}
+                                            {pool.super_teams?.map((st) => (
+                                                <div key={st.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-800/50">
+                                                    <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center text-xs font-bold text-amber-300">
+                                                        {st.name.charAt(0)}
+                                                    </div>
+                                                    <span className="text-sm text-surface-300">{st.name}</span>
                                                 </div>
                                             ))}
                                         </div>

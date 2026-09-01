@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['tournament_id', 'name', 'match_mode'])]
+#[Fillable(['tournament_id', 'name', 'match_mode', 'bracket_name', 'bracket_number'])]
 class Pool extends Model
 {
     use HasFactory;
+
+    protected $appends = ['display_name'];
 
     // ─── Relationships ──────────────────────────────
 
@@ -47,5 +49,16 @@ class Pool extends Model
     public function getModeAttribute(): ?string
     {
         return $this->match_mode;
+    }
+
+    /**
+     * Nama tampilan lengkap (misal: "Bracket 1 - Pool A" atau "Pool A").
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        if ($this->bracket_name) {
+            return "{$this->bracket_name} - Pool {$this->name}";
+        }
+        return "Pool {$this->name}";
     }
 }

@@ -89,21 +89,29 @@ class TimeSlotGeneratorService
         $slots    = collect();
         $startDate = Carbon::parse($tournament->start_date)->addDays($dayNumber - 1);
 
+        $dayOverrides = $tournament->day_overrides ?? [];
+        $override = $dayOverrides[$dayNumber] ?? $dayOverrides[(string)$dayNumber] ?? null;
+
+        $sessionStartTime = $override['session_start_time'] ?? $tournament->session_start_time;
+        $sessionEndTime   = $override['session_end_time'] ?? $tournament->session_end_time;
+        $sessionDuration  = (int) ($override['session_duration_minutes'] ?? $tournament->session_duration_minutes ?? 50);
+        $breakDuration    = (int) ($override['break_duration_minutes'] ?? $tournament->break_duration_minutes ?? 0);
+
+        $hasIshoma = isset($override['has_ishoma']) ? (bool)$override['has_ishoma'] : !is_null($tournament->ishoma_start_time);
+        $ishomaStartTime = $hasIshoma ? ($override['ishoma_start_time'] ?? $tournament->ishoma_start_time) : null;
+        $ishomaEndTime   = $hasIshoma ? ($override['ishoma_end_time'] ?? $tournament->ishoma_end_time) : null;
+
         // Waktu mulai & akhir sesi
-        $sessionStart = $startDate->copy()->setTimeFromTimeString($tournament->session_start_time);
-        $sessionEnd   = $startDate->copy()->setTimeFromTimeString($tournament->session_end_time);
+        $sessionStart = $startDate->copy()->setTimeFromTimeString($sessionStartTime);
+        $sessionEnd   = $startDate->copy()->setTimeFromTimeString($sessionEndTime);
 
         // Konfigurasi ISHOMA
-        $hasIshoma    = !is_null($tournament->ishoma_start_time);
-        $ishomaStart  = $hasIshoma
-            ? $startDate->copy()->setTimeFromTimeString($tournament->ishoma_start_time)
+        $ishomaStart  = ($hasIshoma && $ishomaStartTime)
+            ? $startDate->copy()->setTimeFromTimeString($ishomaStartTime)
             : null;
-        $ishomaEnd    = $hasIshoma
-            ? $startDate->copy()->setTimeFromTimeString($tournament->ishoma_end_time)
+        $ishomaEnd    = ($hasIshoma && $ishomaEndTime)
+            ? $startDate->copy()->setTimeFromTimeString($ishomaEndTime)
             : null;
-
-        $sessionDuration = (int) $tournament->session_duration_minutes;
-        $breakDuration   = (int) $tournament->break_duration_minutes;
 
         $current    = $sessionStart->copy();
         $slotNumber = 1;
@@ -170,39 +178,48 @@ class TimeSlotGeneratorService
      */
     public function preview(Tournament $tournament): array
     {
-        $sessionStart = Carbon::today()->setTimeFromTimeString($tournament->session_start_time ?? '08:00');
-        $sessionEnd   = Carbon::today()->setTimeFromTimeString($tournament->session_end_time ?? '17:00');
-        $hasIshoma    = !is_null($tournament->ishoma_start_time);
-        $ishomaStart  = $hasIshoma
-            ? Carbon::today()->setTimeFromTimeString($tournament->ishoma_start_time)
-            : null;
-        $ishomaEnd    = $hasIshoma
-            ? Carbon::today()->setTimeFromTimeString($tournament->ishoma_end_time)
-            : null;
+        $totalDays = (int) ($tournament->total_days ?? 5);
+        $totalMatchSlots = 0;
+        $totalAllSlots = 0;
 
-        $sessionDuration = (int) ($tournament->session_duration_minutes ?? 50);
-        $breakDuration   = (int) ($tournament->break_duration_minutes ?? 10);
-        $slotInterval    = $sessionDuration + $breakDuration;
+        for ($day = 1; $day <= $totalDays; $day++) {
+            $dayOverrides = $tournament->day_overrides ?? [];
+            $override = $dayOverrides[$day] ?? $dayOverrides[(string)$day] ?? null;
 
-        $totalMinutes = $sessionEnd->diffInMinutes($sessionStart);
+            $sessionStartTime = $override['session_start_time'] ?? $tournament->session_start_time ?? '08:00';
+            $sessionEndTime   = $override['session_end_time'] ?? $tournament->session_end_time ?? '17:00';
+            $sessionDuration  = (int) ($override['session_duration_minutes'] ?? $tournament->session_duration_minutes ?? 50);
+            $breakDuration    = (int) ($override['break_duration_minutes'] ?? $tournament->break_duration_minutes ?? 0);
+            $slotInterval     = $sessionDuration + $breakDuration;
 
-        // Kurangi ISHOMA
-        $ishomaMinutes = 0;
-        if ($hasIshoma && $ishomaStart && $ishomaEnd) {
-            $ishomaMinutes = $ishomaEnd->diffInMinutes($ishomaStart);
+            $hasIshoma = isset($override['has_ishoma']) ? (bool)$override['has_ishoma'] : !is_null($tournament->ishoma_start_time);
+            $ishomaStartTime = $hasIshoma ? ($override['ishoma_start_time'] ?? $tournament->ishoma_start_time) : null;
+            $ishomaEndTime   = $hasIshoma ? ($override['ishoma_end_time'] ?? $tournament->ishoma_end_time) : null;
+
+            $sessionStart = Carbon::today()->setTimeFromTimeString($sessionStartTime);
+            $sessionEnd   = Carbon::today()->setTimeFromTimeString($sessionEndTime);
+
+            $totalMinutes = $sessionEnd->diffInMinutes($sessionStart);
+
+            $ishomaMinutes = 0;
+            if ($hasIshoma && $ishomaStartTime && $ishomaEndTime) {
+                $iStart = Carbon::today()->setTimeFromTimeString($ishomaStartTime);
+                $iEnd   = Carbon::today()->setTimeFromTimeString($ishomaEndTime);
+                $ishomaMinutes = $iEnd->diffInMinutes($iStart);
+            }
+
+            $netMinutes = $totalMinutes - $ishomaMinutes;
+            $matchSlotsToday = (int) floor($netMinutes / ($slotInterval ?: 1));
+            $totalMatchSlots += $matchSlotsToday;
+            $totalAllSlots += $matchSlotsToday + ($hasIshoma ? 1 : 0);
         }
 
-        $netMinutes      = $totalMinutes - $ishomaMinutes;
-        $matchSlotsPerDay = (int) floor($netMinutes / $slotInterval);
-        $slotsPerDay     = $matchSlotsPerDay + ($hasIshoma ? 1 : 0);
-        $totalDays       = (int) ($tournament->total_days ?? 5);
-
         return [
-            'slots_per_day'        => $slotsPerDay,
-            'match_slots_per_day'  => $matchSlotsPerDay,
-            'total_match_slots'    => $matchSlotsPerDay * $totalDays,
+            'slots_per_day'       => (int) round($totalAllSlots / ($totalDays ?: 1)),
+            'match_slots_per_day' => (int) round($totalMatchSlots / ($totalDays ?: 1)),
+            'total_match_slots'   => $totalMatchSlots,
             'courts_count'         => (int) ($tournament->courts_count ?? 4),
-            'total_capacity'       => $matchSlotsPerDay * $totalDays * (int) ($tournament->courts_count ?? 4),
+            'total_capacity'       => $totalMatchSlots * (int) ($tournament->courts_count ?? 4),
         ];
     }
 }

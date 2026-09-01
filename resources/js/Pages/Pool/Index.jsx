@@ -61,16 +61,39 @@ export default function PoolIndex({ tournament }) {
 
     const lockedSubTeamCount = isTeamMode ? 0 : (tournament.teams || []).filter(t => superTeamMemberIds.has(t.id)).length;
 
-    const [showCreateCustom, setShowCreateCustom] = useState(false);
-    const createCustomForm = useForm({ name: '', match_mode: selectedMode });
+    const [showMultiBracket, setShowMultiBracket] = useState(false);
+    const multiBracketForm = useForm({
+        match_mode: selectedMode,
+        brackets: [
+            { name: 'Bracket 1', pool_count: 2 },
+            { name: 'Bracket 2', pool_count: 2 },
+        ],
+    });
 
-    const handleCreateCustom = (e) => {
+    const addBracket = () => {
+        const nextNum = multiBracketForm.data.brackets.length + 1;
+        multiBracketForm.setData('brackets', [
+            ...multiBracketForm.data.brackets,
+            { name: `Bracket ${nextNum}`, pool_count: 2 },
+        ]);
+    };
+
+    const removeBracket = (idx) => {
+        if (multiBracketForm.data.brackets.length <= 1) return;
+        multiBracketForm.setData('brackets', multiBracketForm.data.brackets.filter((_, i) => i !== idx));
+    };
+
+    const updateBracket = (idx, field, value) => {
+        const updated = [...multiBracketForm.data.brackets];
+        updated[idx][field] = value;
+        multiBracketForm.setData('brackets', updated);
+    };
+
+    const handleGenerateMultiBracket = (e) => {
         e.preventDefault();
-        createCustomForm.post(route('pools.create-custom', tournament.id), {
-            onSuccess: () => {
-                setShowCreateCustom(false);
-                createCustomForm.reset('name');
-            },
+        multiBracketForm.post(route('pools.generate-multi-bracket', tournament.id), {
+            preserveScroll: true,
+            onSuccess: () => setShowMultiBracket(false),
         });
     };
 
@@ -79,7 +102,7 @@ export default function PoolIndex({ tournament }) {
     const handleModeChange = (mode) => {
         setSelectedMode(mode);
         generateForm.setData('match_mode', mode);
-        createCustomForm.setData('match_mode', mode);
+        multiBracketForm.setData('match_mode', mode);
         assignForm.reset();
     };
 
@@ -132,16 +155,24 @@ export default function PoolIndex({ tournament }) {
 
     const currentCfg = MODE_LABELS[selectedMode] || { label: selectedMode, icon: '⚽' };
 
+    // Group pools by bracket_name if any pool has it
+    const hasBrackets = modePools.some(p => !!p.bracket_name);
+    const poolsByBracket = {};
+    if (hasBrackets) {
+        modePools.forEach(p => {
+            const bName = p.bracket_name || 'Pool Reguler';
+            if (!poolsByBracket[bName]) poolsByBracket[bName] = [];
+            poolsByBracket[bName].push(p);
+        });
+    }
+
     return (
         <AuthenticatedLayout header={`Pool — ${tournament.name}`}>
             <Head title={`Pool — ${tournament.name}`} />
 
             <div className="mb-4 flex items-center justify-between">
                 <Link href={route('tournaments.show', tournament.id)} className="text-sm text-surface-500 hover:text-surface-300 transition-colors flex items-center gap-1">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                    </svg>
-                    Kembali ke Turnamen
+                    ← Kembali ke Detail Turnamen
                 </Link>
 
                 <div className="flex items-center gap-2">
@@ -167,18 +198,18 @@ export default function PoolIndex({ tournament }) {
                         <span>🏊</span> Manajemen Pool per Mode
                     </h2>
                     <p className="text-sm text-surface-500 mt-1">
-                        Atur pool untuk setiap mode tanding. Setelah susunan pool siap, Anda bisa langsung menyusun <strong>Master Schedule</strong>.
+                        Atur pool untuk setiap mode tanding. Anda bisa memilih <strong>Generate Acak</strong> atau <strong>Custom Multi-Bracket & Pool</strong>.
                     </p>
                 </div>
                 <div className="flex items-center gap-2 self-start flex-wrap">
                     <button
-                        onClick={() => { setShowCreateCustom(!showCreateCustom); setShowGenerate(false); }}
-                        className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-surface-800 border border-surface-700 text-surface-200 text-sm font-semibold hover:bg-surface-700 transition-colors"
+                        onClick={() => { setShowMultiBracket(!showMultiBracket); setShowGenerate(false); }}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600/20 border border-purple-500/40 text-purple-200 text-sm font-bold hover:bg-purple-600/30 transition-colors shadow-sm"
                     >
-                        ➕ Buat Pool Manual
+                        🎯 Custom Multi-Bracket & Pool
                     </button>
                     <button
-                        onClick={() => { setShowGenerate(!showGenerate); setShowCreateCustom(false); }}
+                        onClick={() => { setShowGenerate(!showGenerate); setShowMultiBracket(false); }}
                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent-600 text-white text-sm font-semibold hover:bg-accent-700 transition-colors shadow-glow-accent"
                     >
                         🎲 Generate Acak Pool
@@ -213,43 +244,113 @@ export default function PoolIndex({ tournament }) {
                 })}
             </div>
 
-            {/* Create Custom Pool Panel */}
-            {showCreateCustom && (
-                <div className="rounded-xl border border-primary-500/30 bg-primary-500/5 p-5 mb-6 animate-slide-up">
-                    <h3 className="text-sm font-semibold text-primary-300 mb-1">
-                        ➕ Buat Pool Manual — {currentCfg.label}
-                    </h3>
-                    <p className="text-xs text-surface-400 mb-4">
-                        Masukkan nama pool baru (misal: "A", "B", "C", "Pool 1", dll) khusus untuk mode {currentCfg.label}.
-                    </p>
-                    <form onSubmit={handleCreateCustom} className="flex items-start gap-3 flex-wrap">
+            {/* Custom Multi-Bracket Builder Panel */}
+            {showMultiBracket && (
+                <div className="rounded-2xl border border-purple-500/30 bg-purple-950/20 backdrop-blur-md p-6 mb-6 animate-slide-up shadow-xl">
+                    <div className="flex items-center justify-between pb-3 border-b border-purple-500/20 mb-4">
                         <div>
-                            <input
-                                type="text"
-                                placeholder="Nama Pool (mis: A, B, C...)"
-                                value={createCustomForm.data.name}
-                                onChange={(e) => createCustomForm.setData('name', e.target.value)}
-                                className="w-64 px-4 py-2 rounded-xl bg-surface-800 border border-surface-700 text-surface-100 text-sm focus:border-primary-500"
-                                maxLength={10}
-                            />
-                            {createCustomForm.errors.name && (
-                                <p className="text-red-400 text-xs mt-1">{createCustomForm.errors.name}</p>
-                            )}
+                            <h3 className="text-base font-bold text-purple-300 flex items-center gap-2">
+                                <span>🎯</span> Custom Multi-Bracket & Pool Builder — {currentCfg.label}
+                            </h3>
+                            <p className="text-xs text-surface-400 mt-0.5">
+                                Tentukan jumlah Bracket (misal Bracket 1, Bracket 2) dan jumlah Pool di dalam masing-masing bracket (misal 2 Pool & 3 Pool).
+                            </p>
                         </div>
                         <button
-                            type="submit"
-                            disabled={!createCustomForm.data.name || createCustomForm.processing}
-                            className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-550 disabled:opacity-50 transition-colors"
-                        >
-                            {createCustomForm.processing ? 'Membuat...' : `+ Buat Pool (${currentCfg.label})`}
-                        </button>
-                        <button
                             type="button"
-                            onClick={() => setShowCreateCustom(false)}
-                            className="px-4 py-2 rounded-xl bg-surface-800 text-surface-400 text-sm hover:bg-surface-700 transition-colors"
+                            onClick={addBracket}
+                            className="px-3.5 py-1.5 rounded-xl bg-purple-600/30 border border-purple-400/40 text-purple-200 text-xs font-bold hover:bg-purple-600/40 transition-colors flex items-center gap-1.5"
                         >
-                            Batal
+                            + Tambah Bracket
                         </button>
+                    </div>
+
+                    <form onSubmit={handleGenerateMultiBracket} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {multiBracketForm.data.brackets.map((b, idx) => {
+                                const poolLetters = Array.from({ length: b.pool_count || 1 }, (_, i) => String.fromCharCode(65 + i));
+                                return (
+                                    <div key={idx} className="rounded-xl bg-surface-900/80 border border-purple-500/30 p-4 relative space-y-3 shadow-sm">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-xs font-bold text-purple-400 uppercase tracking-wide">
+                                                Bracket #{idx + 1}
+                                            </span>
+                                            {multiBracketForm.data.brackets.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeBracket(idx)}
+                                                    className="p-1 rounded text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                    title="Hapus Bracket"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-surface-400 mb-1">Nama Bracket</label>
+                                            <input
+                                                type="text"
+                                                value={b.name}
+                                                onChange={e => updateBracket(idx, 'name', e.target.value)}
+                                                placeholder={`Bracket ${idx + 1}`}
+                                                className="w-full px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-700 text-surface-100 text-xs font-semibold focus:border-purple-500"
+                                                required
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-surface-400 mb-1">Jumlah Pool di Bracket Ini</label>
+                                            <select
+                                                value={b.pool_count}
+                                                onChange={e => updateBracket(idx, 'pool_count', parseInt(e.target.value))}
+                                                className="w-full px-3 py-1.5 rounded-lg bg-surface-950 border border-surface-700 text-surface-100 text-xs font-semibold focus:border-purple-500"
+                                            >
+                                                {[1, 2, 3, 4, 5, 6].map(num => (
+                                                    <option key={num} value={num}>
+                                                        {num} Pool ({poolLetters.slice(0, num).join(', ')})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="pt-2 border-t border-surface-800/60 flex items-center justify-between text-[10px] text-surface-400">
+                                            <span>Sub-pool yang dibuat:</span>
+                                            <span className="font-mono text-purple-300 font-bold">
+                                                {poolLetters.map(p => `Pool ${p}`).join(', ')}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Summary Footer */}
+                        <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-500/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div className="text-xs text-surface-300">
+                                Total: <strong className="text-purple-300 font-bold">{multiBracketForm.data.brackets.length} Bracket</strong>,{' '}
+                                <strong className="text-purple-300 font-bold">
+                                    {multiBracketForm.data.brackets.reduce((acc, b) => acc + (b.pool_count || 0), 0)} Pool
+                                </strong>.{' '}
+                                {isTeamMode ? 'Super Team' : 'Tim'} akan diacak dan dibagi rata ke seluruh pool.
+                            </div>
+                            <div className="flex items-center gap-2 self-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMultiBracket(false)}
+                                    className="px-4 py-2 rounded-xl bg-surface-800 text-surface-400 text-xs font-semibold hover:bg-surface-700 transition-colors"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={multiBracketForm.processing}
+                                    className="px-5 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-550 transition-colors shadow-glow-purple disabled:opacity-50"
+                                >
+                                    {multiBracketForm.processing ? 'Generating...' : `🎲 Generate ${multiBracketForm.data.brackets.length} Bracket & Pools`}
+                                </button>
+                            </div>
+                        </div>
                     </form>
                 </div>
             )}
@@ -295,14 +396,88 @@ export default function PoolIndex({ tournament }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Pools List for Selected Mode */}
-                <div className="lg:col-span-2">
+                <div className="lg:col-span-2 space-y-6">
                     {modePools.length === 0 ? (
                         <div className="text-center py-16 rounded-xl border border-dashed border-surface-700/50">
                             <div className="text-5xl mb-4">{currentCfg.icon}</div>
                             <p className="text-surface-300 font-semibold text-sm">Belum ada pool untuk {currentCfg.label}</p>
-                            <p className="text-surface-500 text-xs mt-1">Gunakan tombol "Generate Acak Pool ({currentCfg.label})" di atas untuk membuat pool otomatis.</p>
+                            <p className="text-surface-500 text-xs mt-1">Gunakan tombol "Custom Multi-Bracket" atau "Generate Acak Pool" di atas untuk membuat pool otomatis.</p>
                         </div>
+                    ) : hasBrackets ? (
+                        /* Grouped by Bracket Name */
+                        Object.entries(poolsByBracket).map(([bName, bPools]) => (
+                            <div key={bName} className="rounded-2xl border border-purple-500/20 bg-surface-900/40 p-5 space-y-4 shadow-sm">
+                                <div className="flex items-center justify-between pb-2 border-b border-surface-800">
+                                    <h3 className="text-sm font-extrabold text-purple-300 flex items-center gap-2 uppercase tracking-wide">
+                                        <span>🏆</span> {bName}
+                                    </h3>
+                                    <span className="text-xs font-medium text-surface-400 bg-surface-800 px-2.5 py-1 rounded-full">
+                                        {bPools.length} Pool
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {bPools.map(pool => {
+                                        const contestants = isTeamMode ? (pool.super_teams || []) : (pool.teams || []);
+                                        return (
+                                            <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/70 overflow-hidden shadow-sm">
+                                                <div className="px-5 py-3 border-b border-surface-700/50 bg-surface-800/40 flex items-center justify-between">
+                                                    <h4 className="text-sm font-bold text-accent-300">{pool.display_name || `Pool ${pool.name}`}</h4>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs text-surface-500">{contestants.length} {isTeamMode ? 'Super Team' : 'tim'}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeletePool(pool)}
+                                                            className="p-1 rounded text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                            title="Hapus Pool Ini"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Contestants in pool */}
+                                                <div className="p-3 space-y-2">
+                                                    {contestants.length === 0 ? (
+                                                        <p className="text-xs text-surface-600 italic px-2 py-1">Belum ada kontestan di pool ini</p>
+                                                    ) : (
+                                                        contestants.map((item) => (
+                                                            <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-800/50 group">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-7 h-7 rounded-lg bg-primary-500/20 flex items-center justify-center text-xs font-bold text-primary-300">
+                                                                        {item.name.charAt(0)}
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-sm text-surface-300 font-medium block">{item.name}</span>
+                                                                        {isTeamMode && item.members && (
+                                                                            <span className="text-[10px] text-surface-500 block">
+                                                                                3 tim anggota: {item.members.map(m => m.name).join(', ')}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleRemove(pool.id, item.id)}
+                                                                    className="p-1 rounded text-surface-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                                                                    title="Hapus dari pool"
+                                                                >
+                                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))
                     ) : (
+                        /* Standard Flat Grid */
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {modePools.map((pool) => {
                                 const contestants = isTeamMode ? (pool.super_teams || []) : (pool.teams || []);

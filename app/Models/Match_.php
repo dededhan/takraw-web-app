@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * Table name is explicitly set to 'matches'.
  */
 #[Fillable([
-    'tournament_id', 'pool_id', 'stage', 'bracket_position',
+    'tournament_id', 'pool_id', 'stage', 'bracket_position', 'bracket_group',
     'home_team_id', 'away_team_id', 'referee_id',
     'court_number', 'max_sets', 'winner_team_id', 'winner_super_team_id',
     'next_match_id', 'status', 'scheduled_at', 'started_at', 'finished_at',

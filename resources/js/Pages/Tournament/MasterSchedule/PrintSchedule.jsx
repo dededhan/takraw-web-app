@@ -307,7 +307,7 @@ export default function PrintSchedule({
                         <p><strong>🏟️ Jumlah Lapangan:</strong> {tournament.courts_count || courts.length} Lapangan Aktif</p>
                     </div>
                     <div className="text-right">
-                        <p><strong>⏱️ Format Waktu:</strong> @{tournament.session_duration_minutes || 50} Menit (Jeda {tournament.break_duration_minutes || 10} Menit)</p>
+                        <p><strong>⏱️ Format Waktu:</strong> @{tournament.session_duration_minutes || 50} Menit / Sesi</p>
                         <p><strong>📊 Total Pertandingan:</strong> {filteredMatches.length} Match Terjadwal</p>
                     </div>
                 </div>
