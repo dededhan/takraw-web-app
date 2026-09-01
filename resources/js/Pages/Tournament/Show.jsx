@@ -475,8 +475,12 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedTeamId, setSelectedTeamId] = useState('');
+    const [modalSearchQuery, setModalSearchQuery] = useState('');
+    const [selectedTeamIds, setSelectedTeamIds] = useState([]);
+    const [selectedMode, setSelectedMode] = useState('');
     const [processing, setProcessing] = useState(false);
+
+    const regularModes = (tournament?.modes || []).filter(m => ['regu', 'double', 'quadrant'].includes(m.match_mode));
 
     // Filter regular teams by team name, region, coach name, or athlete name
     const filteredTeams = teams.filter(team => {
@@ -503,23 +507,54 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
     const totalContestants = filteredTeams.length + filteredSuperTeams.length;
 
     const filteredAvailable = availableTeams.filter(team =>
-        team.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (team.region && team.region.toLowerCase().includes(searchQuery.toLowerCase()))
+        team.name?.toLowerCase().includes(modalSearchQuery.toLowerCase()) ||
+        (team.region && team.region.toLowerCase().includes(modalSearchQuery.toLowerCase())) ||
+        (team.coach?.name && team.coach.name.toLowerCase().includes(modalSearchQuery.toLowerCase()))
     );
+
+    const openAddModal = () => {
+        setSelectedTeamIds([]);
+        setModalSearchQuery('');
+        if (regularModes.length > 0) {
+            setSelectedMode(regularModes[0].match_mode);
+        } else {
+            setSelectedMode('regu');
+        }
+        setIsModalOpen(true);
+    };
+
+    const toggleTeamSelection = (teamId) => {
+        setSelectedTeamIds(prev =>
+            prev.includes(teamId)
+                ? prev.filter(id => id !== teamId)
+                : [...prev, teamId]
+        );
+    };
+
+    const handleSelectAll = () => {
+        const filteredIds = filteredAvailable.map(t => t.id);
+        const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedTeamIds.includes(id));
+        if (allSelected) {
+            setSelectedTeamIds(prev => prev.filter(id => !filteredIds.includes(id)));
+        } else {
+            setSelectedTeamIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+        }
+    };
 
     const handleAddTeam = (e) => {
         e.preventDefault();
-        if (!selectedTeamId) return;
+        if (selectedTeamIds.length === 0) return;
 
         router.post(route('tournaments.add-team', tournamentId), {
-            team_id: selectedTeamId
+            team_ids: selectedTeamIds,
+            match_mode: selectedMode || undefined,
         }, {
             onStart: () => setProcessing(true),
             onFinish: () => {
                 setProcessing(false);
                 setIsModalOpen(false);
-                setSelectedTeamId('');
-                setSearchQuery('');
+                setSelectedTeamIds([]);
+                setModalSearchQuery('');
             }
         });
     };
@@ -573,7 +608,7 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
 
                     {isAdmin && isRegPhase && (
                         <button
-                            onClick={() => setIsModalOpen(true)}
+                            onClick={openAddModal}
                             className="px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold text-white bg-primary-600 hover:bg-primary-550 shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
                         >
                             ➕ Tambah Tim ke Turnamen
@@ -884,68 +919,132 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
                             </div>
                         ) : (
                             <form onSubmit={handleAddTeam} className="space-y-4">
+                                {regularModes.length > 1 && (
+                                    <div>
+                                        <label className="block text-xs font-semibold text-surface-400 uppercase tracking-wider mb-1.5">
+                                            Kategori / Mode Pertandingan
+                                        </label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {regularModes.map(m => (
+                                                <button
+                                                    key={m.match_mode}
+                                                    type="button"
+                                                    onClick={() => setSelectedMode(m.match_mode)}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border ${
+                                                        selectedMode === m.match_mode
+                                                            ? 'bg-primary-600/20 text-primary-300 border-primary-500/50'
+                                                            : 'bg-surface-950 text-surface-400 border-surface-700 hover:text-surface-200'
+                                                    }`}
+                                                >
+                                                    {m.match_mode === 'regu' ? 'Regu (3 vs 3)' : m.match_mode === 'double' ? 'Double (2 vs 2)' : 'Quadrant (4 vs 4)'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div>
-                                    <label className="block text-xs font-semibold text-surface-400 uppercase tracking-wider mb-2">
-                                        Cari Tim
-                                    </label>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-xs font-semibold text-surface-400 uppercase tracking-wider">
+                                            Cari & Pilih Tim
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={handleSelectAll}
+                                            className="text-xs text-primary-400 hover:text-primary-300 font-semibold transition-colors cursor-pointer"
+                                        >
+                                            {filteredAvailable.length > 0 && filteredAvailable.every(t => selectedTeamIds.includes(t.id))
+                                                ? '✕ Batal Pilih Semua'
+                                                : '✓ Pilih Semua'}
+                                        </button>
+                                    </div>
                                     <input
                                         type="text"
-                                        placeholder="Cari berdasarkan nama atau daerah..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full bg-surface-950 border border-surface-700 text-surface-200 rounded-xl px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors"
+                                        placeholder="Cari berdasarkan nama, daerah, atau pelatih..."
+                                        value={modalSearchQuery}
+                                        onChange={(e) => setModalSearchQuery(e.target.value)}
+                                        className="w-full bg-surface-950 border border-surface-700 text-surface-200 rounded-xl px-4 py-2 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors mb-2"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-semibold text-surface-400 uppercase tracking-wider mb-2">
-                                        Pilih Tim
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-xs text-surface-400">
+                                            Daftar Tim ({filteredAvailable.length} tim)
+                                        </span>
+                                        <span className="text-xs font-bold text-primary-300 bg-primary-500/10 px-2 py-0.5 rounded-full border border-primary-500/20">
+                                            {selectedTeamIds.length} tim dipilih
+                                        </span>
+                                    </div>
                                     <div className="max-h-60 overflow-y-auto rounded-xl border border-surface-800 bg-surface-950 divide-y divide-surface-900">
                                         {filteredAvailable.length === 0 ? (
-                                            <div className="px-4 py-3 text-xs text-surface-500 text-center">
-                                                Tidak ada tim yang cocok.
+                                            <div className="px-4 py-6 text-xs text-surface-500 text-center">
+                                                Tidak ada tim yang cocok dengan pencarian.
                                             </div>
                                         ) : (
-                                            filteredAvailable.map((team) => (
-                                                <button
-                                                    key={team.id}
-                                                    type="button"
-                                                    onClick={() => setSelectedTeamId(team.id.toString())}
-                                                    className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between transition-colors ${
-                                                        selectedTeamId === team.id.toString()
-                                                            ? 'bg-primary-500/10 text-primary-300 font-semibold'
-                                                            : 'text-surface-300 hover:bg-surface-900'
-                                                    }`}
-                                                >
-                                                    <div>
-                                                        <p className="font-medium">{team.name}</p>
-                                                        <p className="text-xs text-surface-500">{team.region || 'Tidak ada wilayah'}</p>
+                                            filteredAvailable.map((team) => {
+                                                const isSelected = selectedTeamIds.includes(team.id);
+                                                return (
+                                                    <div
+                                                        key={team.id}
+                                                        onClick={() => toggleTeamSelection(team.id)}
+                                                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between transition-colors cursor-pointer ${
+                                                            isSelected
+                                                                ? 'bg-primary-500/15 text-primary-200'
+                                                                : 'text-surface-300 hover:bg-surface-900'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => {}}
+                                                                className="rounded border-surface-700 text-primary-600 focus:ring-primary-500 h-4 w-4 pointer-events-none"
+                                                            />
+                                                            <div>
+                                                                <p className="font-medium text-sm text-surface-100">{team.name}</p>
+                                                                <p className="text-xs text-surface-400">
+                                                                    {team.region || 'Tanpa Wilayah'}
+                                                                    {team.coach?.name && ` • Pelatih: ${team.coach.name}`}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        {isSelected && (
+                                                            <span className="text-xs font-bold text-primary-400 bg-primary-500/20 px-2 py-0.5 rounded">
+                                                                Dipilih
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    {selectedTeamId === team.id.toString() && (
-                                                        <span className="text-xs text-primary-400">Selected</span>
-                                                    )}
-                                                </button>
-                                            ))
+                                                );
+                                            })
                                         )}
                                     </div>
                                 </div>
 
-                                <div className="flex justify-end gap-3 pt-4 border-t border-surface-800">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsModalOpen(false)}
-                                        className="px-4 py-2 rounded-xl text-sm font-medium text-surface-400 hover:text-surface-250 bg-surface-800 hover:bg-surface-750 transition-colors"
-                                    >
-                                        Batal
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={!selectedTeamId || processing}
-                                        className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-primary-600 hover:bg-primary-550 disabled:opacity-50 transition-colors cursor-pointer"
-                                    >
-                                        {processing ? 'Menambahkan...' : 'Tambah Tim'}
-                                    </button>
+                                <div className="flex justify-between items-center pt-4 border-t border-surface-800">
+                                    <span className="text-xs text-surface-400">
+                                        Total: <strong className="text-primary-300">{selectedTeamIds.length}</strong> tim akan didaftarkan
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsModalOpen(false)}
+                                            className="px-4 py-2 rounded-xl text-sm font-medium text-surface-400 hover:text-surface-200 bg-surface-800 hover:bg-surface-750 transition-colors"
+                                        >
+                                            Batal
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={selectedTeamIds.length === 0 || processing}
+                                            className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-primary-600 hover:bg-primary-550 disabled:opacity-50 transition-colors cursor-pointer shadow-lg shadow-primary-600/20"
+                                        >
+                                            {processing
+                                                ? 'Menambahkan...'
+                                                : selectedTeamIds.length > 0
+                                                    ? `Tambah (${selectedTeamIds.length}) Tim`
+                                                    : 'Pilih Tim'}
+                                        </button>
+                                    </div>
                                 </div>
                             </form>
                         )}

@@ -141,29 +141,62 @@ class TournamentController extends Controller
     }
 
     /**
-     * Add a team to the tournament (Admin only).
+     * Add multiple teams (or a single team) to the tournament (Admin only).
      */
     public function addTeam(Request $request, Tournament $tournament)
     {
-        $validated = $request->validate([
-            'team_id' => 'required|exists:teams,id',
+        $request->validate([
+            'team_id'    => 'nullable|exists:teams,id',
+            'team_ids'   => 'nullable|array',
+            'team_ids.*' => 'exists:teams,id',
+            'match_mode' => 'nullable|in:regu,double,quadrant',
         ]);
-
-        $teamId = $validated['team_id'];
-
-        // Check if already registered
-        if ($tournament->teams()->where('team_id', $teamId)->exists()) {
-            return back()->with('error', 'Tim ini sudah terdaftar dalam turnamen.');
-        }
 
         // Allow adding if tournament is in draft or registration status
         if (!in_array($tournament->status, ['draft', 'registration'])) {
             return back()->with('error', 'Tidak dapat menambahkan tim karena turnamen tidak dalam fase pendaftaran.');
         }
 
-        $tournament->teams()->attach($teamId);
+        $teamIds = $request->input('team_ids', []);
+        if ($request->filled('team_id')) {
+            $teamIds[] = $request->input('team_id');
+        }
+        $teamIds = array_values(array_unique(array_filter($teamIds)));
 
-        return back()->with('success', 'Tim berhasil ditambahkan ke turnamen!');
+        if (empty($teamIds)) {
+            return back()->with('error', 'Pilih setidaknya satu tim untuk ditambahkan.');
+        }
+
+        // Tentukan mode: jika match_mode diberikan, gunakan itu; jika tidak, ambil mode reguler aktif pertama
+        $mode = $request->input('match_mode');
+        if (!$mode) {
+            $firstMode = $tournament->modes()
+                ->whereIn('match_mode', ['regu', 'double', 'quadrant'])
+                ->where('is_active', true)
+                ->value('match_mode');
+            $mode = $firstMode ?? 'regu';
+        }
+
+        $addedCount = 0;
+        foreach ($teamIds as $tId) {
+            $exists = \Illuminate\Support\Facades\DB::table('tournament_teams')
+                ->where('tournament_id', $tournament->id)
+                ->where('team_id', $tId)
+                ->where('match_mode', $mode)
+                ->exists();
+
+            if (!$exists) {
+                $tournament->teams()->attach($tId, ['match_mode' => $mode]);
+                $addedCount++;
+            }
+        }
+
+        if ($addedCount === 0) {
+            return back()->with('error', 'Semua tim yang dipilih sudah terdaftar pada mode tersebut di turnamen ini.');
+        }
+
+        $modeLabel = ucfirst($mode);
+        return back()->with('success', "{$addedCount} tim berhasil ditambahkan ke turnamen (Mode: {$modeLabel})!");
     }
 
     /**

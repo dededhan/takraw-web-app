@@ -14,7 +14,9 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
 
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         team_id: '',
+        team_ids: [],
         super_team_id: '',
+        super_team_ids: [],
         match_mode: '',
         registration_code: '',
     });
@@ -31,7 +33,9 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
             const availableSt = mySuperTeams.filter(st => st.match_mode === mode && !registeredStIds.includes(st.id));
             setData({
                 team_id: '',
-                super_team_id: availableSt.length > 0 ? availableSt[0].id.toString() : '',
+                team_ids: [],
+                super_team_id: '',
+                super_team_ids: availableSt.map(st => st.id),
                 match_mode: mode,
                 registration_code: '',
             });
@@ -41,8 +45,10 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                 .map(t => t.id);
             const available = myTeams.filter(t => !registeredIds.includes(t.id));
             setData({
-                team_id: available.length > 0 ? available[0].id.toString() : '',
+                team_id: '',
+                team_ids: available.map(t => t.id),
                 super_team_id: '',
+                super_team_ids: [],
                 match_mode: mode,
                 registration_code: '',
             });
@@ -58,17 +64,31 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
         reset();
     };
 
+    const toggleTeam = (teamId) => {
+        setData('team_ids', data.team_ids.includes(teamId)
+            ? data.team_ids.filter(id => id !== teamId)
+            : [...data.team_ids, teamId]
+        );
+    };
+
+    const toggleSuperTeam = (stId) => {
+        setData('super_team_ids', data.super_team_ids.includes(stId)
+            ? data.super_team_ids.filter(id => id !== stId)
+            : [...data.super_team_ids, stId]
+        );
+    };
+
     const handleRegister = (e) => {
         e.preventDefault();
         if (!selectedTournament || !selectedMode) return;
 
         if (isSuperTeamMode(selectedMode)) {
-            if (!data.super_team_id) return;
+            if (data.super_team_ids.length === 0) return;
             post(route('coach.tournaments.register-super-team', selectedTournament.id), {
                 onSuccess: () => closeModal(),
             });
         } else {
-            if (!data.team_id) return;
+            if (data.team_ids.length === 0) return;
             post(route('coach.tournaments.register', selectedTournament.id), {
                 onSuccess: () => closeModal(),
             });
@@ -285,123 +305,244 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
             )}
 
             {/* Registration Modal */}
-            {isModalOpen && selectedTournament && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="w-full max-w-md bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/30">
-                            <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
-                                <span>🏆 Pendaftaran Turnamen</span>
-                            </h3>
-                            <button
-                                onClick={closeModal}
-                                className="text-surface-400 hover:text-surface-200 p-1 rounded-lg hover:bg-surface-800 transition-colors"
-                            >
-                                ✕
-                            </button>
-                        </div>
+            {isModalOpen && selectedTournament && (() => {
+                const availableCoachTeams = myTeams.filter(
+                    t => !(selectedTournament.teams || []).some(r => r.pivot?.match_mode === selectedMode && r.id === t.id)
+                );
+                const availableSuperTeams = mySuperTeams.filter(
+                    st => st.match_mode === selectedMode && !(selectedTournament.super_teams || selectedTournament.superTeams || []).some(r => r.match_mode === selectedMode && r.id === st.id)
+                );
+                const isSuper = isSuperTeamMode(selectedMode);
+                const selectedCount = isSuper ? data.super_team_ids.length : data.team_ids.length;
 
-                        <form onSubmit={handleRegister} className="p-6 space-y-4">
-                            <div>
-                                <h4 className="text-sm font-bold text-surface-200">{selectedTournament.name}</h4>
-                                <p className="text-xs text-surface-400 mt-0.5">
-                                    Kategori: <strong className="text-primary-300">{formatTournamentMode(selectedMode)}</strong>
-                                </p>
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-surface-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="w-full max-w-lg bg-surface-900 border border-surface-700 rounded-2xl shadow-2xl overflow-hidden">
+                            <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/30">
+                                <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
+                                    <span>🏆 Pendaftaran Turnamen</span>
+                                </h3>
+                                <button
+                                    onClick={closeModal}
+                                    className="text-surface-400 hover:text-surface-200 p-1 rounded-lg hover:bg-surface-800 transition-colors"
+                                >
+                                    ✕
+                                </button>
                             </div>
 
-                            {/* Pick Team or Super Team */}
-                            {isSuperTeamMode(selectedMode) ? (
-                                <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-purple-300 mb-1.5">
-                                        Pilih Super Team Anda <span className="text-red-400">*</span>
-                                    </label>
-                                    <select
-                                        value={data.super_team_id}
-                                        onChange={(e) => setData('super_team_id', e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500"
-                                        required
-                                    >
-                                        <option value="">-- Pilih Super Team --</option>
-                                        {mySuperTeams
-                                            .filter(st => st.match_mode === selectedMode && !(selectedTournament.super_teams || selectedTournament.superTeams || []).some(r => r.match_mode === selectedMode && r.id === st.id))
-                                            .map((st) => (
-                                                <option key={st.id} value={st.id}>
-                                                    {st.name} ({st.members?.length || 0}/3 Sub-Tim)
-                                                </option>
-                                            ))}
-                                    </select>
-                                    {errors.super_team_id && <p className="text-red-400 text-xs mt-1">{errors.super_team_id}</p>}
+                            <form onSubmit={handleRegister} className="p-6 space-y-4">
+                                <div className="p-3 rounded-xl bg-surface-950/60 border border-surface-800 flex items-center justify-between">
+                                    <div>
+                                        <h4 className="text-sm font-bold text-surface-100">{selectedTournament.name}</h4>
+                                        <p className="text-xs text-surface-400 mt-0.5">
+                                            Kategori: <strong className="text-primary-300">{formatTournamentMode(selectedMode)}</strong>
+                                        </p>
+                                    </div>
+                                    <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-primary-600/20 text-primary-300 border border-primary-500/30">
+                                        {selectedCount} Tim Dipilih
+                                    </span>
                                 </div>
-                            ) : (
-                                <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
-                                        Pilih Tim Binaan <span className="text-red-400">*</span>
-                                    </label>
-                                    <select
-                                        value={data.team_id}
-                                        onChange={(e) => setData('team_id', e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-primary-500"
-                                        required
-                                    >
-                                        <option value="">-- Pilih Tim --</option>
-                                        {myTeams
-                                            .filter(t => !(selectedTournament.teams || []).some(r => r.pivot?.match_mode === selectedMode && r.id === t.id))
-                                            .map((t) => (
-                                                <option key={t.id} value={t.id}>
-                                                    {t.name} ({t.region})
-                                                </option>
-                                            ))}
-                                    </select>
-                                    {errors.team_id && <p className="text-red-400 text-xs mt-1">{errors.team_id}</p>}
-                                </div>
-                            )}
 
-                            {/* Registration Code Input if Protected */}
-                            {selectedTournament.has_registration_code && (
-                                <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-amber-300 mb-1.5 flex items-center justify-between">
-                                        <span>🔐 Kunci Pendaftaran Turnamen <span className="text-red-400">*</span></span>
+                                {/* Pick Teams / Super Teams */}
+                                {isSuper ? (
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-xs font-bold uppercase tracking-wider text-purple-300">
+                                                Pilih Super Team Binaan <span className="text-red-400">*</span>
+                                            </label>
+                                            {availableSuperTeams.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const allIds = availableSuperTeams.map(st => st.id);
+                                                        const allSelected = allIds.every(id => data.super_team_ids.includes(id));
+                                                        setData('super_team_ids', allSelected ? [] : allIds);
+                                                    }}
+                                                    className="text-xs text-purple-400 hover:text-purple-300 font-semibold transition-colors cursor-pointer"
+                                                >
+                                                    {availableSuperTeams.every(st => data.super_team_ids.includes(st.id))
+                                                        ? '✕ Batal Pilih Semua'
+                                                        : '✓ Pilih Semua'}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {availableSuperTeams.length === 0 ? (
+                                            <p className="text-xs text-surface-500 italic p-4 text-center border border-surface-800 rounded-xl bg-surface-950/40">
+                                                Tidak ada Super Team binaan yang tersedia untuk kategori ini.
+                                            </p>
+                                        ) : (
+                                            <div className="max-h-56 overflow-y-auto rounded-xl border border-surface-800 bg-surface-950 divide-y divide-surface-900">
+                                                {availableSuperTeams.map((st) => {
+                                                    const isChecked = data.super_team_ids.includes(st.id);
+                                                    const isReady = st.members?.length === 3;
+                                                    return (
+                                                        <div
+                                                            key={st.id}
+                                                            onClick={() => isReady && toggleSuperTeam(st.id)}
+                                                            className={`p-3 text-sm flex items-center justify-between transition-colors ${
+                                                                !isReady
+                                                                    ? 'opacity-50 cursor-not-allowed bg-surface-950'
+                                                                    : isChecked
+                                                                        ? 'bg-purple-500/15 text-purple-200 cursor-pointer'
+                                                                        : 'text-surface-300 hover:bg-surface-900 cursor-pointer'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    disabled={!isReady}
+                                                                    onChange={() => {}}
+                                                                    className="rounded border-surface-700 text-purple-600 focus:ring-purple-500 h-4 w-4 pointer-events-none"
+                                                                />
+                                                                <div>
+                                                                    <p className="font-semibold text-sm text-surface-100">{st.name}</p>
+                                                                    <p className="text-xs text-surface-400">
+                                                                        {st.members?.length || 0}/3 Sub-Tim
+                                                                        {!isReady && ' • (Belum lengkap 3 sub-tim)'}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            {isChecked && (
+                                                                <span className="text-xs font-bold text-purple-400 bg-purple-500/20 px-2 py-0.5 rounded">
+                                                                    Dipilih
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {errors.super_team_ids && <p className="text-red-400 text-xs mt-1">{errors.super_team_ids}</p>}
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-xs font-bold uppercase tracking-wider text-surface-300">
+                                                Pilih Tim Binaan <span className="text-red-400">*</span>
+                                            </label>
+                                            {availableCoachTeams.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const allIds = availableCoachTeams.map(t => t.id);
+                                                        const allSelected = allIds.every(id => data.team_ids.includes(id));
+                                                        setData('team_ids', allSelected ? [] : allIds);
+                                                    }}
+                                                    className="text-xs text-primary-400 hover:text-primary-300 font-semibold transition-colors cursor-pointer"
+                                                >
+                                                    {availableCoachTeams.every(t => data.team_ids.includes(t.id))
+                                                        ? '✕ Batal Pilih Semua'
+                                                        : '✓ Pilih Semua'}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {availableCoachTeams.length === 0 ? (
+                                            <p className="text-xs text-surface-500 italic p-4 text-center border border-surface-800 rounded-xl bg-surface-950/40">
+                                                Semua tim binaan Anda sudah terdaftar di kategori ini.
+                                            </p>
+                                        ) : (
+                                            <div className="max-h-56 overflow-y-auto rounded-xl border border-surface-800 bg-surface-950 divide-y divide-surface-900">
+                                                {availableCoachTeams.map((team) => {
+                                                    const isChecked = data.team_ids.includes(team.id);
+                                                    return (
+                                                        <div
+                                                            key={team.id}
+                                                            onClick={() => toggleTeam(team.id)}
+                                                            className={`p-3 text-sm flex items-center justify-between transition-colors cursor-pointer ${
+                                                                isChecked
+                                                                    ? 'bg-primary-500/15 text-primary-200'
+                                                                    : 'text-surface-300 hover:bg-surface-900'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={() => {}}
+                                                                    className="rounded border-surface-700 text-primary-600 focus:ring-primary-500 h-4 w-4 pointer-events-none"
+                                                                />
+                                                                <div>
+                                                                    <p className="font-semibold text-sm text-surface-100">{team.name}</p>
+                                                                    <p className="text-xs text-surface-400">
+                                                                        {team.region || 'Tanpa Wilayah'}
+                                                                        {team.athletes?.length !== undefined && ` • ${team.athletes.length} Atlet`}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            {isChecked && (
+                                                                <span className="text-xs font-bold text-primary-400 bg-primary-500/20 px-2 py-0.5 rounded">
+                                                                    Dipilih
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {errors.team_ids && <p className="text-red-400 text-xs mt-1">{errors.team_ids}</p>}
+                                    </div>
+                                )}
+
+                                {/* Registration Code Input if Protected */}
+                                {selectedTournament.has_registration_code && (
+                                    <div>
+                                        <label className="block text-xs font-bold uppercase tracking-wider text-amber-300 mb-1.5 flex items-center justify-between">
+                                            <span>🔐 Kunci Pendaftaran Turnamen <span className="text-red-400">*</span></span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowKey(!showKey)}
+                                                className="text-[10px] text-surface-400 hover:text-surface-200 lowercase font-normal"
+                                            >
+                                                {showKey ? 'sembunyikan' : 'tampilkan'}
+                                            </button>
+                                        </label>
+                                        <input
+                                            type={showKey ? 'text' : 'password'}
+                                            value={data.registration_code}
+                                            onChange={(e) => setData('registration_code', e.target.value)}
+                                            placeholder="Masukkan kunci yang diberikan Admin"
+                                            className="w-full px-3.5 py-2.5 rounded-xl bg-surface-950/60 border border-amber-500/40 text-amber-200 placeholder-surface-600 text-xs focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                                            required
+                                        />
+                                        {errors.registration_code && (
+                                            <p className="text-red-400 text-xs mt-1">{errors.registration_code}</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="pt-4 border-t border-surface-800 flex justify-between items-center">
+                                    <span className="text-xs text-surface-400">
+                                        Total: <strong className="text-primary-300">{selectedCount}</strong> tim
+                                    </span>
+                                    <div className="flex gap-2">
                                         <button
                                             type="button"
-                                            onClick={() => setShowKey(!showKey)}
-                                            className="text-[10px] text-surface-400 hover:text-surface-200 lowercase font-normal"
+                                            onClick={closeModal}
+                                            className="px-4 py-2 rounded-xl border border-surface-700 text-surface-400 text-xs font-semibold hover:bg-surface-800"
                                         >
-                                            {showKey ? 'sembunyikan' : 'tampilkan'}
+                                            Batal
                                         </button>
-                                    </label>
-                                    <input
-                                        type={showKey ? 'text' : 'password'}
-                                        value={data.registration_code}
-                                        onChange={(e) => setData('registration_code', e.target.value)}
-                                        placeholder="Masukkan kunci yang diberikan Admin"
-                                        className="w-full px-3.5 py-2.5 rounded-xl bg-surface-950/60 border border-amber-500/40 text-amber-200 placeholder-surface-600 text-xs focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
-                                        required
-                                    />
-                                    {errors.registration_code && (
-                                        <p className="text-red-400 text-xs mt-1">{errors.registration_code}</p>
-                                    )}
+                                        <button
+                                            type="submit"
+                                            disabled={processing || selectedCount === 0}
+                                            className="px-5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold shadow-md disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {processing
+                                                ? 'Mendaftarkan...'
+                                                : selectedCount > 0
+                                                    ? `Daftarkan (${selectedCount}) Tim`
+                                                    : 'Pilih Tim'}
+                                        </button>
+                                    </div>
                                 </div>
-                            )}
-
-                            <div className="pt-4 border-t border-surface-800 flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={closeModal}
-                                    className="px-4 py-2 rounded-xl border border-surface-700 text-surface-400 text-xs font-semibold hover:bg-surface-800"
-                                >
-                                    Batal
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={processing}
-                                    className="px-5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold shadow-md disabled:opacity-50 cursor-pointer"
-                                >
-                                    {processing ? 'Mendaftarkan...' : 'Daftarkan Sekarang'}
-                                </button>
-                            </div>
-                        </form>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </AuthenticatedLayout>
     );
 }

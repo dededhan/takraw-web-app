@@ -109,23 +109,20 @@ class CoachTournamentController extends Controller
     }
 
     /**
-     * Register a team to a tournament.
+     * Register multiple teams (or a single team) to a tournament.
      */
     public function register(Request $request, Tournament $tournament)
     {
         $request->validate([
-            'team_id' => 'required|exists:teams,id',
-            'match_mode' => 'required|in:regu,double,quadrant',
+            'team_id'           => 'nullable|exists:teams,id',
+            'team_ids'          => 'nullable|array',
+            'team_ids.*'        => 'exists:teams,id',
+            'match_mode'        => 'required|in:regu,double,quadrant',
+            'registration_code' => 'nullable|string',
         ]);
 
-        $teamId = $request->input('team_id');
         $matchMode = $request->input('match_mode');
-        $team = Team::findOrFail($teamId);
-
-        // Check if the team is coached by this user
-        if ($team->coach_id !== $request->user()->id) {
-            return back()->with('error', 'Anda tidak memiliki wewenang untuk mendaftarkan tim ini.');
-        }
+        $user = $request->user();
 
         // Check if tournament is in registration phase
         if ($tournament->status !== 'registration') {
@@ -152,18 +149,41 @@ class CoachTournamentController extends Controller
             }
         }
 
-        // Check if already registered to this specific mode
-        if (\DB::table('tournament_teams')
-            ->where('tournament_id', $tournament->id)
-            ->where('team_id', $teamId)
-            ->where('match_mode', $matchMode)
-            ->exists()) {
-            return back()->with('error', 'Tim ini sudah terdaftar pada mode tersebut di turnamen ini.');
+        $teamIds = $request->input('team_ids', []);
+        if ($request->filled('team_id')) {
+            $teamIds[] = $request->input('team_id');
+        }
+        $teamIds = array_values(array_unique(array_filter($teamIds)));
+
+        if (empty($teamIds)) {
+            return back()->with('error', 'Pilih setidaknya satu tim untuk didaftarkan.');
         }
 
-        $tournament->teams()->attach($teamId, ['match_mode' => $matchMode]);
+        $addedCount = 0;
+        foreach ($teamIds as $tId) {
+            $team = Team::find($tId);
+            if (!$team || $team->coach_id !== $user->id) {
+                continue;
+            }
 
-        return back()->with('success', 'Tim berhasil didaftarkan ke turnamen.');
+            // Check if already registered to this specific mode
+            $exists = \DB::table('tournament_teams')
+                ->where('tournament_id', $tournament->id)
+                ->where('team_id', $tId)
+                ->where('match_mode', $matchMode)
+                ->exists();
+
+            if (!$exists) {
+                $tournament->teams()->attach($tId, ['match_mode' => $matchMode]);
+                $addedCount++;
+            }
+        }
+
+        if ($addedCount === 0) {
+            return back()->with('error', 'Semua tim yang dipilih sudah terdaftar pada mode tersebut di turnamen ini.');
+        }
+
+        return back()->with('success', "{$addedCount} tim berhasil didaftarkan ke turnamen!");
     }
 
     /**
@@ -195,26 +215,21 @@ class CoachTournamentController extends Controller
     }
 
     /**
-     * Register a Super Team to a tournament.
+     * Register one or more Super Teams to a tournament.
      */
     public function registerSuperTeam(Request $request, Tournament $tournament)
     {
         $request->validate([
-            'super_team_id' => 'required|exists:super_teams,id',
+            'super_team_id'     => 'nullable|exists:super_teams,id',
+            'super_team_ids'    => 'nullable|array',
+            'super_team_ids.*'  => 'exists:super_teams,id',
+            'registration_code' => 'nullable|string',
         ]);
 
-        $superTeam = SuperTeam::with('members')->findOrFail($request->input('super_team_id'));
-
-        if ($superTeam->coach_id !== $request->user()->id) {
-            return back()->with('error', 'Anda tidak memiliki wewenang untuk Super Team ini.');
-        }
+        $user = $request->user();
 
         if ($tournament->status !== 'registration') {
             return back()->with('error', 'Pendaftaran untuk turnamen ini sudah ditutup.');
-        }
-
-        if ($superTeam->members->count() !== 3) {
-            return back()->with('error', 'Super Team harus memiliki tepat 3 Sub-Tim sebelum didaftarkan ke turnamen.');
         }
 
         // Validasi Kunci Pertandingan jika turnamen diproteksi
@@ -232,12 +247,38 @@ class CoachTournamentController extends Controller
             }
         }
 
-        // Assign tournament to super team
-        $superTeam->update([
-            'tournament_id' => $tournament->id,
-        ]);
+        $stIds = $request->input('super_team_ids', []);
+        if ($request->filled('super_team_id')) {
+            $stIds[] = $request->input('super_team_id');
+        }
+        $stIds = array_values(array_unique(array_filter($stIds)));
 
-        return back()->with('success', "Super Team \"{$superTeam->name}\" berhasil didaftarkan ke turnamen!");
+        if (empty($stIds)) {
+            return back()->with('error', 'Pilih setidaknya satu Super Team untuk didaftarkan.');
+        }
+
+        $addedCount = 0;
+        foreach ($stIds as $stId) {
+            $superTeam = SuperTeam::with('members')->find($stId);
+            if (!$superTeam || $superTeam->coach_id !== $user->id) {
+                continue;
+            }
+
+            if ($superTeam->members->count() !== 3) {
+                continue;
+            }
+
+            $superTeam->update([
+                'tournament_id' => $tournament->id,
+            ]);
+            $addedCount++;
+        }
+
+        if ($addedCount === 0) {
+            return back()->with('error', 'Tidak ada Super Team valid yang dapat didaftarkan (pastikan memiliki tepat 3 Sub-Tim).');
+        }
+
+        return back()->with('success', "{$addedCount} Super Team berhasil didaftarkan ke turnamen!");
     }
 
     /**

@@ -480,7 +480,7 @@ class TournamentBracketTest extends TestCase
             'region' => 'Depok',
         ]);
 
-        $tournament->teams()->attach($team->id);
+        $tournament->teams()->attach($team->id, ['match_mode' => 'regu']);
 
         $response = $this->actingAs($admin)
             ->delete(route('tournaments.remove-team', [$tournament->id, $team->id]));
@@ -518,7 +518,7 @@ class TournamentBracketTest extends TestCase
             'region' => 'Depok',
         ]);
 
-        $tournament->teams()->attach($team->id);
+        $tournament->teams()->attach($team->id, ['match_mode' => 'regu']);
 
         $pool = Pool::create([
             'tournament_id' => $tournament->id,
