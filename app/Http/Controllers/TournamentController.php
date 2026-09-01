@@ -40,7 +40,7 @@ class TournamentController extends Controller
             'name'              => $validated['name'],
             'start_date'        => $validated['start_date'],
             'end_date'          => $validated['end_date'],
-            'mode'              => $validated['modes'][0], // Mode utama untuk kompatibilitas
+            'mode'              => in_array($validated['modes'][0], ['regu', 'double', 'quarter']) ? $validated['modes'][0] : 'regu',
             'status'            => 'draft', // Default selalu draft saat pembuatan
             'registration_code' => !empty($validated['registration_code']) ? trim($validated['registration_code']) : null,
             'created_by'        => $request->user()->id,
@@ -113,7 +113,7 @@ class TournamentController extends Controller
             'name'              => $validated['name'],
             'start_date'        => $validated['start_date'],
             'end_date'          => $validated['end_date'],
-            'mode'              => $validated['modes'][0],
+            'mode'              => in_array($validated['modes'][0], ['regu', 'double', 'quarter']) ? $validated['modes'][0] : 'regu',
             'status'            => $validated['status'] ?? $tournament->status,
             'registration_code' => !empty($validated['registration_code']) ? trim($validated['registration_code']) : null,
         ]);
