@@ -156,7 +156,7 @@ export default function TeamEdit({ team, coaches }) {
                                 Roster Tim Ini Terkunci
                             </h4>
                             <p className="text-xs text-amber-300/80 mt-1 leading-relaxed">
-                                Tim ini telah memiliki riwayat keikutsertaan turnamen. Perubahan data tim dan atlet tidak diizinkan demi menjaga konsistensi arsip turnamen.
+                                Tim ini telah memiliki riwayat penilaian dalam pertandingan (Live / Selesai). Perubahan data tim dan atlet tidak diizinkan demi menjaga integritas data statistik.
                             </p>
                         </div>
                     </div>

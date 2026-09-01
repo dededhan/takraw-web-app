@@ -230,8 +230,8 @@ class AthleteExcelService
             $handle = fopen($filePath, 'r');
             if ($handle !== false) {
                 $header = fgetcsv($handle);
-                while (($row = fgetcsv($handle)) !== null) {
-                    if (count($row) < 2) continue;
+                while (($row = fgetcsv($handle)) !== false) {
+                    if (!is_array($row) || count($row) < 2) continue;
                     $name = trim($row[0] ?? '');
                     if (empty($name)) continue;
 

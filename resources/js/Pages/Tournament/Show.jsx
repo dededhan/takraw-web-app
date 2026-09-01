@@ -718,9 +718,20 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <span className="text-[10px] text-emerald-400 font-bold">
-                                                            {sub.athletes?.length || 0} Atlet
-                                                        </span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-[10px] text-emerald-400 font-bold">
+                                                                {sub.athletes?.length || 0} Atlet
+                                                            </span>
+                                                            {sub.id && (
+                                                                <Link
+                                                                    href={route('teams.edit', sub.id)}
+                                                                    className="p-1 rounded-md text-surface-400 hover:text-white hover:bg-surface-800 transition-colors text-[11px]"
+                                                                    title="Edit Sub-Tim & Atlet"
+                                                                >
+                                                                    ✏️
+                                                                </Link>
+                                                            )}
+                                                        </div>
                                                     </div>
 
                                                     {/* Athletes */}
@@ -809,6 +820,14 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center gap-1.5 shrink-0">
+                                            <Link
+                                                href={route('teams.edit', team.id)}
+                                                className="px-2.5 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white text-xs font-bold transition-all border border-surface-700/50 flex items-center gap-1"
+                                                title="Edit Tim & Atlet"
+                                            >
+                                                ✏️ Edit
+                                            </Link>
+
                                             <Link
                                                 href={route('teams.show', team.id)}
                                                 className="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white text-xs font-bold transition-all border border-surface-700/50 flex items-center gap-1"

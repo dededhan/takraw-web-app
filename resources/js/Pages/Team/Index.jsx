@@ -256,7 +256,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                                                 ) : (
                                                     <span
                                                         className="text-xs text-surface-500 p-1.5 cursor-help"
-                                                        title="Tim terkunci karena pernah/sedang mengikuti turnamen. Riwayat roster dilindungi."
+                                                        title="Tim terkunci karena sudah memiliki riwayat penilaian pertandingan. Riwayat roster dilindungi."
                                                     >
                                                         🔒
                                                     </span>
@@ -268,7 +268,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [] }
                                         <div className="mt-3.5 flex items-center gap-2 flex-wrap">
                                             {team.is_locked ? (
                                                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1">
-                                                    🔒 Roster Terkunci ({team.tournaments_count || team.tournaments?.length || 1} Turnamen)
+                                                    🔒 Roster Terkunci (Sudah Bertanding)
                                                 </span>
                                             ) : (
                                                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">

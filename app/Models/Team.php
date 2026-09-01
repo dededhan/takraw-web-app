@@ -39,19 +39,26 @@ class Team extends Model
     }
 
     /**
-     * Cek apakah roster tim ini terkunci karena pernah/sedang mengikuti turnamen.
+     * Cek apakah roster tim ini terkunci karena sudah dinilai saat bertanding (live/finished match atau ada set_stats).
      */
     public function isRosterLocked(): bool
     {
-        if ($this->tournaments()->exists()) {
+        // 1. Cek apakah tim sudah memiliki catatan statistik penilaian pertandingan (set_stats)
+        if ($this->setStats()->exists()) {
             return true;
         }
 
-        if ($this->homeMatches()->exists() || $this->awayMatches()->exists()) {
+        // 2. Cek apakah tim pernah/sedang bertanding di match berstatus 'live' atau 'finished'
+        if ($this->homeMatches()->whereIn('status', ['live', 'finished'])->exists()
+            || $this->awayMatches()->whereIn('status', ['live', 'finished'])->exists()) {
             return true;
         }
 
-        if ($this->superTeams()->whereNotNull('tournament_id')->exists()) {
+        // 3. Jika tim ini merupakan sub-tim dalam Super Team, cek apakah Super Team-nya sudah dinilai / bertanding
+        if ($this->superTeams()->where(function ($stQuery) {
+            $stQuery->whereHas('homeMatches', fn($q) => $q->whereIn('status', ['live', 'finished']))
+                    ->orWhereHas('awayMatches', fn($q) => $q->whereIn('status', ['live', 'finished']));
+        })->exists()) {
             return true;
         }
 

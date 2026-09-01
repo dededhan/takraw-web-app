@@ -157,6 +157,19 @@ class CoachDashboardAndRosterLockTest extends TestCase
 
         $tournament->teams()->attach($team->id, ['match_mode' => 'regu']);
 
+        // Registering to tournament should NOT lock roster yet
+        $this->assertFalse($team->fresh()->isRosterLocked());
+
+        // Now simulate match is live/finished (dinilai)
+        $match = \App\Models\Match_::create([
+            'tournament_id' => $tournament->id,
+            'stage' => 'pool',
+            'home_team_id' => $team->id,
+            'away_team_id' => null,
+            'status' => 'live',
+        ]);
+
+        // After match is live/finished or evaluated, roster is locked
         $this->assertTrue($team->fresh()->isRosterLocked());
 
         // Attempt to update name or athletes
@@ -182,15 +195,33 @@ class CoachDashboardAndRosterLockTest extends TestCase
 
     public function test_coach_can_create_super_team_with_three_subteams()
     {
-        $team1 = Team::create(['coach_id' => $this->coach->id, 'name' => 'Sub Tim 1', 'region' => 'A']);
-        $team2 = Team::create(['coach_id' => $this->coach->id, 'name' => 'Sub Tim 2', 'region' => 'B']);
-        $team3 = Team::create(['coach_id' => $this->coach->id, 'name' => 'Sub Tim 3', 'region' => 'C']);
-
         $response = $this->actingAs($this->coach)
             ->post(route('coach.super-teams.store'), [
                 'name' => 'Super Team Garuda',
                 'match_mode' => 'team_regu',
-                'team_ids' => [$team1->id, $team2->id, $team3->id],
+                'sub_teams' => [
+                    [
+                        'name' => 'Garuda A',
+                        'region' => 'Jakarta',
+                        'athletes' => [
+                            ['name' => 'Player 1', 'jersey_number' => 1, 'position' => 'Tekong'],
+                        ]
+                    ],
+                    [
+                        'name' => 'Garuda B',
+                        'region' => 'Jakarta',
+                        'athletes' => [
+                            ['name' => 'Player 2', 'jersey_number' => 2, 'position' => 'Feeder'],
+                        ]
+                    ],
+                    [
+                        'name' => 'Garuda C',
+                        'region' => 'Jakarta',
+                        'athletes' => [
+                            ['name' => 'Player 3', 'jersey_number' => 3, 'position' => 'Killer'],
+                        ]
+                    ],
+                ]
             ]);
 
         $response->assertSessionHas('success');

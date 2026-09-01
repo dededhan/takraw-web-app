@@ -385,7 +385,7 @@ class CoachTournamentController extends Controller
         }
 
         if ($superTeam->isRosterLocked()) {
-            return back()->with('error', 'Super Team ini terkunci karena pernah/sedang mengikuti turnamen dan tidak dapat dihapus.');
+            return back()->with('error', 'Super Team ini terkunci karena sudah memiliki riwayat penilaian dalam pertandingan dan tidak dapat dihapus.');
         }
 
         DB::transaction(function () use ($superTeam) {

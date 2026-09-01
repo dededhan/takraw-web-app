@@ -49,13 +49,23 @@ class SuperTeam extends Model
         return $this->isRosterLocked();
     }
 
+    /**
+     * Cek apakah roster Super Team terkunci karena sudah dinilai saat bertanding (live/finished match atau ada set_stats).
+     */
     public function isRosterLocked(): bool
     {
-        if ($this->tournament_id !== null) {
+        // 1. Cek apakah Super Team pernah/sedang bertanding di match berstatus 'live' atau 'finished'
+        if ($this->homeMatches()->whereIn('status', ['live', 'finished'])->exists()
+            || $this->awayMatches()->whereIn('status', ['live', 'finished'])->exists()) {
             return true;
         }
 
-        return $this->homeMatches()->exists() || $this->awayMatches()->exists();
+        // 2. Cek apakah sub-tim anggota sudah memiliki catatan statistik penilaian (set_stats)
+        if ($this->members()->whereHas('setStats')->exists()) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

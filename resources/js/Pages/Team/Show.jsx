@@ -48,10 +48,10 @@ export default function TeamShow({ team }) {
                     <div className="text-2xl shrink-0 mt-0.5">🔒</div>
                     <div>
                         <h4 className="text-sm font-bold text-amber-200">
-                            Roster Tim Terkunci (Pernah / Sedang Mengikuti Turnamen)
+                            Roster Tim Terkunci (Sudah Dinilai dalam Pertandingan)
                         </h4>
                         <p className="text-xs text-amber-300/80 mt-1 leading-relaxed">
-                            Tim ini memiliki riwayat keikutsertaan dalam turnamen. Untuk menjaga keaslian dan integritas data riwayat pertandingan masa lalu, nama tim, nomor punggung, serta susunan atlet <strong>telah dikunci permanen</strong> dan tidak dapat diubah maupun dihapus.
+                            Tim ini telah dinilai dalam pertandingan (Live / Selesai). Untuk menjaga keaslian dan integritas arsip statistik pertandingan, nama tim, nomor punggung, serta susunan atlet <strong>telah dikunci</strong> dan tidak dapat diubah maupun dihapus.
                         </p>
                     </div>
                 </div>

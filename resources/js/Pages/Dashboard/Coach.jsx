@@ -185,7 +185,7 @@ export default function CoachDashboard({
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
                                                 {team.is_locked ? (
-                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/25 flex items-center gap-1 font-medium" title="Roster Terkunci karena pernah ikut turnamen">
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/25 flex items-center gap-1 font-medium" title="Roster Terkunci karena sudah dinilai dalam pertandingan">
                                                         🔒 Terkunci
                                                     </span>
                                                 ) : (

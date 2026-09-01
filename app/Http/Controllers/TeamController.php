@@ -118,7 +118,7 @@ class TeamController extends Controller
     public function update(Request $request, Team $team)
     {
         if ($team->isRosterLocked()) {
-            return back()->with('error', 'Roster tim ini terkunci karena pernah/sedang mengikuti turnamen. Riwayat tim tidak dapat diubah.');
+            return back()->with('error', 'Roster tim ini terkunci karena sudah memiliki riwayat penilaian dalam pertandingan. Data tim dan atlet tidak dapat diubah.');
         }
 
         $validated = $request->validate([
@@ -179,7 +179,7 @@ class TeamController extends Controller
     public function destroy(Team $team)
     {
         if ($team->isRosterLocked()) {
-            return back()->with('error', 'Tim ini tidak dapat dihapus karena memiliki riwayat keikutsertaan turnamen.');
+            return back()->with('error', 'Tim ini tidak dapat dihapus karena sudah memiliki riwayat penilaian dalam pertandingan.');
         }
 
         $team->delete();
@@ -222,7 +222,7 @@ class TeamController extends Controller
     public function importAthletes(Request $request, Team $team, \App\Services\AthleteExcelService $excelService)
     {
         if ($team->isRosterLocked()) {
-            return back()->with('error', 'Roster tim ini terkunci karena pernah/sedang mengikuti turnamen. Import atlet tidak diizinkan.');
+            return back()->with('error', 'Roster tim ini terkunci karena sudah memiliki riwayat penilaian dalam pertandingan. Import atlet tidak diizinkan.');
         }
 
         $request->validate([
