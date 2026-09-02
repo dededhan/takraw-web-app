@@ -149,9 +149,11 @@ class SuperTeamController extends Controller
             }
 
             if (!empty($tournamentId)) {
-                $superTeam->tournaments()->attach($tournamentId, [
-                    'match_mode'    => $matchMode,
-                    'registered_at' => now(),
+                $superTeam->tournaments()->syncWithoutDetaching([
+                    $tournamentId => [
+                        'match_mode'    => $matchMode,
+                        'registered_at' => now(),
+                    ]
                 ]);
             }
 

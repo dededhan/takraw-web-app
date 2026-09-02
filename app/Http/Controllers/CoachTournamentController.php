@@ -185,7 +185,12 @@ class CoachTournamentController extends Controller
                 ->exists();
 
             if (!$exists) {
-                $tournament->teams()->attach($tId, ['match_mode' => $matchMode]);
+                $tournament->teams()->syncWithoutDetaching([
+                    $tId => [
+                        'match_mode'    => $matchMode,
+                        'registered_at' => now(),
+                    ]
+                ]);
                 $addedCount++;
             }
         }
@@ -285,9 +290,11 @@ class CoachTournamentController extends Controller
                 ->exists();
 
             if (!$exists) {
-                $tournament->superTeams()->attach($stId, [
-                    'match_mode'    => $superTeam->match_mode ?? 'team_regu',
-                    'registered_at' => now(),
+                $tournament->superTeams()->syncWithoutDetaching([
+                    $stId => [
+                        'match_mode'    => $superTeam->match_mode ?? 'team_regu',
+                        'registered_at' => now(),
+                    ]
                 ]);
 
                 if (!$superTeam->tournament_id) {

@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable(['tournament_id', 'pool_id', 'name', 'match_mode', 'created_by', 'coach_id'])]
 class SuperTeam extends Model
 {
+    use HasFactory, SoftDeletes;
+
     protected $appends = ['is_locked'];
 
     protected static function booted(): void

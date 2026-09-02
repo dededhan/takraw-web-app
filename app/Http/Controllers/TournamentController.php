@@ -191,7 +191,12 @@ class TournamentController extends Controller
                 ->exists();
 
             if (!$exists) {
-                $tournament->teams()->attach($tId, ['match_mode' => $mode]);
+                $tournament->teams()->syncWithoutDetaching([
+                    $tId => [
+                        'match_mode'    => $mode,
+                        'registered_at' => now(),
+                    ]
+                ]);
                 $addedCount++;
             }
         }
