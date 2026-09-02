@@ -229,7 +229,7 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                             const mode = m.match_mode;
                                             const isSuper = isSuperTeamMode(mode);
                                             const modeRegisteredTeams = registeredTeams.filter(t => t.pivot?.match_mode === mode);
-                                            const modeRegisteredSuperTeams = registeredSuperTeams.filter(st => st.match_mode === mode);
+                                            const modeRegisteredSuperTeams = registeredSuperTeams.filter(st => (st.pivot?.match_mode || st.match_mode) === mode);
 
                                             const hasAvailable = isSuper
                                                 ? mySuperTeams.some(st => st.match_mode === mode && !modeRegisteredSuperTeams.some(r => r.id === st.id))
@@ -310,7 +310,7 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                     t => !(selectedTournament.teams || []).some(r => r.pivot?.match_mode === selectedMode && r.id === t.id)
                 );
                 const availableSuperTeams = mySuperTeams.filter(
-                    st => st.match_mode === selectedMode && !(selectedTournament.super_teams || selectedTournament.superTeams || []).some(r => r.match_mode === selectedMode && r.id === st.id)
+                    st => st.match_mode === selectedMode && !(selectedTournament.super_teams || selectedTournament.superTeams || []).some(r => r.id === st.id && (r.pivot?.match_mode || r.match_mode) === selectedMode)
                 );
                 const isSuper = isSuperTeamMode(selectedMode);
                 const selectedCount = isSuper ? data.super_team_ids.length : data.team_ids.length;

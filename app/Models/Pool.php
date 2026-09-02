@@ -38,9 +38,9 @@ class Pool extends Model
         return $this->hasMany(Match_::class);
     }
 
-    public function superTeams(): HasMany
+    public function superTeams(): BelongsToMany
     {
-        return $this->hasMany(SuperTeam::class);
+        return $this->belongsToMany(SuperTeam::class, 'pool_standings', 'pool_id', 'super_team_id');
     }
 
     /**

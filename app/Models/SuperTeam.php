@@ -18,11 +18,30 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable(['tournament_id', 'pool_id', 'name', 'match_mode', 'created_by', 'coach_id'])]
 class SuperTeam extends Model
 {
-    use HasFactory, SoftDeletes;
-
     protected $appends = ['is_locked'];
 
-    // ─── Relationships ──────────────────────────────
+    protected static function booted(): void
+    {
+        static::saved(function (SuperTeam $superTeam) {
+            if ($superTeam->tournament_id) {
+                \Illuminate\Support\Facades\DB::table('tournament_super_teams')->insertOrIgnore([
+                    'tournament_id' => $superTeam->tournament_id,
+                    'super_team_id' => $superTeam->id,
+                    'match_mode'    => $superTeam->match_mode ?? 'team_regu',
+                    'registered_at' => $superTeam->created_at ?? now(),
+                    'created_at'    => now(),
+                    'updated_at'    => now(),
+                ]);
+            }
+        });
+    }
+
+    public function tournaments(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Tournament::class, 'tournament_super_teams')
+                    ->withPivot(['registered_at', 'match_mode'])
+                    ->withTimestamps();
+    }
 
     public function tournament(): BelongsTo
     {
@@ -46,25 +65,14 @@ class SuperTeam extends Model
 
     public function getIsLockedAttribute(): bool
     {
-        return $this->isRosterLocked();
+        return false;
     }
 
     /**
-     * Cek apakah roster Super Team terkunci karena sudah dinilai saat bertanding (live/finished match atau ada set_stats).
+     * Roster lock dinonaktifkan sesuai permintaan agar Super Team selalu dapat diedit/dikelola.
      */
     public function isRosterLocked(): bool
     {
-        // 1. Cek apakah Super Team pernah/sedang bertanding di match berstatus 'live' atau 'finished'
-        if ($this->homeMatches()->whereIn('status', ['live', 'finished'])->exists()
-            || $this->awayMatches()->whereIn('status', ['live', 'finished'])->exists()) {
-            return true;
-        }
-
-        // 2. Cek apakah sub-tim anggota sudah memiliki catatan statistik penilaian (set_stats)
-        if ($this->members()->whereHas('setStats')->exists()) {
-            return true;
-        }
-
         return false;
     }
 

@@ -90,9 +90,16 @@ class Tournament extends Model
         return $this->hasMany(TimeSlot::class)->orderBy('day_number')->orderBy('slot_number');
     }
 
-    public function superTeams(): HasMany
+    public function superTeams(): BelongsToMany
     {
-        return $this->hasMany(SuperTeam::class);
+        return $this->belongsToMany(SuperTeam::class, 'tournament_super_teams')
+                    ->withPivot(['registered_at', 'match_mode'])
+                    ->withTimestamps();
+    }
+
+    public function superTeamsForMode(string $mode): BelongsToMany
+    {
+        return $this->superTeams()->wherePivot('match_mode', $mode);
     }
 
     public function bracketMatrices(): HasMany

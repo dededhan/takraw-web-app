@@ -23,7 +23,7 @@ class TeamController extends Controller
             $query->where('coach_id', $request->user()->id);
         }
 
-        $superTeamsQuery = \App\Models\SuperTeam::with(['members.athletes', 'tournament', 'coach']);
+        $superTeamsQuery = \App\Models\SuperTeam::with(['members.athletes', 'tournaments', 'tournament', 'coach']);
         if ($request->user()->isCoach()) {
             $superTeamsQuery->where('coach_id', $request->user()->id);
         }
@@ -138,10 +138,6 @@ class TeamController extends Controller
 
     public function update(Request $request, Team $team)
     {
-        if ($team->isRosterLocked()) {
-            return back()->with('error', 'Roster tim ini terkunci karena sudah memiliki riwayat penilaian dalam pertandingan. Data tim dan atlet tidak dapat diubah.');
-        }
-
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'region' => 'required|string|max:100',
@@ -226,10 +222,6 @@ class TeamController extends Controller
 
     public function destroy(Team $team)
     {
-        if ($team->isRosterLocked()) {
-            return back()->with('error', 'Tim ini tidak dapat dihapus karena sudah memiliki riwayat penilaian dalam pertandingan.');
-        }
-
         $team->delete();
 
         return redirect()->route('teams.index')
@@ -269,10 +261,6 @@ class TeamController extends Controller
      */
     public function importAthletes(Request $request, Team $team, \App\Services\AthleteExcelService $excelService)
     {
-        if ($team->isRosterLocked()) {
-            return back()->with('error', 'Roster tim ini terkunci karena sudah memiliki riwayat penilaian dalam pertandingan. Import atlet tidak diizinkan.');
-        }
-
         $request->validate([
             'file' => 'required|file|max:5120',
         ]);

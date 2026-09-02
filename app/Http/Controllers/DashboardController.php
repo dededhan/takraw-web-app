@@ -47,7 +47,7 @@ class DashboardController extends Controller
     private function coachDashboard(User $user, AthletePerformanceService $performanceService): Response
     {
         $teams = $user->coachedTeams()->with(['athletes', 'tournaments'])->get();
-        $superTeams = $user->coachedSuperTeams()->with(['members.athletes', 'tournament'])->get();
+        $superTeams = $user->coachedSuperTeams()->with(['members.athletes', 'tournaments'])->get();
         $teamIds = $teams->pluck('id');
         $superTeamIds = $superTeams->pluck('id');
 
@@ -55,6 +55,11 @@ class DashboardController extends Controller
         $tournamentIds = \DB::table('tournament_teams')
             ->whereIn('team_id', $teamIds)
             ->pluck('tournament_id')
+            ->merge(
+                \DB::table('tournament_super_teams')
+                    ->whereIn('super_team_id', $superTeamIds)
+                    ->pluck('tournament_id')
+            )
             ->merge(
                 \App\Models\SuperTeam::where('coach_id', $user->id)
                     ->whereNotNull('tournament_id')

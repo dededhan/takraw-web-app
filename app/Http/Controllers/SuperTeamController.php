@@ -148,6 +148,13 @@ class SuperTeamController extends Controller
                 ]);
             }
 
+            if (!empty($tournamentId)) {
+                $superTeam->tournaments()->attach($tournamentId, [
+                    'match_mode'    => $matchMode,
+                    'registered_at' => now(),
+                ]);
+            }
+
             return $superTeam;
         });
 
@@ -201,10 +208,6 @@ class SuperTeamController extends Controller
         $user = $request->user();
         if (!$user->isAdmin() && $superTeam->coach_id !== $user->id && $superTeam->created_by !== $user->id) {
             return back()->with('error', 'Anda tidak memiliki wewenang untuk mengubah Super Team ini.');
-        }
-
-        if ($superTeam->isRosterLocked()) {
-            return back()->with('error', 'Super Team ini tidak dapat diubah karena sudah memiliki riwayat penilaian dalam pertandingan.');
         }
 
         $validated = $request->validate([
@@ -366,12 +369,9 @@ class SuperTeamController extends Controller
             return back()->with('error', 'Anda tidak memiliki wewenang untuk menghapus Super Team ini.');
         }
 
-        if ($superTeam->isRosterLocked()) {
-            return back()->with('error', 'Super Team ini tidak dapat dihapus karena sudah memiliki riwayat penilaian dalam pertandingan.');
-        }
-
         DB::transaction(function () use ($superTeam) {
             $subTeamIds = $superTeam->members()->pluck('teams.id')->all();
+            $superTeam->tournaments()->detach();
             $superTeam->members()->detach();
             $superTeam->delete();
 

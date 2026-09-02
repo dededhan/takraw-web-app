@@ -277,49 +277,28 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
 
                                             {/* Action Buttons */}
                                             <div className="flex items-center gap-1 shrink-0">
-                                                {!team.is_locked ? (
-                                                    <>
-                                                        <Link
-                                                            href={route('teams.edit', team.id)}
-                                                            className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors"
-                                                            title="Edit Tim"
-                                                        >
-                                                            ✏️
-                                                        </Link>
-                                                        <button
-                                                            onClick={() => setDeletingTeamId(team.id)}
-                                                            className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer"
-                                                            title="Hapus Tim"
-                                                        >
-                                                            🗑️
-                                                        </button>
-                                                    </>
-                                                ) : (
-                                                    <span
-                                                        className="text-xs text-surface-500 p-1.5 cursor-help"
-                                                        title="Tim terkunci karena sudah memiliki riwayat penilaian pertandingan. Riwayat roster dilindungi."
-                                                    >
-                                                        🔒
-                                                    </span>
-                                                )}
+                                                <Link
+                                                    href={route('teams.edit', team.id)}
+                                                    className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors"
+                                                    title="Edit Tim"
+                                                >
+                                                    ✏️
+                                                </Link>
+                                                <button
+                                                    onClick={() => setDeletingTeamId(team.id)}
+                                                    className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer"
+                                                    title="Hapus Tim"
+                                                >
+                                                    🗑️
+                                                </button>
                                             </div>
                                         </div>
 
-                                        {/* Status Roster Lock Badge */}
+                                        {/* Coach & Info */}
                                         <div className="mt-3.5 flex items-center gap-2 flex-wrap">
-                                            {team.is_locked ? (
-                                                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1">
-                                                    🔒 Roster Terkunci (Sudah Bertanding)
-                                                </span>
-                                            ) : (
-                                                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
-                                                    🔓 Roster Terbuka (Dapat Diedit)
-                                                </span>
-                                            )}
-
                                             {team.coach && (
-                                                <span className="text-[11px] text-surface-500">
-                                                    🧑‍🏫 {team.coach.name}
+                                                <span className="text-[11px] text-surface-400">
+                                                    🧑‍🏫 Pelatih: {team.coach.name}
                                                 </span>
                                             )}
                                         </div>
@@ -419,7 +398,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
 
                                                 {/* Action Edit & Delete Buttons */}
                                                 <div className="flex items-center gap-1 shrink-0">
-                                                    {!st.is_locked && canManageSuperTeams && (
+                                                    {canManageSuperTeams && (
                                                         <>
                                                             <button
                                                                 onClick={() => handleOpenEditModal(st)}
@@ -436,14 +415,6 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                                                 🗑️
                                                             </button>
                                                         </>
-                                                    )}
-                                                    {st.is_locked && (
-                                                        <span
-                                                            className="text-xs text-surface-500 p-1.5 cursor-help"
-                                                            title="Super Team terkunci karena sudah memiliki riwayat penilaian pertandingan."
-                                                        >
-                                                            🔒
-                                                        </span>
                                                     )}
                                                 </div>
                                             </div>
@@ -467,7 +438,16 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
 
                                             {/* Tournament Status */}
                                             <div className="mt-2.5 text-xs">
-                                                {st.tournament ? (
+                                                {st.tournaments && st.tournaments.length > 0 ? (
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        <span className="text-surface-400 font-medium text-[11px]">🏆 Turnamen:</span>
+                                                        {st.tournaments.map((t) => (
+                                                            <span key={t.id} className="px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30 text-[11px] font-semibold">
+                                                                {t.name}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : st.tournament ? (
                                                     <span className="text-blue-300 font-medium">
                                                         🏆 Terdaftar di Turnamen: <strong>{st.tournament.name}</strong>
                                                     </span>

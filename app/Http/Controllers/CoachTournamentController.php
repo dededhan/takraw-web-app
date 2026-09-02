@@ -7,6 +7,8 @@ use App\Models\Team;
 use App\Models\SuperTeam;
 use App\Models\Match_;
 use App\Models\Athlete;
+use App\Models\Pool;
+use App\Models\PoolStanding;
 use App\Services\AthletePerformanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -52,7 +54,7 @@ class CoachTournamentController extends Controller
                 $q->where('coach_id', $user->id)
                   ->orWhere('created_by', $user->id);
             })
-            ->with(['members.athletes', 'tournament'])
+            ->with(['members.athletes', 'tournaments'])
             ->get();
 
         return Inertia::render('Coach/TournamentAvailable', [
@@ -74,6 +76,11 @@ class CoachTournamentController extends Controller
         $tournamentIds = \DB::table('tournament_teams')
             ->whereIn('team_id', $teamIds)
             ->pluck('tournament_id')
+            ->merge(
+                \DB::table('tournament_super_teams')
+                    ->whereIn('super_team_id', $superTeamIds)
+                    ->pluck('tournament_id')
+            )
             ->merge(
                 SuperTeam::where('coach_id', $user->id)
                     ->whereNotNull('tournament_id')
@@ -264,7 +271,7 @@ class CoachTournamentController extends Controller
         $addedCount = 0;
         foreach ($stIds as $stId) {
             $superTeam = SuperTeam::with('members')->find($stId);
-            if (!$superTeam || $superTeam->coach_id !== $user->id) {
+            if (!$superTeam || ($superTeam->coach_id !== $user->id && $superTeam->created_by !== $user->id)) {
                 continue;
             }
 
@@ -272,14 +279,26 @@ class CoachTournamentController extends Controller
                 continue;
             }
 
-            $superTeam->update([
-                'tournament_id' => $tournament->id,
-            ]);
-            $addedCount++;
+            $exists = DB::table('tournament_super_teams')
+                ->where('tournament_id', $tournament->id)
+                ->where('super_team_id', $stId)
+                ->exists();
+
+            if (!$exists) {
+                $tournament->superTeams()->attach($stId, [
+                    'match_mode'    => $superTeam->match_mode ?? 'team_regu',
+                    'registered_at' => now(),
+                ]);
+
+                if (!$superTeam->tournament_id) {
+                    $superTeam->update(['tournament_id' => $tournament->id]);
+                }
+                $addedCount++;
+            }
         }
 
         if ($addedCount === 0) {
-            return back()->with('error', 'Tidak ada Super Team valid yang dapat didaftarkan (pastikan memiliki tepat 3 Sub-Tim).');
+            return back()->with('error', 'Semua Super Team yang dipilih sudah terdaftar di turnamen ini atau belum memiliki tepat 3 Sub-Tim.');
         }
 
         return back()->with('success', "{$addedCount} Super Team berhasil didaftarkan ke turnamen!");
@@ -290,7 +309,7 @@ class CoachTournamentController extends Controller
      */
     public function unregisterSuperTeam(Request $request, Tournament $tournament, SuperTeam $superTeam)
     {
-        if ($superTeam->coach_id !== $request->user()->id) {
+        if ($superTeam->coach_id !== $request->user()->id && $superTeam->created_by !== $request->user()->id) {
             return back()->with('error', 'Anda tidak memiliki wewenang untuk Super Team ini.');
         }
 
@@ -298,10 +317,21 @@ class CoachTournamentController extends Controller
             return back()->with('error', 'Tidak dapat membatalkan karena turnamen sudah berjalan.');
         }
 
-        $superTeam->update([
-            'tournament_id' => null,
-            'pool_id' => null,
-        ]);
+        $tournament->superTeams()->detach($superTeam->id);
+
+        // Hapus juga standing di turnamen ini jika ada
+        $poolIds = Pool::where('tournament_id', $tournament->id)->pluck('id');
+        if ($poolIds->isNotEmpty()) {
+            PoolStanding::whereIn('pool_id', $poolIds)->where('super_team_id', $superTeam->id)->delete();
+        }
+
+        if ($superTeam->tournament_id === $tournament->id) {
+            $nextTourn = $superTeam->tournaments()->first();
+            $superTeam->update([
+                'tournament_id' => $nextTourn ? $nextTourn->id : null,
+                'pool_id'       => null,
+            ]);
+        }
 
         return back()->with('success', "Pendaftaran Super Team \"{$superTeam->name}\" berhasil dibatalkan.");
     }
@@ -400,12 +430,9 @@ class CoachTournamentController extends Controller
             return back()->with('error', 'Anda tidak memiliki wewenang untuk menghapus Super Team ini.');
         }
 
-        if ($superTeam->isRosterLocked()) {
-            return back()->with('error', 'Super Team ini terkunci karena sudah memiliki riwayat penilaian dalam pertandingan dan tidak dapat dihapus.');
-        }
-
         DB::transaction(function () use ($superTeam) {
             $subTeamIds = $superTeam->members()->pluck('teams.id')->all();
+            $superTeam->tournaments()->detach();
             $superTeam->members()->detach();
             $superTeam->delete();
 

@@ -43,21 +43,6 @@ export default function TeamShow({ team }) {
                 </Link>
             </div>
 
-            {/* Lock Status Alert Banner if team is locked */}
-            {team.is_locked && (
-                <div className="mb-6 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 backdrop-blur-sm flex items-start gap-3">
-                    <div className="text-2xl shrink-0 mt-0.5">🔒</div>
-                    <div>
-                        <h4 className="text-sm font-bold text-amber-200">
-                            Roster Tim Terkunci (Sudah Dinilai dalam Pertandingan)
-                        </h4>
-                        <p className="text-xs text-amber-300/80 mt-1 leading-relaxed">
-                            Tim ini telah dinilai dalam pertandingan (Live / Selesai). Untuk menjaga keaslian dan integritas arsip statistik pertandingan, nama tim, nomor punggung, serta susunan atlet <strong>telah dikunci</strong> dan tidak dapat diubah maupun dihapus.
-                        </p>
-                    </div>
-                </div>
-            )}
-
             {/* Team Header */}
             <div className="rounded-2xl border border-surface-700/50 bg-gradient-to-r from-surface-900/80 to-surface-800/50 backdrop-blur-sm p-6 mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -68,15 +53,6 @@ export default function TeamShow({ team }) {
                         <div>
                             <div className="flex items-center gap-2.5 flex-wrap">
                                 <h1 className="text-2xl font-bold text-surface-100">{team.name}</h1>
-                                {team.is_locked ? (
-                                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1">
-                                        🔒 Roster Terkunci
-                                    </span>
-                                ) : (
-                                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
-                                        🔓 Roster Terbuka
-                                    </span>
-                                )}
                             </div>
                             <div className="flex flex-wrap gap-3 text-sm text-surface-400 mt-1.5">
                                 <span>📍 {team.region}</span>
@@ -86,18 +62,12 @@ export default function TeamShow({ team }) {
                         </div>
                     </div>
 
-                    {!team.is_locked ? (
-                        <Link
-                            href={route('teams.edit', team.id)}
-                            className="px-4 py-2 rounded-xl text-xs font-bold text-surface-200 bg-surface-800 border border-surface-700 hover:bg-surface-700 transition-colors self-start flex items-center gap-1.5 shadow-sm"
-                        >
-                            <span>✏️ Edit Tim</span>
-                        </Link>
-                    ) : (
-                        <div className="px-3 py-1.5 rounded-xl bg-surface-800/80 border border-surface-700 text-surface-500 text-xs font-medium self-start flex items-center gap-1.5">
-                            <span>🔒 Roster Terkunci</span>
-                        </div>
-                    )}
+                    <Link
+                        href={route('teams.edit', team.id)}
+                        className="px-4 py-2 rounded-xl text-xs font-bold text-surface-200 bg-surface-800 border border-surface-700 hover:bg-surface-700 transition-colors self-start flex items-center gap-1.5 shadow-sm"
+                    >
+                        <span>✏️ Edit Tim</span>
+                    </Link>
                 </div>
             </div>
 
@@ -109,14 +79,12 @@ export default function TeamShow({ team }) {
                             <span>🏃 Daftar Atlet ({team.athletes?.length || 0})</span>
                         </h2>
 
-                        {!team.is_locked && (
-                            <button
-                                onClick={() => setIsImportModalOpen(true)}
-                                className="text-xs px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
-                            >
-                                <span>📥 Import Atlet (.xlsx / .csv)</span>
-                            </button>
-                        )}
+                        <button
+                            onClick={() => setIsImportModalOpen(true)}
+                            className="text-xs px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
+                        >
+                            <span>📥 Import Atlet (.xlsx / .csv)</span>
+                        </button>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">

@@ -169,10 +169,10 @@ class CoachDashboardAndRosterLockTest extends TestCase
             'status' => 'live',
         ]);
 
-        // After match is live/finished or evaluated, roster is locked
-        $this->assertTrue($team->fresh()->isRosterLocked());
+        // Even after match is created, roster remains unlocked per requirement
+        $this->assertFalse($team->fresh()->isRosterLocked());
 
-        // Attempt to update name or athletes
+        // Update should succeed
         $updateResponse = $this->actingAs($this->coach)
             ->put(route('teams.update', $team->id), [
                 'name' => 'Nama Berubah',
@@ -182,15 +182,16 @@ class CoachDashboardAndRosterLockTest extends TestCase
                 ]
             ]);
 
-        $updateResponse->assertSessionHas('error');
-        $this->assertDatabaseHas('teams', ['id' => $team->id, 'name' => 'Tim Juara']);
+        $updateResponse->assertRedirect(route('teams.show', $team->id));
+        $updateResponse->assertSessionHas('success');
+        $this->assertDatabaseHas('teams', ['id' => $team->id, 'name' => 'Nama Berubah']);
 
-        // Attempt to delete locked team
+        // Delete team
         $deleteResponse = $this->actingAs($this->coach)
             ->delete(route('teams.destroy', $team->id));
 
-        $deleteResponse->assertSessionHas('error');
-        $this->assertDatabaseHas('teams', ['id' => $team->id, 'deleted_at' => null]);
+        $deleteResponse->assertRedirect(route('teams.index'));
+        $this->assertSoftDeleted('teams', ['id' => $team->id]);
     }
 
     public function test_coach_can_create_super_team_with_three_subteams()

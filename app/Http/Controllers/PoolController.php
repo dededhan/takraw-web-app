@@ -125,7 +125,7 @@ class PoolController extends Controller
 
         if ($isTeamMode) {
             $availableSuperTeams = $tournament->superTeams()
-                ->where('match_mode', $matchMode)
+                ->where('super_teams.match_mode', $matchMode)
                 ->get();
 
             $assignedSuperTeamIds = [];
@@ -362,7 +362,7 @@ class PoolController extends Controller
         if ($isTeamMode) {
             // Distribusi Super Teams per mode
             $superTeams = $tournament->superTeams()
-                ->where('match_mode', $matchMode)
+                ->where('super_teams.match_mode', $matchMode)
                 ->get()
                 ->shuffle();
 

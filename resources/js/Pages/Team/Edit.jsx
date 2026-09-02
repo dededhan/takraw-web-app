@@ -169,24 +169,9 @@ export default function TeamEdit({ team, coaches }) {
                     </Link>
                 </div>
 
-                {team.is_locked && (
-                    <div className="mb-6 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 backdrop-blur-sm flex items-start gap-3">
-                        <div className="text-2xl shrink-0">🔒</div>
-                        <div>
-                            <h4 className="text-sm font-bold text-amber-200">
-                                Roster Tim Ini Terkunci
-                            </h4>
-                            <p className="text-xs text-amber-300/80 mt-1 leading-relaxed">
-                                Tim ini telah memiliki riwayat penilaian dalam pertandingan (Live / Selesai). Perubahan data tim dan atlet tidak diizinkan demi menjaga integritas data statistik.
-                            </p>
-                        </div>
-                    </div>
-                )}
-
                 <div className="rounded-2xl border border-surface-700/50 bg-surface-900/60 backdrop-blur-sm p-6 shadow-xl">
                     <h2 className="text-xl font-bold text-surface-100 mb-6 flex items-center gap-2">
                         <span>✏️ Edit Tim</span>
-                        {team.is_locked && <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-normal">Terkunci</span>}
                     </h2>
 
                     <form onSubmit={handleSubmit} className="space-y-6">
