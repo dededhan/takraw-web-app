@@ -63,12 +63,15 @@ RUN mkdir -p storage/framework/cache/data \
     && mkdir -p storage/framework/views \
     && mkdir -p storage/logs \
     && mkdir -p database \
+    && mkdir -p /run/nginx \
     && touch database/database.sqlite \
     && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/database \
     && chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/database \
     && chmod 666 /var/www/html/database/database.sqlite
-# Copy dan konfigurasikan entrypoint agar bisa dieksekusi oleh Railway
+# Copy dan konfigurasikan entrypoint agar bisa dieksekusi oleh Railway / Coolify
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 8080
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
