@@ -47,6 +47,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
 
     const focusedTeamIds = isHome ? homeTeamIds : awayTeamIds;
     const focusedAthleteIds = isHome ? homeAthleteIds : awayAthleteIds;
+    const focusedAthletes = isHome ? homeAthletes : awayAthletes;
 
     // ─────────────────────────────────────────────────────────────────
     // 1. CALCULATE MATCH & REGU OUTCOMES
@@ -186,11 +187,16 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
         return agg;
     };
 
-    // Retrieve stats for a specific athlete (all sets, or specific set_number)
-    const getAthleteStats = (athleteId, setNumber = null) => {
+    // Retrieve stats for a specific athlete (all sets, or specific set_number / set_numbers array)
+    const getAthleteStats = (athleteId, setNumbers = null) => {
         let stats = [];
         match.sets?.forEach(s => {
-            if (setNumber === null || s.set_number === setNumber) {
+            let includeSet = false;
+            if (setNumbers === null) includeSet = true;
+            else if (Array.isArray(setNumbers)) includeSet = setNumbers.includes(s.set_number);
+            else includeSet = s.set_number === setNumbers;
+
+            if (includeSet) {
                 s.stats?.forEach(st => {
                     if (st.athlete_id === athleteId) stats.push(st);
                 });
@@ -354,9 +360,23 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
     if (isTeamMode) {
         reguSummaries.forEach((regu, rIndex) => {
             const memberTeam = regu.member;
-            const memberTeamId = memberTeam?.id;
             const memberAthletes = memberTeam?.athletes || [];
-            const memberAthleteIds = memberAthletes.map(a => a.id);
+            
+            // Ambil semua atlet member regu ini, dan tambahkan atlet home yang mencatat statistik pada set regu ini
+            const sNums = regu.setNumbers; // [1, 2, 3] or [4, 5, 6] or [7, 8, 9]
+            const activeAthleteIdsInRegu = new Set(memberAthletes.map(a => a.id));
+
+            match.sets?.forEach(s => {
+                if (sNums.includes(s.set_number)) {
+                    s.stats?.forEach(st => {
+                        if (focusedAthleteIds.includes(st.athlete_id)) {
+                            activeAthleteIdsInRegu.add(st.athlete_id);
+                        }
+                    });
+                }
+            });
+
+            const athletesForRegu = focusedAthletes.filter(a => activeAthleteIdsInRegu.has(a.id));
 
             // Cek jika halaman hampir penuh, buat halaman baru
             if (currentY > 230) {
@@ -384,11 +404,10 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             currentY += 4;
 
             // ─── TABEL 1: PERFORMA TIM REGU (All Sets + Set 1, 2, 3) ───
-            const sNums = regu.setNumbers; // e.g. [1, 2, 3] or [4, 5, 6] or [7, 8, 9]
-            const tAll = getTeamStats([memberTeamId], memberAthleteIds, sNums);
-            const tSet1 = getTeamStats([memberTeamId], memberAthleteIds, sNums[0]);
-            const tSet2 = getTeamStats([memberTeamId], memberAthleteIds, sNums[1]);
-            const tSet3 = getTeamStats([memberTeamId], memberAthleteIds, sNums[2]);
+            const tAll = getTeamStats(focusedTeamIds, focusedAthleteIds, sNums);
+            const tSet1 = getTeamStats(focusedTeamIds, focusedAthleteIds, sNums[0]);
+            const tSet2 = getTeamStats(focusedTeamIds, focusedAthleteIds, sNums[1]);
+            const tSet3 = getTeamStats(focusedTeamIds, focusedAthleteIds, sNums[2]);
 
             const metricsList = [
                 { label: '🏐 Servis', fn: (t) => `${t.service_in} In / ${t.service_ace} Ace / ${t.service_error} Err` },
@@ -440,7 +459,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             currentY = doc.lastAutoTable.finalY + 5;
 
             // ─── TABEL 2: PERFORMA INDIVIDUAL PEMAIN DI REGU INI ───
-            if (memberAthletes.length > 0) {
+            if (athletesForRegu.length > 0) {
                 doc.setFontSize(8.5);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(31, 41, 55);
@@ -448,8 +467,8 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                 currentY += 2;
 
                 const athleteDetailRows = [];
-                memberAthletes.forEach(ath => {
-                    const aAll = getAthleteStats(ath.id, null);
+                athletesForRegu.forEach(ath => {
+                    const aAll = getAthleteStats(ath.id, sNums);
                     const aS1 = getAthleteStats(ath.id, sNums[0]);
                     const aS2 = getAthleteStats(ath.id, sNums[1]);
                     const aS3 = getAthleteStats(ath.id, sNums[2]);
@@ -506,7 +525,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
 
                 autoTable(doc, {
                     startY: currentY,
-                    head: [['Nama Pemain / Parameter Aksi', 'All Sets (3 Set)', `Set ${sNums[0]}`, `Set ${sNums[1]}`, `Set ${sNums[2]}`]],
+                    head: [['Nama Pemain / Parameter Aksi', `All Sets (${regu.reguLabel})`, `Set ${sNums[0]}`, `Set ${sNums[1]}`, `Set ${sNums[2]}`]],
                     body: athleteDetailRows,
                     theme: 'grid',
                     headStyles: {
@@ -606,7 +625,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
         currentY = doc.lastAutoTable.finalY + 6;
 
         // Individual athletes table
-        const athletes = isHome ? homeAthletes : awayAthletes;
+        const athletes = focusedAthletes;
         if (athletes.length > 0) {
             doc.setFontSize(9);
             doc.setFont('helvetica', 'bold');
