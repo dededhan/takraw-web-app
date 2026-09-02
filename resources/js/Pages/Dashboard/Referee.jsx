@@ -3,18 +3,24 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import StatusBadge from '@/Components/StatusBadge';
 import { Head, Link } from '@inertiajs/react';
 
-export default function RefereeDashboard({ assignedMatches = [], tournaments = [], completedToday = [] }) {
+export default function RefereeDashboard({ assignedMatches = [], tournaments = [], completedMatches = [], completedToday = [] }) {
     const [selectedTournamentId, setSelectedTournamentId] = useState('all');
+
+    const finishedList = completedMatches.length > 0 ? completedMatches : completedToday;
 
     // Filter matches by selected tournament
     const filteredMatches = assignedMatches.filter(m =>
         selectedTournamentId === 'all' || m.tournament_id === Number(selectedTournamentId)
     );
 
-    const liveMatches = filteredMatches.filter(m => m.status === 'live');
-    const upcomingMatches = filteredMatches.filter(m => m.status !== 'live');
+    const filteredFinishedMatches = finishedList.filter(m =>
+        selectedTournamentId === 'all' || m.tournament_id === Number(selectedTournamentId)
+    );
 
-    // Laga waktu terdekat berikutnya (match pertama dari daftar yang belum live)
+    const liveMatches = filteredMatches.filter(m => m.status === 'live');
+    const upcomingMatches = filteredMatches.filter(m => m.status !== 'live' && m.status !== 'finished');
+
+    // Laga waktu terdekat berikutnya (match pertama dari daftar yang belum live/selesai)
     const nextClosestMatch = upcomingMatches[0];
 
     return (
@@ -26,15 +32,15 @@ export default function RefereeDashboard({ assignedMatches = [], tournaments = [
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-surface-800">
                     <button
                         onClick={() => setSelectedTournamentId('all')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 border ${
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 border cursor-pointer ${
                             selectedTournamentId === 'all'
                                 ? 'bg-primary-600/20 text-primary-300 border-primary-500/40 shadow-xs'
-                                : 'bg-surface-800/50 text-surface-400 border-surface-700 hover:border-surface-600'
+                                : 'bg-surface-800/50 text-surface-400 border-surface-700 hover:border-surface-600 hover:text-surface-200'
                         }`}
                     >
                         <span>🏆</span> Semua Turnamen
                         <span className="px-2 py-0.5 rounded-full bg-surface-900 text-surface-300 font-mono text-[10px]">
-                            {assignedMatches.length}
+                            {assignedMatches.length + finishedList.length}
                         </span>
                     </button>
 
@@ -42,10 +48,10 @@ export default function RefereeDashboard({ assignedMatches = [], tournaments = [
                         <button
                             key={t.id}
                             onClick={() => setSelectedTournamentId(t.id.toString())}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 border ${
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 border cursor-pointer ${
                                 selectedTournamentId === t.id.toString()
                                     ? 'bg-primary-600/20 text-primary-300 border-primary-500/40 shadow-xs'
-                                    : 'bg-surface-800/50 text-surface-400 border-surface-700 hover:border-surface-600'
+                                    : 'bg-surface-800/50 text-surface-400 border-surface-700 hover:border-surface-600 hover:text-surface-200'
                             }`}
                         >
                             <span>🏆</span> {t.name}
@@ -160,20 +166,20 @@ export default function RefereeDashboard({ assignedMatches = [], tournaments = [
                     </div>
                     <div className="rounded-xl border border-emerald-500/30 bg-surface-900/60 p-4 flex items-center justify-between">
                         <div>
-                            <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider">Selesai Hari Ini</p>
-                            <p className="text-2xl font-bold text-emerald-400 mt-1">{completedToday.length}</p>
+                            <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider">Pertandingan Selesai</p>
+                            <p className="text-2xl font-bold text-emerald-400 mt-1">{finishedList.length}</p>
                         </div>
                         <span className="text-2xl">✅</span>
                     </div>
                 </div>
 
-                {/* ─── Assigned Matches List ─── */}
+                {/* ─── Assigned / Upcoming Matches List ─── */}
                 <div className="rounded-2xl border border-surface-700/50 bg-surface-900/60 overflow-hidden shadow-lg">
                     <div className="px-5 py-4 border-b border-surface-700/60 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <span className="text-lg">📋</span>
                             <h2 className="text-sm font-bold text-surface-100 uppercase tracking-wider">
-                                Daftar Pertandingan Ditugaskan ({filteredMatches.length})
+                                Daftar Pertandingan Ditugaskan ({upcomingMatches.length + liveMatches.length})
                             </h2>
                         </div>
                         <span className="text-xs text-surface-400 font-mono">Diurutkan Waktu Terdekat</span>
@@ -189,18 +195,20 @@ export default function RefereeDashboard({ assignedMatches = [], tournaments = [
                                 {filteredMatches.map((match) => {
                                     const homeName = match.home_display_name || match.home_team?.name || 'TBD';
                                     const awayName = match.away_display_name || match.away_team?.name || 'TBD';
+                                    const isFinished = match.status === 'finished';
 
                                     return (
-                                        <Link
+                                        <div
                                             key={match.id}
-                                            href={route('scoring.show', match.id)}
-                                            className={`block p-4 rounded-xl border transition-all duration-200 ${
+                                            className={`p-4 rounded-xl border transition-all duration-200 flex flex-col gap-3 ${
                                                 match.status === 'live'
                                                     ? 'bg-red-500/10 border-red-500/40 shadow-lg'
+                                                    : isFinished
+                                                    ? 'bg-surface-950/40 border-surface-800'
                                                     : 'bg-surface-800/60 border-surface-700/40 hover:border-primary-500/40'
                                             }`}
                                         >
-                                            <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-xs font-mono font-bold text-primary-300 bg-black/30 px-2 py-0.5 rounded">
                                                         Match #{match.match_number || match.id}
@@ -213,7 +221,7 @@ export default function RefereeDashboard({ assignedMatches = [], tournaments = [
                                                 <span className="text-xs text-surface-400">🏆 {match.tournament?.name}</span>
                                             </div>
 
-                                            <div className="flex items-center justify-between gap-4 py-2 border-y border-surface-800/40 my-2">
+                                            <div className="flex items-center justify-between gap-4 py-2 border-y border-surface-800/40">
                                                 <span className="text-sm font-bold text-surface-200 text-right flex-1 truncate">
                                                     {homeName}
                                                 </span>
@@ -223,16 +231,42 @@ export default function RefereeDashboard({ assignedMatches = [], tournaments = [
                                                 </span>
                                             </div>
 
-                                            <div className="flex items-center justify-between text-xs text-surface-400">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-surface-400 pt-1">
                                                 <div className="flex items-center gap-3">
-                                                    <span>📅 Hari {match.day_number} ({match.time_slot?.label?.split(' - ')[0] || '—'})</span>
+                                                    <span>📅 Hari {match.day_number || 1} ({match.time_slot?.label?.split(' - ')[0] || '—'})</span>
                                                     <span>📍 {match.court?.name || (match.court_number ? `Lapangan ${match.court_number}` : '—')}</span>
                                                 </div>
-                                                <span className="px-3 py-1 rounded-lg bg-primary-600/20 text-primary-300 text-xs font-bold border border-primary-500/30">
-                                                    {match.status === 'live' ? '⚡ Scoring Live' : (match.status === 'setup' ? '▶️ Mulai Pertandingan' : '⚙️ Setup & Mulai')}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {isFinished ? (
+                                                        <>
+                                                            <Link
+                                                                href={route('matches.show', match.id)}
+                                                                className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors flex items-center gap-1"
+                                                            >
+                                                                <span>📊</span> Lihat Hasil & Rekap
+                                                            </Link>
+                                                            <Link
+                                                                href={route('scoring.show', match.id)}
+                                                                className="px-3 py-1.5 rounded-lg bg-surface-800 text-surface-300 text-xs font-bold border border-surface-700 hover:text-white transition-colors"
+                                                            >
+                                                                ⚡ Scoring
+                                                            </Link>
+                                                        </>
+                                                    ) : (
+                                                        <Link
+                                                            href={route('scoring.show', match.id)}
+                                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors flex items-center gap-1 ${
+                                                                match.status === 'live'
+                                                                    ? 'bg-red-600 text-white border-red-500 hover:bg-red-700'
+                                                                    : 'bg-primary-600/20 text-primary-300 border-primary-500/30 hover:bg-primary-600/30'
+                                                            }`}
+                                                        >
+                                                            {match.status === 'live' ? '⚡ Lanjutkan Scoring' : (match.status === 'setup' ? '▶️ Mulai Pertandingan' : '⚙️ Setup & Mulai')}
+                                                        </Link>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </Link>
+                                        </div>
                                     );
                                 })}
                             </div>
@@ -240,26 +274,86 @@ export default function RefereeDashboard({ assignedMatches = [], tournaments = [
                     </div>
                 </div>
 
-                {/* ─── Completed Today Section ─── */}
-                {completedToday.length > 0 && (
-                    <div className="rounded-2xl border border-surface-700/50 bg-surface-900/60 overflow-hidden shadow-lg">
-                        <div className="px-5 py-4 border-b border-surface-700/60">
-                            <h2 className="text-sm font-bold text-surface-100 uppercase tracking-wider">
-                                ✅ Selesai Hari Ini ({completedToday.length})
-                            </h2>
+                {/* ─── Completed Matches Section (With Direct Link to Recap / Results) ─── */}
+                {filteredFinishedMatches.length > 0 && (
+                    <div className="rounded-2xl border border-emerald-500/30 bg-surface-900/60 overflow-hidden shadow-lg">
+                        <div className="px-5 py-4 border-b border-surface-700/60 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="text-lg">✅</span>
+                                <h2 className="text-sm font-bold text-surface-100 uppercase tracking-wider">
+                                    Riwayat Pertandingan Selesai ({filteredFinishedMatches.length})
+                                </h2>
+                            </div>
+                            <span className="text-xs text-emerald-400 font-semibold">Klik tombol hijau untuk melihat hasil statistik & cetak PDF</span>
                         </div>
-                        <div className="divide-y divide-surface-800">
-                            {completedToday.map((match) => (
-                                <div key={match.id} className="flex items-center justify-between px-5 py-3 text-xs">
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-mono font-bold text-emerald-400">Match #{match.match_number || match.id}</span>
-                                        <span className="text-surface-200 font-semibold">
-                                            {match.home_display_name || match.home_team?.name} vs {match.away_display_name || match.away_team?.name}
-                                        </span>
+                        <div className="p-5 space-y-3">
+                            {filteredFinishedMatches.map((match) => {
+                                const homeName = match.home_display_name || match.home_team?.name || 'TBD';
+                                const awayName = match.away_display_name || match.away_team?.name || 'TBD';
+
+                                const finishedSets = match.sets?.filter(s => s.status === 'finished') || [];
+                                const homeSetsWon = finishedSets.filter(s => s.home_score > s.away_score).length;
+                                const awaySetsWon = finishedSets.filter(s => s.away_score > s.home_score).length;
+
+                                return (
+                                    <div
+                                        key={match.id}
+                                        className="p-4 rounded-xl border border-surface-800 bg-surface-950/40 hover:border-emerald-500/40 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                                    >
+                                        <div className="flex-1 space-y-1.5">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 text-xs">
+                                                    Match #{match.match_number || match.id}
+                                                </span>
+                                                <StatusBadge status="finished" size="xs" />
+                                                <span className="text-[10px] uppercase font-bold text-surface-400 bg-surface-900 px-2 py-0.5 rounded border border-surface-800">
+                                                    Mode {match.match_mode?.replace('_', ' ')}
+                                                </span>
+                                                <span className="text-xs text-surface-400">🏆 {match.tournament?.name}</span>
+                                            </div>
+
+                                            <div className="flex items-center gap-3 text-sm font-bold text-surface-100">
+                                                <span className={homeSetsWon > awaySetsWon ? 'text-emerald-400 font-black' : 'text-surface-200'}>
+                                                    {homeName}
+                                                </span>
+                                                <span className="px-2.5 py-0.5 rounded-md bg-surface-900 border border-surface-700 font-mono text-xs font-black text-amber-400">
+                                                    {homeSetsWon} - {awaySetsWon}
+                                                </span>
+                                                <span className={awaySetsWon > homeSetsWon ? 'text-emerald-400 font-black' : 'text-surface-200'}>
+                                                    {awayName}
+                                                </span>
+                                            </div>
+
+                                            {finishedSets.length > 0 && (
+                                                <div className="text-[11px] text-surface-400 font-mono flex flex-wrap gap-2">
+                                                    {finishedSets.map((s) => (
+                                                        <span key={s.id} className="bg-surface-900/80 px-2 py-0.5 rounded border border-surface-800">
+                                                            Set {s.set_number}: {s.home_score}-{s.away_score}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Action Buttons for Finished Match */}
+                                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                                            <Link
+                                                href={route('matches.show', match.id)}
+                                                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500 transition-all shadow-md flex items-center gap-1.5 active:scale-95"
+                                            >
+                                                <span>📊</span> Lihat Hasil & Rekap
+                                            </Link>
+                                            <Link
+                                                href={route('scoring.show', match.id)}
+                                                className="px-3 py-2 rounded-xl bg-surface-800 text-surface-300 font-bold text-xs hover:bg-surface-700 hover:text-white transition-all border border-surface-700 flex items-center gap-1"
+                                                title="Buka Lembar Scoring"
+                                            >
+                                                <span>⚡</span> Scoring
+                                            </Link>
+                                        </div>
                                     </div>
-                                    <StatusBadge status="finished" size="xs" />
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 )}

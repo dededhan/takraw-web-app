@@ -191,22 +191,30 @@ class DashboardController extends Controller
             'count' => $assignedMatches->where('tournament_id', $t->id)->count(),
         ]);
 
-        $completedToday = Match_::with(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'tournament'])
+        $completedMatches = Match_::with([
+                'homeTeam', 'awayTeam',
+                'homeSuperTeam', 'awaySuperTeam',
+                'tournament', 'sets'
+            ])
             ->where('referee_id', $user->id)
             ->where('status', 'finished')
-            ->whereDate('finished_at', today())
             ->latest('finished_at')
+            ->take(30)
             ->get()
-            ->map(fn($m) => [
-                ...$m->toArray(),
-                'home_display_name' => $m->home_display_name,
-                'away_display_name' => $m->away_display_name,
-            ]);
+            ->map(function ($m) use ($tournamentMatchNumbers) {
+                return [
+                    ...$m->toArray(),
+                    'match_number'      => $tournamentMatchNumbers[$m->id] ?? $m->id,
+                    'home_display_name' => $m->home_display_name,
+                    'away_display_name' => $m->away_display_name,
+                ];
+            });
 
         return Inertia::render('Dashboard/Referee', [
-            'assignedMatches' => $assignedMatches,
-            'tournaments'     => $tournamentsList,
-            'completedToday'  => $completedToday,
+            'assignedMatches'  => $assignedMatches,
+            'tournaments'      => $tournamentsList,
+            'completedMatches' => $completedMatches,
+            'completedToday'   => $completedMatches,
         ]);
     }
 }
