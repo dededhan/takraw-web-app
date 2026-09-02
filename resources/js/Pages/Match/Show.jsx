@@ -347,6 +347,52 @@ export default function MatchShow({ match: m }) {
     const homeTeamAggStats = aggregateStats(getTeamStats('home', homeSetFilter));
     const awayTeamAggStats = aggregateStats(getTeamStats('away', awaySetFilter));
 
+    const getActionPerformance = (inC = 0, aceC = 0, errC = 0) => {
+        const inVal = Number(inC) || 0;
+        const aceVal = Number(aceC) || 0;
+        const errVal = Number(errC) || 0;
+        const success = inVal + aceVal;
+        const total = success + errVal;
+        if (total === 0) return { success: 0, total: 0, pct: 0, formatted: '0% (0/0)' };
+        const pct = Math.round((success / total) * 100);
+        return { success, total, pct, formatted: `${pct}% (${success}/${total})` };
+    };
+
+    const getOverallPerformance = (stats) => {
+        const actions = [
+            { in: stats.service_in || 0, ace: stats.service_ace || 0, err: stats.service_error || 0 },
+            { in: stats.strike_in || stats.strike_success || 0, ace: stats.strike_ace || 0, err: stats.strike_error || stats.strike_fail || 0 },
+            { in: stats.freeball_in || 0, ace: stats.freeball_ace || 0, err: stats.freeball_error || 0 },
+            { in: stats.firstball_in || stats.receive_success || 0, ace: stats.firstball_ace || 0, err: stats.firstball_error || stats.receive_fail || 0 },
+            { in: stats.feeding_in || stats.feeding_success || 0, ace: stats.feeding_ace || 0, err: stats.feeding_error || stats.feeding_fail || 0 },
+            { in: stats.blocking_in || stats.block_success || 0, ace: stats.blocking_ace || 0, err: stats.blocking_error || stats.block_fail || 0 },
+        ];
+
+        let totalIn = 0;
+        let totalAce = 0;
+        let totalErr = 0;
+
+        actions.forEach(a => {
+            totalIn += Number(a.in) || 0;
+            totalAce += Number(a.ace) || 0;
+            totalErr += Number(a.err) || 0;
+        });
+
+        const totalSuccess = totalIn + totalAce;
+        const totalAttempts = totalSuccess + totalErr;
+        const pct = totalAttempts > 0 ? Math.round((totalSuccess / totalAttempts) * 100) : 0;
+
+        return {
+            totalIn,
+            totalAce,
+            totalErr,
+            totalSuccess,
+            totalAttempts,
+            pct,
+            formatted: `${pct}% (${totalSuccess}/${totalAttempts})`,
+        };
+    };
+
     return (
         <AuthenticatedLayout header="Detail Pertandingan">
             <Head title={`${homeName} vs ${awayName}`} />
@@ -559,6 +605,14 @@ export default function MatchShow({ match: m }) {
                         const athlete = !isAll ? homeAthletes.find(a => a.id === selectedHomeAthleteId) : null;
                         const stats = isAll ? homeTeamAggStats : getAthleteStats(selectedHomeAthleteId, homeSetFilter);
 
+                        const servPerf = getActionPerformance(stats.service_in, stats.service_ace, stats.service_error);
+                        const strikePerf = getActionPerformance(stats.strike_in || stats.strike_success, stats.strike_ace, stats.strike_error || stats.strike_fail);
+                        const freePerf = getActionPerformance(stats.freeball_in, stats.freeball_ace, stats.freeball_error);
+                        const firstPerf = getActionPerformance(stats.firstball_in || stats.receive_success, stats.firstball_ace, stats.firstball_error || stats.receive_fail);
+                        const feedPerf = getActionPerformance(stats.feeding_in || stats.feeding_success, stats.feeding_ace, stats.feeding_error || stats.feeding_fail);
+                        const blockPerf = getActionPerformance(stats.blocking_in || stats.block_success, stats.blocking_ace, stats.blocking_error || stats.block_fail);
+                        const overallPerf = getOverallPerformance(stats);
+
                         return (
                             <div className="space-y-4">
                                 <div>
@@ -580,57 +634,104 @@ export default function MatchShow({ match: m }) {
                                                 <tr>
                                                     <th className="py-1.5 px-3">Parameter Statistik</th>
                                                     <th className="py-1.5 px-3 text-center font-bold text-primary-400">Total</th>
-                                                    <th className="py-1.5 px-3 text-right">Rincian</th>
+                                                    <th className="py-1.5 px-3 text-center">Rincian</th>
+                                                    <th className="py-1.5 px-3 text-right font-bold text-primary-400">Performa</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-surface-800/50 text-surface-300 font-medium">
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🏐 Servis</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.service_in + stats.service_ace}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.service_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.service_in}</span> | <span className="text-red-400 font-bold">Err: {stats.service_error}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${servPerf.total > 0 ? (servPerf.pct >= 70 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {servPerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">⚡ Strike</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.strike_in + stats.strike_ace || stats.strike_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.strike_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.strike_in || stats.strike_success}</span> | <span className="text-red-400 font-bold">Err: {stats.strike_error || stats.strike_fail}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${strikePerf.total > 0 ? (strikePerf.pct >= 70 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {strikePerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🔄 Freeball</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.freeball_in + stats.freeball_ace}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.freeball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.freeball_in}</span> | <span className="text-red-400 font-bold">Err: {stats.freeball_error}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${freePerf.total > 0 ? (freePerf.pct >= 70 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {freePerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🤲 Firstball</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.firstball_in + stats.firstball_ace || stats.receive_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.firstball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.firstball_in || stats.receive_success}</span> | <span className="text-red-400 font-bold">Err: {stats.firstball_error || stats.receive_fail}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${firstPerf.total > 0 ? (firstPerf.pct >= 70 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {firstPerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🎯 Feeding</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.feeding_in + stats.feeding_ace || stats.feeding_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.feeding_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.feeding_in || stats.feeding_success}</span> | <span className="text-red-400 font-bold">Err: {stats.feeding_error || stats.feeding_fail}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${feedPerf.total > 0 ? (feedPerf.pct >= 70 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {feedPerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🛡️ Blocking</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.blocking_in + stats.blocking_ace || stats.block_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.blocking_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.blocking_in || stats.block_success}</span> | <span className="text-red-400 font-bold">Err: {stats.blocking_error || stats.block_fail}</span>
                                                     </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${blockPerf.total > 0 ? (blockPerf.pct >= 70 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {blockPerf.formatted}
+                                                        </span>
+                                                    </td>
                                                 </tr>
+
+                                                {/* BARIS ALL PERFORMANCE DI BAWAH BLOCKING */}
+                                                <tr className="bg-primary-500/10 border-t-2 border-primary-500/30">
+                                                    <td className="py-2 px-3 font-bold text-primary-300">📊 All Performance</td>
+                                                    <td className="py-2 px-3 text-center font-black text-primary-400 font-mono text-sm">{overallPerf.totalSuccess}</td>
+                                                    <td className="py-2 px-3 text-center text-[11px] font-mono text-surface-300">
+                                                        <span className="text-amber-400 font-bold">Ace: {overallPerf.totalAce}</span> | <span className="text-primary-400 font-bold">In: {overallPerf.totalIn}</span> | <span className="text-red-400 font-bold">Err: {overallPerf.totalErr}</span>
+                                                    </td>
+                                                    <td className="py-2 px-3 text-right font-mono font-black">
+                                                        <span className="px-2.5 py-1 rounded-lg bg-primary-500/20 border border-primary-500/40 text-primary-300 text-xs shadow-xs">
+                                                            {overallPerf.formatted}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+
                                                 {isAll && stats.opponent_mistake > 0 && (
                                                     <tr className="hover:bg-surface-800/20 bg-primary-500/5">
                                                         <td className="py-1.5 px-3 text-primary-300">⚠️ Kesalahan Lawan</td>
                                                         <td className="py-1.5 px-3 text-center font-black text-primary-400 font-mono">+{stats.opponent_mistake}</td>
-                                                        <td className="py-1.5 px-3 text-right text-[11px] font-mono text-primary-300/80">Poin Hadiah</td>
+                                                        <td className="py-1.5 px-3 text-center text-[11px] font-mono text-primary-300/80">Poin Hadiah</td>
+                                                        <td className="py-1.5 px-3 text-right text-[11px] font-mono text-primary-300/80">+Poin</td>
                                                     </tr>
                                                 )}
                                             </tbody>
@@ -738,6 +839,14 @@ export default function MatchShow({ match: m }) {
                         const athlete = !isAll ? awayAthletes.find(a => a.id === selectedAwayAthleteId) : null;
                         const stats = isAll ? awayTeamAggStats : getAthleteStats(selectedAwayAthleteId, awaySetFilter);
 
+                        const servPerf = getActionPerformance(stats.service_in, stats.service_ace, stats.service_error);
+                        const strikePerf = getActionPerformance(stats.strike_in || stats.strike_success, stats.strike_ace, stats.strike_error || stats.strike_fail);
+                        const freePerf = getActionPerformance(stats.freeball_in, stats.freeball_ace, stats.freeball_error);
+                        const firstPerf = getActionPerformance(stats.firstball_in || stats.receive_success, stats.firstball_ace, stats.firstball_error || stats.receive_fail);
+                        const feedPerf = getActionPerformance(stats.feeding_in || stats.feeding_success, stats.feeding_ace, stats.feeding_error || stats.feeding_fail);
+                        const blockPerf = getActionPerformance(stats.blocking_in || stats.block_success, stats.blocking_ace, stats.blocking_error || stats.block_fail);
+                        const overallPerf = getOverallPerformance(stats);
+
                         return (
                             <div className="space-y-4">
                                 <div>
@@ -759,57 +868,104 @@ export default function MatchShow({ match: m }) {
                                                 <tr>
                                                     <th className="py-1.5 px-3">Parameter Statistik</th>
                                                     <th className="py-1.5 px-3 text-center font-bold text-amber-400">Total</th>
-                                                    <th className="py-1.5 px-3 text-right">Rincian</th>
+                                                    <th className="py-1.5 px-3 text-center">Rincian</th>
+                                                    <th className="py-1.5 px-3 text-right font-bold text-amber-400">Performa</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-surface-800/50 text-surface-300 font-medium">
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🏐 Servis</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.service_in + stats.service_ace}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.service_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.service_in}</span> | <span className="text-red-400 font-bold">Err: {stats.service_error}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${servPerf.total > 0 ? (servPerf.pct >= 70 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {servPerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">⚡ Strike</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.strike_in + stats.strike_ace || stats.strike_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.strike_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.strike_in || stats.strike_success}</span> | <span className="text-red-400 font-bold">Err: {stats.strike_error || stats.strike_fail}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${strikePerf.total > 0 ? (strikePerf.pct >= 70 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {strikePerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🔄 Freeball</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.freeball_in + stats.freeball_ace}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.freeball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.freeball_in}</span> | <span className="text-red-400 font-bold">Err: {stats.freeball_error}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${freePerf.total > 0 ? (freePerf.pct >= 70 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {freePerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🤲 Firstball</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.firstball_in + stats.firstball_ace || stats.receive_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.firstball_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.firstball_in || stats.receive_success}</span> | <span className="text-red-400 font-bold">Err: {stats.firstball_error || stats.receive_fail}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${firstPerf.total > 0 ? (firstPerf.pct >= 70 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {firstPerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🎯 Feeding</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.feeding_in + stats.feeding_ace || stats.feeding_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.feeding_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.feeding_in || stats.feeding_success}</span> | <span className="text-red-400 font-bold">Err: {stats.feeding_error || stats.feeding_fail}</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${feedPerf.total > 0 ? (feedPerf.pct >= 70 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {feedPerf.formatted}
+                                                        </span>
                                                     </td>
                                                 </tr>
                                                 <tr className="hover:bg-surface-800/20">
                                                     <td className="py-1.5 px-3">🛡️ Blocking</td>
                                                     <td className="py-1.5 px-3 text-center font-black text-surface-100 font-mono">{stats.blocking_in + stats.blocking_ace || stats.block_success}</td>
-                                                    <td className="py-1.5 px-3 text-right text-[11px] font-mono">
+                                                    <td className="py-1.5 px-3 text-center text-[11px] font-mono">
                                                         <span className="text-amber-400 font-bold">Ace: {stats.blocking_ace}</span> | <span className="text-primary-400 font-bold">In: {stats.blocking_in || stats.block_success}</span> | <span className="text-red-400 font-bold">Err: {stats.blocking_error || stats.block_fail}</span>
                                                     </td>
+                                                    <td className="py-1.5 px-3 text-right font-mono font-bold">
+                                                        <span className={`px-2 py-0.5 rounded-md text-[11px] ${blockPerf.total > 0 ? (blockPerf.pct >= 70 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400') : 'bg-surface-800/40 text-surface-500'}`}>
+                                                            {blockPerf.formatted}
+                                                        </span>
+                                                    </td>
                                                 </tr>
+
+                                                {/* BARIS ALL PERFORMANCE DI BAWAH BLOCKING */}
+                                                <tr className="bg-amber-500/10 border-t-2 border-amber-500/30">
+                                                    <td className="py-2 px-3 font-bold text-amber-300">📊 All Performance</td>
+                                                    <td className="py-2 px-3 text-center font-black text-amber-400 font-mono text-sm">{overallPerf.totalSuccess}</td>
+                                                    <td className="py-2 px-3 text-center text-[11px] font-mono text-surface-300">
+                                                        <span className="text-amber-400 font-bold">Ace: {overallPerf.totalAce}</span> | <span className="text-primary-400 font-bold">In: {overallPerf.totalIn}</span> | <span className="text-red-400 font-bold">Err: {overallPerf.totalErr}</span>
+                                                    </td>
+                                                    <td className="py-2 px-3 text-right font-mono font-black">
+                                                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs shadow-xs">
+                                                            {overallPerf.formatted}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+
                                                 {isAll && stats.opponent_mistake > 0 && (
                                                     <tr className="hover:bg-surface-800/20 bg-amber-500/5">
                                                         <td className="py-1.5 px-3 text-amber-300">⚠️ Kesalahan Lawan</td>
                                                         <td className="py-1.5 px-3 text-center font-black text-amber-400 font-mono">+{stats.opponent_mistake}</td>
-                                                        <td className="py-1.5 px-3 text-right text-[11px] font-mono text-amber-300/80">Poin Hadiah</td>
+                                                        <td className="py-1.5 px-3 text-center text-[11px] font-mono text-amber-300/80">Poin Hadiah</td>
+                                                        <td className="py-1.5 px-3 text-right text-[11px] font-mono text-amber-300/80">+Poin</td>
                                                     </tr>
                                                 )}
                                             </tbody>
