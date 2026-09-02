@@ -3,6 +3,8 @@ import autoTable from 'jspdf-autotable';
 
 /**
  * Generate and download an official Takraw match report PDF per team.
+ * Uses clean standard ASCII fonts to prevent any unicode/emoji encoding artifacts.
+ *
  * Supports:
  * - Final match score & winner status (e.g. "MENANG 2-1 Regu" / "MENANG 2-0 Set")
  * - Per-Grub / Regu breakdown (Grub A, Grub B, Grub C) with All-Sets + per-set statistics
@@ -80,9 +82,9 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
         let totalErr = 0;
 
         actions.forEach(a => {
-            totalIn += a.in;
-            totalAce += a.ace;
-            totalErr += a.err;
+            totalIn += Number(a.in) || 0;
+            totalAce += Number(a.ace) || 0;
+            totalErr += Number(a.err) || 0;
         });
 
         const totalSuccess = totalIn + totalAce;
@@ -97,7 +99,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             totalAttempts,
             pct,
             shortFormatted: `${totalSuccess}/${totalAttempts} (${pct}%)`,
-            fullFormatted: `${totalIn}/${totalAce}/${totalErr} (${pct}%) • ${totalSuccess}/${totalAttempts}`,
+            fullFormatted: `${totalIn}/${totalAce}/${totalErr} (${pct}%) | ${totalSuccess}/${totalAttempts}`,
         };
     };
 
@@ -398,7 +400,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
 
     // Breakdown sub-text
     if (isTeamMode) {
-        const reguQuick = reguSummaries.map(r => `${r.reguLabel}: ${r.isWin ? 'Menang' : (r.winner ? 'Kalah' : '—')} (${r.focusedWon}-${r.oppWon})`).join('  |  ');
+        const reguQuick = reguSummaries.map(r => `${r.reguLabel}: ${r.isWin ? 'Menang' : (r.winner ? 'Kalah' : '-')} (${r.focusedWon}-${r.oppWon})`).join('  |  ');
         doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
         doc.text(reguQuick, 105, 54, { align: 'center' });
@@ -443,7 +445,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             doc.setTextColor(255, 255, 255);
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(9);
-            const reguTitle = `${regu.reguLabel.toUpperCase()} — ${regu.memberName.toUpperCase()}  |  Hasil: ${regu.isWin ? 'MENANG' : (regu.winner ? 'KALAH' : '—')} (${regu.focusedWon}-${regu.oppWon} Set)`;
+            const reguTitle = `${regu.reguLabel.toUpperCase()} - ${regu.memberName.toUpperCase()}  |  Hasil: ${regu.isWin ? 'MENANG' : (regu.winner ? 'KALAH' : '-')} (${regu.focusedWon}-${regu.oppWon} Set)`;
             doc.text(reguTitle, 18, currentY + 6);
 
             currentY += 12;
@@ -467,13 +469,13 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             const totPerfS3 = calculateTotalPerformance(tSet3);
 
             const metricsList = [
-                { label: '🏐 Servis', fn: (t) => formatActionPerformance(t.service_in, t.service_ace, t.service_error) },
-                { label: '⚡ Strike / Smash', fn: (t) => formatActionPerformance(t.strike_in || t.strike_success, t.strike_ace, t.strike_error || t.strike_fail) },
-                { label: '🔄 Freeball', fn: (t) => formatActionPerformance(t.freeball_in, t.freeball_ace, t.freeball_error) },
-                { label: '🤲 Firstball / Receive', fn: (t) => formatActionPerformance(t.firstball_in || t.receive_success, t.firstball_ace, t.firstball_error || t.receive_fail) },
-                { label: '🎯 Feeding', fn: (t) => formatActionPerformance(t.feeding_in || t.feeding_success, t.feeding_ace, t.feeding_error || t.feeding_fail) },
-                { label: '🛡️ Blocking', fn: (t) => formatActionPerformance(t.blocking_in || t.block_success, t.blocking_ace, t.blocking_error || t.block_fail) },
-                { label: '⚠️ Kesalahan Lawan', fn: (t) => `+${t.opponent_mistake || 0} Poin` },
+                { label: 'Servis', fn: (t) => formatActionPerformance(t.service_in, t.service_ace, t.service_error) },
+                { label: 'Strike / Smash', fn: (t) => formatActionPerformance(t.strike_in || t.strike_success, t.strike_ace, t.strike_error || t.strike_fail) },
+                { label: 'Freeball', fn: (t) => formatActionPerformance(t.freeball_in, t.freeball_ace, t.freeball_error) },
+                { label: 'Firstball / Receive', fn: (t) => formatActionPerformance(t.firstball_in || t.receive_success, t.firstball_ace, t.firstball_error || t.receive_fail) },
+                { label: 'Feeding', fn: (t) => formatActionPerformance(t.feeding_in || t.feeding_success, t.feeding_ace, t.feeding_error || t.feeding_fail) },
+                { label: 'Blocking', fn: (t) => formatActionPerformance(t.blocking_in || t.block_success, t.blocking_ace, t.blocking_error || t.block_fail) },
+                { label: 'Kesalahan Lawan', fn: (t) => `+${t.opponent_mistake || 0} Poin` },
             ];
 
             const reguTableRows = metricsList.map(m => [
@@ -486,7 +488,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
 
             // Baris Total Performa Akumulasi Aksi (All Actions Sum)
             reguTableRows.push([
-                { content: '📊 TOTAL PERFORMA AKSI (Sukses / Total %)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
+                { content: 'TOTAL PERFORMA AKSI (Sukses / Total %)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
                 { content: totPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
                 { content: totPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
                 { content: totPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
@@ -529,7 +531,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                 doc.setFontSize(8.5);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(31, 41, 55);
-                doc.text(`👤 STATISTIK INDIVIDU PEMAIN — ${regu.reguLabel.toUpperCase()} (${regu.memberName})`, 14, currentY);
+                doc.text(`STATISTIK INDIVIDU PEMAIN - ${regu.reguLabel.toUpperCase()} (${regu.memberName})`, 14, currentY);
                 currentY += 2;
 
                 const athleteDetailRows = [];
@@ -551,49 +553,49 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                     ]);
 
                     athleteDetailRows.push([
-                        '  • Servis (In/Ace/Err %)',
+                        '  - Servis (In/Ace/Err %)',
                         formatActionPerformance(aAll.service_in, aAll.service_ace, aAll.service_error),
                         formatActionPerformance(aS1.service_in, aS1.service_ace, aS1.service_error),
                         formatActionPerformance(aS2.service_in, aS2.service_ace, aS2.service_error),
                         formatActionPerformance(aS3.service_in, aS3.service_ace, aS3.service_error),
                     ]);
                     athleteDetailRows.push([
-                        '  • Strike (In/Ace/Err %)',
+                        '  - Strike (In/Ace/Err %)',
                         formatActionPerformance(aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail),
                         formatActionPerformance(aS1.strike_in || aS1.strike_success, aS1.strike_ace, aS1.strike_error || aS1.strike_fail),
                         formatActionPerformance(aS2.strike_in || aS2.strike_success, aS2.strike_ace, aS2.strike_error || aS2.strike_fail),
                         formatActionPerformance(aS3.strike_in || aS3.strike_success, aS3.strike_ace, aS3.strike_error || aS3.strike_fail),
                     ]);
                     athleteDetailRows.push([
-                        '  • Freeball (In/Ace/Err %)',
+                        '  - Freeball (In/Ace/Err %)',
                         formatActionPerformance(aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error),
                         formatActionPerformance(aS1.freeball_in, aS1.freeball_ace, aS1.freeball_error),
                         formatActionPerformance(aS2.freeball_in, aS2.freeball_ace, aS2.freeball_error),
                         formatActionPerformance(aS3.freeball_in, aS3.freeball_ace, aS3.freeball_error),
                     ]);
                     athleteDetailRows.push([
-                        '  • Firstball (In/Ace/Err %)',
+                        '  - Firstball (In/Ace/Err %)',
                         formatActionPerformance(aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail),
                         formatActionPerformance(aS1.firstball_in || aS1.receive_success, aS1.firstball_ace, aS1.firstball_error || aS1.receive_fail),
                         formatActionPerformance(aS2.firstball_in || aS2.receive_success, aS2.firstball_ace, aS2.firstball_error || aS2.receive_fail),
                         formatActionPerformance(aS3.firstball_in || aS3.receive_success, aS3.firstball_ace, aS3.firstball_error || aS3.receive_fail),
                     ]);
                     athleteDetailRows.push([
-                        '  • Feeding (In/Ace/Err %)',
+                        '  - Feeding (In/Ace/Err %)',
                         formatActionPerformance(aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail),
                         formatActionPerformance(aS1.feeding_in || aS1.feeding_success, aS1.feeding_ace, aS1.feeding_error || aS1.feeding_fail),
                         formatActionPerformance(aS2.feeding_in || aS2.feeding_success, aS2.feeding_ace, aS2.feeding_error || aS2.feeding_fail),
                         formatActionPerformance(aS3.feeding_in || aS3.feeding_success, aS3.feeding_ace, aS3.feeding_error || aS3.feeding_fail),
                     ]);
                     athleteDetailRows.push([
-                        '  • Blocking (In/Ace/Err %)',
+                        '  - Blocking (In/Ace/Err %)',
                         formatActionPerformance(aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail),
                         formatActionPerformance(aS1.blocking_in || aS1.block_success, aS1.blocking_ace, aS1.blocking_error || aS1.block_fail),
                         formatActionPerformance(aS2.blocking_in || aS2.block_success, aS2.blocking_ace, aS2.blocking_error || aS2.block_fail),
                         formatActionPerformance(aS3.blocking_in || aS3.block_success, aS3.blocking_ace, aS3.blocking_error || aS3.block_fail),
                     ]);
                     athleteDetailRows.push([
-                        { content: '  ★ TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } },
+                        { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } },
                         { content: athPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', textColor: [16, 185, 129] } },
                         { content: athPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
                         { content: athPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
@@ -639,13 +641,13 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             const reguS3Zone = buildZoneData(tSet3);
 
             const colW = 88;
-            const yA = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS (10 ZONA) — ${regu.reguLabel} ALL SETS`, reguAllZone);
-            const yB = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET ${sNums[0]}`, reguS1Zone);
+            const yA = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS (10 ZONA) - ${regu.reguLabel} ALL SETS`, reguAllZone);
+            const yB = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS - SET ${sNums[0]}`, reguS1Zone);
 
             currentY = Math.max(yA, yB) + 4;
 
-            const yC = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS — SET ${sNums[1]}`, reguS2Zone);
-            const yD = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET ${sNums[2]}`, reguS3Zone);
+            const yC = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS - SET ${sNums[1]}`, reguS2Zone);
+            const yD = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS - SET ${sNums[2]}`, reguS3Zone);
 
             currentY = Math.max(yC, yD) + 8;
         });
@@ -665,13 +667,13 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
         const totPerfS3 = calculateTotalPerformance(tSet3);
 
         const metricsList = [
-            { label: '🏐 Servis', fn: (t) => formatActionPerformance(t.service_in, t.service_ace, t.service_error) },
-            { label: '⚡ Strike / Smash', fn: (t) => formatActionPerformance(t.strike_in || t.strike_success, t.strike_ace, t.strike_error || t.strike_fail) },
-            { label: '🔄 Freeball', fn: (t) => formatActionPerformance(t.freeball_in, t.freeball_ace, t.freeball_error) },
-            { label: '🤲 Firstball / Receive', fn: (t) => formatActionPerformance(t.firstball_in || t.receive_success, t.firstball_ace, t.firstball_error || t.receive_fail) },
-            { label: '🎯 Feeding', fn: (t) => formatActionPerformance(t.feeding_in || t.feeding_success, t.feeding_ace, t.feeding_error || t.feeding_fail) },
-            { label: '🛡️ Blocking', fn: (t) => formatActionPerformance(t.blocking_in || t.block_success, t.blocking_ace, t.blocking_error || t.block_fail) },
-            { label: '⚠️ Kesalahan Lawan', fn: (t) => `+${t.opponent_mistake || 0} Poin` },
+            { label: 'Servis', fn: (t) => formatActionPerformance(t.service_in, t.service_ace, t.service_error) },
+            { label: 'Strike / Smash', fn: (t) => formatActionPerformance(t.strike_in || t.strike_success, t.strike_ace, t.strike_error || t.strike_fail) },
+            { label: 'Freeball', fn: (t) => formatActionPerformance(t.freeball_in, t.freeball_ace, t.freeball_error) },
+            { label: 'Firstball / Receive', fn: (t) => formatActionPerformance(t.firstball_in || t.receive_success, t.firstball_ace, t.firstball_error || t.receive_fail) },
+            { label: 'Feeding', fn: (t) => formatActionPerformance(t.feeding_in || t.feeding_success, t.feeding_ace, t.feeding_error || t.feeding_fail) },
+            { label: 'Blocking', fn: (t) => formatActionPerformance(t.blocking_in || t.block_success, t.blocking_ace, t.blocking_error || t.block_fail) },
+            { label: 'Kesalahan Lawan', fn: (t) => `+${t.opponent_mistake || 0} Poin` },
         ];
 
         const singleTableRows = metricsList.map(m => [
@@ -683,7 +685,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
         ]);
 
         singleTableRows.push([
-            { content: '📊 TOTAL PERFORMA AKSI (Sukses / Total %)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
+            { content: 'TOTAL PERFORMA AKSI (Sukses / Total %)', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
             { content: totPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
             { content: totPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
             { content: totPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
@@ -721,7 +723,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             doc.setFontSize(9);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(31, 41, 55);
-            doc.text(`👤 STATISTIK PERFORMA INDIVIDU PEMAIN (${focusedTeamName})`, 14, currentY);
+            doc.text(`STATISTIK PERFORMA INDIVIDU PEMAIN (${focusedTeamName})`, 14, currentY);
             currentY += 2;
 
             const athleteDetailRows = [];
@@ -743,49 +745,49 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                 ]);
 
                 athleteDetailRows.push([
-                    '  • Servis (In/Ace/Err %)',
+                    '  - Servis (In/Ace/Err %)',
                     formatActionPerformance(aAll.service_in, aAll.service_ace, aAll.service_error),
                     formatActionPerformance(aS1.service_in, aS1.service_ace, aS1.service_error),
                     formatActionPerformance(aS2.service_in, aS2.service_ace, aS2.service_error),
                     formatActionPerformance(aS3.service_in, aS3.service_ace, aS3.service_error),
                 ]);
                 athleteDetailRows.push([
-                    '  • Strike (In/Ace/Err %)',
+                    '  - Strike (In/Ace/Err %)',
                     formatActionPerformance(aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail),
                     formatActionPerformance(aS1.strike_in || aS1.strike_success, aS1.strike_ace, aS1.strike_error || aS1.strike_fail),
                     formatActionPerformance(aS2.strike_in || aS2.strike_success, aS2.strike_ace, aS2.strike_error || aS2.strike_fail),
                     formatActionPerformance(aS3.strike_in || aS3.strike_success, aS3.strike_ace, aS3.strike_error || aS3.strike_fail),
                 ]);
                 athleteDetailRows.push([
-                    '  • Freeball (In/Ace/Err %)',
+                    '  - Freeball (In/Ace/Err %)',
                     formatActionPerformance(aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error),
                     formatActionPerformance(aS1.freeball_in, aS1.freeball_ace, aS1.freeball_error),
                     formatActionPerformance(aS2.freeball_in, aS2.freeball_ace, aS2.freeball_error),
                     formatActionPerformance(aS3.freeball_in, aS3.freeball_ace, aS3.freeball_error),
                 ]);
                 athleteDetailRows.push([
-                    '  • Firstball (In/Ace/Err %)',
+                    '  - Firstball (In/Ace/Err %)',
                     formatActionPerformance(aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail),
                     formatActionPerformance(aS1.firstball_in || aS1.receive_success, aS1.firstball_ace, aS1.firstball_error || aS1.receive_fail),
                     formatActionPerformance(aS2.firstball_in || aS2.receive_success, aS2.firstball_ace, aS2.firstball_error || aS2.receive_fail),
                     formatActionPerformance(aS3.firstball_in || aS3.receive_success, aS3.firstball_ace, aS3.firstball_error || aS3.receive_fail),
                 ]);
                 athleteDetailRows.push([
-                    '  • Feeding (In/Ace/Err %)',
+                    '  - Feeding (In/Ace/Err %)',
                     formatActionPerformance(aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail),
                     formatActionPerformance(aS1.feeding_in || aS1.feeding_success, aS1.feeding_ace, aS1.feeding_error || aS1.feeding_fail),
                     formatActionPerformance(aS2.feeding_in || aS2.feeding_success, aS2.feeding_ace, aS2.feeding_error || aS2.feeding_fail),
                     formatActionPerformance(aS3.feeding_in || aS3.feeding_success, aS3.feeding_ace, aS3.feeding_error || aS3.feeding_fail),
                 ]);
                 athleteDetailRows.push([
-                    '  • Blocking (In/Ace/Err %)',
+                    '  - Blocking (In/Ace/Err %)',
                     formatActionPerformance(aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail),
                     formatActionPerformance(aS1.blocking_in || aS1.block_success, aS1.blocking_ace, aS1.blocking_error || aS1.block_fail),
                     formatActionPerformance(aS2.blocking_in || aS2.block_success, aS2.blocking_ace, aS2.blocking_error || aS2.block_fail),
                     formatActionPerformance(aS3.blocking_in || aS3.block_success, aS3.blocking_ace, aS3.blocking_error || aS3.block_fail),
                 ]);
                 athleteDetailRows.push([
-                    { content: '  ★ TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } },
+                    { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } },
                     { content: athPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', textColor: [16, 185, 129] } },
                     { content: athPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
                     { content: athPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
@@ -812,7 +814,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                     3: { halign: 'center', width: 31 },
                     4: { halign: 'center', width: 33 },
                 },
-                styles: { fontSize: 6, cellPadding: 0.8 },
+                styles: { fontSize: 6.5, cellPadding: 0.8 },
                 margin: { left: 14, right: 14 },
             });
 
@@ -831,13 +833,13 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
         const teamS3Zone = buildZoneData(tSet3);
 
         const colW = 88;
-        const yA = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS (10 ZONA) — ALL SETS`, teamAllZone);
-        const yB = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET 1`, teamS1Zone);
+        const yA = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS (10 ZONA) - ALL SETS`, teamAllZone);
+        const yB = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS - SET 1`, teamS1Zone);
 
         currentY = Math.max(yA, yB) + 4;
 
-        const yC = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS — SET 2`, teamS2Zone);
-        const yD = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET 3 (Jika Ada)`, teamS3Zone);
+        const yC = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS - SET 2`, teamS2Zone);
+        const yD = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS - SET 3 (Jika Ada)`, teamS3Zone);
     }
 
     const filename = `Laporan_Statistik_${focusedTeamName.replace(/\s+/g, '_')}_vs_${opponentTeamName.replace(/\s+/g, '_')}.pdf`;
