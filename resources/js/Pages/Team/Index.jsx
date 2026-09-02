@@ -17,7 +17,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
     const [editingSuperTeam, setEditingSuperTeam] = useState(null);
 
     // Initial athletes roster template (same clean format as regular team)
-    const emptyAthlete = () => ({ name: '', jersey_number: '', position: 'Cadangan', photo: null });
+    const emptyAthlete = () => ({ name: '', jersey_number: '', position: 'Tekong', photo: null });
 
     const { data: stData, setData: setStData, post: postSt, processing: stProcessing, errors: stErrors, reset: resetSt } = useForm({
         name: '',
@@ -48,7 +48,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                 id: a.id,
                 name: a.name,
                 jersey_number: String(a.jersey_number),
-                position: a.position || 'Cadangan',
+                position: a.position || 'Tekong',
                 photo: null,
                 photo_url: a.photo ? `/storage/${a.photo}` : null,
             }))
@@ -68,7 +68,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
         const nextJersey = stData.athletes.length + 1;
         setStData('athletes', [
             ...stData.athletes,
-            { name: '', jersey_number: String(nextJersey), position: 'Cadangan', photo: null },
+            { name: '', jersey_number: String(nextJersey), position: 'Tekong', photo: null },
         ]);
     };
 
@@ -94,7 +94,8 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
             if (cols.length < 2) continue;
             const name = cols[0];
             const jersey = parseInt(cols[1], 10);
-            let position = cols[2] || 'Cadangan';
+            let position = (cols[2] || '').trim();
+            if (!position) position = 'Tekong';
             if (position.toLowerCase() === 'killer') position = 'Smash';
             if (name && !isNaN(jersey)) {
                 out.push({ name, jersey_number: jersey, position, photo: null });
@@ -704,7 +705,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
 
                                         {/* Position */}
                                         <select
-                                            value={athlete.position || 'Cadangan'}
+                                            value={athlete.position || 'Tekong'}
                                             onChange={(e) => updateAthlete(idx, 'position', e.target.value)}
                                             className="w-28 px-2 py-2 rounded-xl bg-surface-900 border border-surface-700 text-surface-200 text-xs focus:border-purple-500 transition-colors"
                                         >

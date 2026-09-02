@@ -120,7 +120,7 @@ class AthleteExcelService
         $instructions = [
             '1. Kolom dengan tanda bintang (*) WAJIB diisi.',
             '2. Nomor Punggung harus berupa ANGKA positif (1-99) dan tidak boleh sama/duplikat dalam satu tim.',
-            '3. Posisi yang didukung: Tekong, Feeder, Smash, atau Cadangan (jika kosong akan otomatis diset sebagai Cadangan).',
+            '3. Posisi yang didukung: Tekong, Feeder, Smash, atau Cadangan (jika kosong akan otomatis diset sebagai Tekong).',
             '4. Jangan mengubah baris Header (Baris 4). Anda dapat langsung mengganti atau menambahkan data atlet mulai Baris 5 ke bawah.',
             '5. Simpan file ini dalam format .xlsx atau .csv lalu upload pada menu Tim Saya → Import Atlet.',
         ];
@@ -217,7 +217,8 @@ class AthleteExcelService
                 }
 
                 $jersey = (int)trim((string)($row[$jerseyCol] ?? 0));
-                $position = trim((string)($row[$posCol] ?? 'Cadangan'));
+                $rawPos = trim((string)($row[$posCol] ?? ''));
+                $position = !empty($rawPos) ? $rawPos : 'Tekong';
                 if (strcasecmp($position, 'killer') === 0) {
                     $position = 'Smash';
                 }
@@ -239,7 +240,8 @@ class AthleteExcelService
                     if (empty($name)) continue;
 
                     $jersey = (int)trim($row[1] ?? 0);
-                    $position = trim($row[2] ?? 'Cadangan');
+                    $rawPos = trim($row[2] ?? '');
+                    $position = !empty($rawPos) ? $rawPos : 'Tekong';
                     if (strcasecmp($position, 'killer') === 0) {
                         $position = 'Smash';
                     }

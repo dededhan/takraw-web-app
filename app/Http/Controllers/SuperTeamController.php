@@ -131,12 +131,12 @@ class SuperTeamController extends Controller
                     : null;
 
                 $validPositions = ['Tekong', 'Feeder', 'Smash', 'Killer', 'Cadangan'];
-                $position = !empty($athleteData['position']) ? ucfirst(strtolower(trim($athleteData['position']))) : 'Cadangan';
+                $position = !empty($athleteData['position']) ? ucfirst(strtolower(trim($athleteData['position']))) : 'Tekong';
                 if ($position === 'Killer') {
                     $position = 'Smash';
                 }
                 if (!in_array($position, $validPositions)) {
-                    $position = 'Cadangan';
+                    $position = 'Tekong';
                 }
 
                 Athlete::create([
@@ -323,12 +323,12 @@ class SuperTeamController extends Controller
                     ? $request->file("athletes.{$index}.photo")->store('athletes', 'public')
                     : null;
 
-                $position = !empty($athleteData['position']) ? ucfirst(strtolower(trim($athleteData['position']))) : 'Cadangan';
+                $position = !empty($athleteData['position']) ? ucfirst(strtolower(trim($athleteData['position']))) : 'Tekong';
                 if ($position === 'Killer') {
                     $position = 'Smash';
                 }
                 if (!in_array($position, $validPositions)) {
-                    $position = 'Cadangan';
+                    $position = 'Tekong';
                 }
 
                 if (!empty($athleteData['id'])) {

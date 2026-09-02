@@ -60,11 +60,11 @@ export default function TeamCreate({ coaches, tournaments }) {
         region: '',
         coach_id: isCoach ? auth.user.id : '',
         tournament_id: '',
-        athletes: [{ name: '', jersey_number: '', position: '', photo: null }],
+        athletes: [{ name: '', jersey_number: '', position: 'Tekong', photo: null }],
     });
 
     const addAthlete = () => {
-        setData('athletes', [...data.athletes, { name: '', jersey_number: '', position: '', photo: null }]);
+        setData('athletes', [...data.athletes, { name: '', jersey_number: '', position: 'Tekong', photo: null }]);
     };
 
     const removeAthlete = (index) => {
@@ -310,7 +310,7 @@ export default function TeamCreate({ coaches, tournaments }) {
                                                     </div>
                                                     <div>
                                                         <select
-                                                            value={athlete.position || 'Cadangan'}
+                                                            value={athlete.position || 'Tekong'}
                                                             onChange={(e) => updateAthlete(index, 'position', e.target.value)}
                                                             className="w-full px-3 py-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-100 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                                                         >

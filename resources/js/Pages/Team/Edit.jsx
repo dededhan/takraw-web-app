@@ -60,14 +60,14 @@ export default function TeamEdit({ team, coaches }) {
             id: a.id,
             name: a.name,
             jersey_number: a.jersey_number,
-            position: a.position || '',
+            position: a.position || 'Tekong',
             photo: null,
             photo_url: a.photo_url || null,
         })),
     });
 
     const addAthlete = () => {
-        setData('athletes', [...data.athletes, { id: null, name: '', jersey_number: '', position: '', photo: null, photo_url: null }]);
+        setData('athletes', [...data.athletes, { id: null, name: '', jersey_number: '', position: 'Tekong', photo: null, photo_url: null }]);
     };
 
     const removeAthlete = (index) => {
@@ -293,7 +293,7 @@ export default function TeamEdit({ team, coaches }) {
                                                     </div>
                                                     <div>
                                                         <select
-                                                            value={athlete.position || 'Cadangan'}
+                                                            value={athlete.position || 'Tekong'}
                                                             onChange={(e) => updateAthlete(index, 'position', e.target.value)}
                                                             className="w-full px-3 py-2 rounded-lg bg-surface-800 border border-surface-700 text-surface-100 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                                                         >

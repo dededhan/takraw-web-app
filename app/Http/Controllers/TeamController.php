@@ -99,7 +99,7 @@ class TeamController extends Controller
                     'team_id' => $team->id,
                     'name' => $athleteData['name'],
                     'jersey_number' => (int) $athleteData['jersey_number'],
-                    'position' => $athleteData['position'] ?? null,
+                    'position' => !empty($athleteData['position']) ? $athleteData['position'] : 'Tekong',
                     'photo' => $photoPath,
                 ]);
             }
@@ -197,7 +197,7 @@ class TeamController extends Controller
                             $athlete->update([
                                 'name' => $athleteData['name'],
                                 'jersey_number' => (int) $athleteData['jersey_number'],
-                                'position' => $athleteData['position'] ?? null,
+                                'position' => !empty($athleteData['position']) ? $athleteData['position'] : 'Tekong',
                                 'photo' => $photoPath ?? $athlete->photo,
                             ]);
                             continue;
@@ -209,7 +209,7 @@ class TeamController extends Controller
                         'team_id' => $team->id,
                         'name' => $athleteData['name'],
                         'jersey_number' => (int) $athleteData['jersey_number'],
-                        'position' => $athleteData['position'] ?? null,
+                        'position' => !empty($athleteData['position']) ? $athleteData['position'] : 'Tekong',
                         'photo' => $photoPath,
                     ]);
                 }
@@ -291,7 +291,11 @@ class TeamController extends Controller
             $rowNum = $index + 1;
             $name = trim($row['name'] ?? '');
             $jerseyNumber = (int)($row['jersey_number'] ?? 0);
-            $position = trim($row['position'] ?? 'Cadangan');
+            $rawPos = trim($row['position'] ?? '');
+            $position = !empty($rawPos) ? $rawPos : 'Tekong';
+            if (strcasecmp($position, 'killer') === 0) {
+                $position = 'Smash';
+            }
 
             if (empty($name)) {
                 $errors[] = "Data #{$rowNum}: Nama atlet kosong.";
@@ -314,7 +318,7 @@ class TeamController extends Controller
                 $posFormatted = 'Smash';
             }
             if (!in_array($posFormatted, $validPositions)) {
-                $posFormatted = 'Cadangan';
+                $posFormatted = 'Tekong';
             }
 
             Athlete::create([
