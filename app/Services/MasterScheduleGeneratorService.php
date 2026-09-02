@@ -319,9 +319,22 @@ class MasterScheduleGeneratorService
         foreach ($activeModes as $mode) {
             $existingMatrixCount = BracketMatrix::where('tournament_id', $tournament->id)->where('match_mode', $mode)->count();
             if ($existingMatrixCount === 0) {
-                $poolCount = Pool::where('tournament_id', $tournament->id)->where('match_mode', $mode)->count();
-                if ($poolCount === 0) $poolCount = 1; // fallback
-                app(\App\Http\Controllers\PoolController::class)->syncBracketMatrixForMode($tournament, $mode, $poolCount);
+                $pools = Pool::where('tournament_id', $tournament->id)->where('match_mode', $mode)->get();
+                $bracketsGrouped = $pools->groupBy('bracket_name');
+                if ($bracketsGrouped->count() > 1) {
+                    $bracketsConfig = [];
+                    foreach ($bracketsGrouped as $bName => $bPools) {
+                        $bracketsConfig[] = [
+                            'name'       => $bName ?: 'Braket',
+                            'pool_count' => $bPools->count(),
+                        ];
+                    }
+                    app(\App\Http\Controllers\PoolController::class)->syncMultiBracketMatrix($tournament, $mode, $bracketsConfig);
+                } else {
+                    $poolCount = $pools->count();
+                    if ($poolCount === 0) $poolCount = 1; // fallback
+                    app(\App\Http\Controllers\PoolController::class)->syncBracketMatrixForMode($tournament, $mode, $poolCount);
+                }
             }
         }
 

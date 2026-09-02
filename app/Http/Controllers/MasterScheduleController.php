@@ -32,16 +32,40 @@ class MasterScheduleController extends Controller
      */
     public function config(Tournament $tournament): Response
     {
-        $tournament->load(['modes', 'courts', 'timeSlots', 'pools']);
+        $tournament->load(['modes', 'courts', 'timeSlots', 'pools.teams', 'pools.superTeams']);
 
-        // Sync mode pool_count dengan jumlah pool nyata di DB jika sudah ada
-        $tournament->modes->transform(function ($m) use ($tournament) {
-            $realCount = $tournament->pools->where('match_mode', $m->match_mode)->count();
+        // Group pools by match_mode and bracket
+        $modePools = [];
+        foreach ($tournament->modes as $mode) {
+            $poolsForMode = $tournament->pools->where('match_mode', $mode->match_mode);
+            $realCount = $poolsForMode->count();
             if ($realCount > 0) {
-                $m->pool_count = $realCount;
+                $mode->pool_count = $realCount;
             }
-            return $m;
-        });
+
+            // Group by bracket
+            $bracketGroups = [];
+            foreach ($poolsForMode->groupBy('bracket_name') as $bracketName => $pools) {
+                $bName = $bracketName ?: 'Braket Utama';
+                $bracketGroups[] = [
+                    'bracket_name' => $bName,
+                    'pool_count'   => $pools->count(),
+                    'pools'        => $pools->values()->map(fn($p) => [
+                        'id'           => $p->id,
+                        'name'         => $p->name,
+                        'bracket_name' => $p->bracket_name,
+                        'teams_count'  => in_array($mode->match_mode, ['team_regu', 'team_double'])
+                            ? $p->superTeams->count()
+                            : $p->teams->count(),
+                    ]),
+                ];
+            }
+
+            $modePools[$mode->match_mode] = [
+                'total_pools' => $realCount,
+                'brackets'    => $bracketGroups,
+            ];
+        }
 
         $preview = null;
         if ($tournament->session_start_time) {
@@ -50,6 +74,7 @@ class MasterScheduleController extends Controller
 
         return Inertia::render('Tournament/MasterSchedule/Config', [
             'tournament' => $tournament,
+            'modePools'  => $modePools,
             'preview'    => $preview,
         ]);
     }
@@ -73,7 +98,11 @@ class MasterScheduleController extends Controller
             $poolCounts = [];
         }
         foreach ($modes as $m) {
-            if (!isset($poolCounts[$m]) || empty($poolCounts[$m])) {
+            // Jika sudah ada pool di database untuk mode ini, pertahankan jumlah pool nyatanya
+            $realCount = $tournament->pools()->where('match_mode', $m)->count();
+            if ($realCount > 0) {
+                $poolCounts[$m] = $realCount;
+            } elseif (!isset($poolCounts[$m]) || empty($poolCounts[$m])) {
                 $poolCounts[$m] = 2;
             } else {
                 $poolCounts[$m] = (int) $poolCounts[$m];

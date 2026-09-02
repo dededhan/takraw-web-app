@@ -22,7 +22,7 @@ const parseTimeToMinutes = (timeStr) => {
     return (h || 0) * 60 + (m || 0);
 };
 
-export default function Config({ tournament, preview: initialPreview }) {
+export default function Config({ tournament, modePools = {}, preview: initialPreview }) {
     const [step, setStep] = useState(1);
     const [calcMode, setCalcMode] = useState('auto'); // 'auto' | 'manual'
     const [sessionsBeforeBreak, setSessionsBeforeBreak] = useState(4);
@@ -850,14 +850,24 @@ export default function Config({ tournament, preview: initialPreview }) {
                     {/* ─── STEP 2: Mode Tanding ─── */}
                     {step === 2 && (
                         <div className="rounded-3xl border border-surface-700/60 bg-surface-900/80 backdrop-blur-md p-6 sm:p-8 space-y-6 shadow-2xl animate-fade-in">
-                            <div className="pb-4 border-b border-surface-800">
-                                <h3 className="text-lg font-bold text-surface-100 flex items-center gap-2">
-                                    <span>🏆</span>
-                                    <span>Pilih Kategori / Mode Pertandingan</span>
-                                </h3>
-                                <p className="text-xs text-surface-400 mt-1">
-                                    Pilih satu atau beberapa mode yang akan dipertandingkan pada turnamen ini, serta tentukan jumlah pembagian poolnya.
-                                </p>
+                            <div className="pb-4 border-b border-surface-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                    <h3 className="text-lg font-bold text-surface-100 flex items-center gap-2">
+                                        <span>🏆</span>
+                                        <span>Kategori & Struktur Braket / Pool</span>
+                                    </h3>
+                                    <p className="text-xs text-surface-400 mt-1">
+                                        Pilih mode yang akan dipertandingkan. Sistem mendeteksi konfigurasi braket dan pool yang telah disiapkan pada turnamen ini.
+                                    </p>
+                                </div>
+                                <Link
+                                    href={route('pools.index', tournament.id)}
+                                    target="_blank"
+                                    className="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-surface-700 text-xs font-bold text-primary-300 flex items-center gap-1.5 self-start sm:self-auto transition-colors"
+                                >
+                                    <span>⚙️ Kelola Bagan & Pool</span>
+                                    <span>↗</span>
+                                </Link>
                             </div>
 
                             {errors.modes && (
@@ -866,47 +876,120 @@ export default function Config({ tournament, preview: initialPreview }) {
                                 </p>
                             )}
 
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                                 {MODES.map(mode => {
                                     const isActive = data.modes.includes(mode.key);
+                                    const modePoolData = modePools?.[mode.key];
+                                    const hasDbPools = modePoolData && modePoolData.brackets && modePoolData.brackets.length > 0;
+                                    const totalPools = hasDbPools ? modePoolData.total_pools : (data.pool_counts[mode.key] || 2);
+
                                     return (
                                         <div
                                             key={mode.key}
-                                            className={`rounded-2xl border-2 p-4 cursor-pointer transition-all duration-150 flex items-center justify-between gap-4 ${
+                                            className={`rounded-2xl border-2 p-4 cursor-pointer transition-all duration-150 ${
                                                 isActive
                                                     ? `bg-gradient-to-r ${mode.color} shadow-lg ring-1 ring-primary-500/30`
                                                     : 'bg-surface-950/40 border-surface-800 hover:border-surface-700 text-surface-400'
                                             }`}
                                             onClick={() => toggleMode(mode.key)}
                                         >
-                                            <div className="flex items-center gap-3.5 min-w-0">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isActive}
-                                                    readOnly
-                                                    className="w-5 h-5 rounded text-primary-600 bg-surface-900 border-surface-700 focus:ring-primary-500 shrink-0"
-                                                />
-                                                <span className="text-2xl shrink-0">{mode.icon}</span>
-                                                <div className="min-w-0">
-                                                    <p className="font-bold text-sm text-surface-100 truncate">{mode.label}</p>
-                                                    <p className="text-xs text-surface-400 truncate">{mode.desc}</p>
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3.5 min-w-0">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isActive}
+                                                        readOnly
+                                                        className="w-5 h-5 rounded text-primary-600 bg-surface-900 border-surface-700 focus:ring-primary-500 shrink-0"
+                                                    />
+                                                    <span className="text-2xl shrink-0">{mode.icon}</span>
+                                                    <div className="min-w-0">
+                                                        <p className="font-bold text-sm text-surface-100 truncate">{mode.label}</p>
+                                                        <p className="text-xs text-surface-400 truncate">{mode.desc}</p>
+                                                    </div>
                                                 </div>
+
+                                                {isActive && (
+                                                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto" onClick={e => e.stopPropagation()}>
+                                                        {hasDbPools ? (
+                                                            <span className="px-3 py-1.5 rounded-xl bg-surface-900/90 border border-surface-700 text-xs font-bold text-surface-100 flex items-center gap-1.5 shadow-sm">
+                                                                <span className="text-primary-400">📊 Terkonfigurasi:</span>
+                                                                <span>{modePoolData.brackets.length} Braket ({modePoolData.total_pools} Pool)</span>
+                                                            </span>
+                                                        ) : (
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="text-xs font-bold text-surface-300">Jumlah Pool:</label>
+                                                                <select
+                                                                    value={data.pool_counts[mode.key] || 2}
+                                                                    onChange={e => setPoolCount(mode.key, +e.target.value)}
+                                                                    className="rounded-xl bg-surface-900 border border-surface-700 px-3 py-1.5 text-xs text-surface-100 font-bold focus:border-primary-500"
+                                                                >
+                                                                    <option value={1}>1 Pool (Full Round Robin — Juara dari Klasemen)</option>
+                                                                    <option value={2}>2 Pool (Pool A & B — Semifinal & Final)</option>
+                                                                    <option value={3}>3 Pool (Pool A, B, C — Wildcard & Final)</option>
+                                                                    <option value={4}>4 Pool (Pool A, B, C, D — QF, SF, Final)</option>
+                                                                    <option value={6}>6 Pool (Pool A s/d F — R16, QF, SF, Final)</option>
+                                                                    <option value={8}>8 Pool (Pool A s/d H — R16, QF, SF, Final)</option>
+                                                                </select>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
 
+                                            {/* Detailed Braket / Pool Breakdown when mode is active */}
                                             {isActive && (
-                                                <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                                                    <label className="text-xs font-bold text-surface-300">Jumlah Pool:</label>
-                                                    <select
-                                                        value={data.pool_counts[mode.key] || 2}
-                                                        onChange={e => setPoolCount(mode.key, +e.target.value)}
-                                                        className="rounded-xl bg-surface-900 border border-surface-700 px-3 py-1.5 text-xs text-surface-100 font-bold focus:border-primary-500"
-                                                    >
-                                                        {[1, 2, 3, 4, 6, 8].map(n => (
-                                                            <option key={n} value={n}>
-                                                                {n === 1 ? '1 Pool (Pool A — Langsung Final / 2 Bracket)' : `${n} Pool (${String.fromCharCode(65)} s/d ${String.fromCharCode(64 + n)})`}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                <div className="mt-3.5 pt-3.5 border-t border-surface-800/80 space-y-2.5" onClick={e => e.stopPropagation()}>
+                                                    {hasDbPools ? (
+                                                        <div>
+                                                            <p className="text-[11px] font-bold text-surface-400 uppercase tracking-wider mb-2">
+                                                                Rincian Braket & Pool:
+                                                            </p>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                                                {modePoolData.brackets.map((b, bIdx) => (
+                                                                    <div key={bIdx} className="p-3 rounded-xl bg-surface-950/80 border border-surface-800 text-xs space-y-1.5 shadow-sm">
+                                                                        <div className="flex items-center justify-between font-bold text-surface-200">
+                                                                            <span className="truncate">{b.bracket_name}</span>
+                                                                            <span className="text-[11px] px-2 py-0.5 rounded bg-surface-900 text-primary-300 border border-surface-750 font-mono">
+                                                                                {b.pool_count} Pool
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex flex-wrap gap-1 text-[10.5px]">
+                                                                            {b.pools.map(p => (
+                                                                                <span key={p.id} className="px-1.5 py-0.5 rounded bg-surface-900 text-surface-300 border border-surface-800">
+                                                                                    Pool {p.name} ({p.teams_count} Tim)
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                        {b.pool_count === 1 ? (
+                                                                            <p className="text-[10px] text-emerald-400/90 font-medium flex items-center gap-1 pt-0.5">
+                                                                                <span>🏆</span>
+                                                                                <span>1 Pool: Full Round Robin (Juara dari Klasemen — Tanpa Babak Gugur)</span>
+                                                                            </p>
+                                                                        ) : (
+                                                                            <p className="text-[10px] text-amber-400/80 font-medium flex items-center gap-1 pt-0.5">
+                                                                                <span>⚔️</span>
+                                                                                <span>Babak Gugur (Playoff & Final Braket)</span>
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-3 rounded-xl bg-surface-950/60 border border-surface-800 text-xs">
+                                                            {Number(data.pool_counts[mode.key] || 2) === 1 ? (
+                                                                <p className="text-emerald-300 font-medium flex items-center gap-1.5">
+                                                                    <span>🏆</span>
+                                                                    <span><strong>Format 1 Pool (Full Round Robin):</strong> Seluruh tim bertanding satu sama lain. Pemenang dan juara ditentukan langsung dari poin klasemen akhir (tanpa babak gugur lanjutan).</span>
+                                                                </p>
+                                                            ) : (
+                                                                <p className="text-surface-300 font-medium flex items-center gap-1.5">
+                                                                    <span>⚔️</span>
+                                                                    <span><strong>Format {data.pool_counts[mode.key] || 2} Pool:</strong> Babak penyisihan pool dilanjutkan babak gugur (Playoff/Semifinal/Final) untuk menentukan juara.</span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -963,22 +1046,50 @@ export default function Config({ tournament, preview: initialPreview }) {
                             </div>
 
                             {/* Active Mode summary */}
-                            <div className="rounded-2xl bg-surface-950/60 border border-surface-800 p-4">
-                                <p className="text-xs font-bold text-surface-400 uppercase tracking-wider mb-2.5">
-                                    Mode Tanding yang Akan Dibuat:
+                            <div className="rounded-2xl bg-surface-950/60 border border-surface-800 p-4 space-y-3">
+                                <p className="text-xs font-bold text-surface-400 uppercase tracking-wider">
+                                    Kategori & Struktur Braket / Pool Terpilih:
                                 </p>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     {data.modes.map(m => {
                                         const mode = MODES.find(x => x.key === m);
+                                        const modePoolData = modePools?.[m];
+                                        const hasDbPools = modePoolData && modePoolData.brackets && modePoolData.brackets.length > 0;
+
                                         return (
-                                            <span
+                                            <div
                                                 key={m}
-                                                className="px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 bg-surface-900 border-surface-700 text-surface-200 shadow-sm"
+                                                className="p-3.5 rounded-xl border bg-surface-900/90 border-surface-750 text-surface-200 shadow-sm space-y-2"
                                             >
-                                                <span>{mode?.icon}</span>
-                                                <span>{mode?.label}</span>
-                                                <span className="text-primary-300 font-mono">({data.pool_counts[m] || 2} Pool)</span>
-                                            </span>
+                                                <div className="flex items-center justify-between font-bold text-xs">
+                                                    <span className="flex items-center gap-1.5 text-surface-100">
+                                                        <span>{mode?.icon}</span>
+                                                        <span>{mode?.label}</span>
+                                                    </span>
+                                                    <span className="text-primary-300 font-mono">
+                                                        {hasDbPools ? `${modePoolData.brackets.length} Braket (${modePoolData.total_pools} Pool)` : `${data.pool_counts[m] || 2} Pool`}
+                                                    </span>
+                                                </div>
+
+                                                {hasDbPools ? (
+                                                    <div className="space-y-1 text-[11px] text-surface-400">
+                                                        {modePoolData.brackets.map((b, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between">
+                                                                <span className="text-surface-300">{b.bracket_name}:</span>
+                                                                <span className={b.pool_count === 1 ? 'text-emerald-400 font-semibold' : 'text-surface-400'}>
+                                                                    {b.pool_count} Pool {b.pool_count === 1 ? '(1 Pool — Round Robin)' : ''}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-[11px] text-surface-400">
+                                                        {Number(data.pool_counts[m] || 2) === 1
+                                                            ? 'Format 1 Pool (Full Round Robin — Juara dari Klasemen)'
+                                                            : `Format ${data.pool_counts[m] || 2} Pool (Babak Penyisihan + Gugur)`}
+                                                    </p>
+                                                )}
+                                            </div>
                                         );
                                     })}
                                 </div>

@@ -15,7 +15,7 @@ class BracketMatrixController extends Controller
      */
     public function index(Tournament $tournament): Response
     {
-        $tournament->load(['modes', 'bracketMatrices']);
+        $tournament->load(['modes', 'bracketMatrices', 'pools.teams', 'pools.superTeams']);
 
         // Siapkan data: untuk setiap mode aktif, tampilkan matrix yang sudah ada
         $activeModes = $tournament->modes()
@@ -26,16 +26,57 @@ class BracketMatrixController extends Controller
             ->get()
             ->groupBy('match_mode');
 
-        // Buat structure bracket stages per jumlah pool
+        // Buat structure bracket stages per braket & mode
+        $modeBrackets = [];
         $stageOptions = [];
+
         foreach ($activeModes as $mode) {
-            $poolCount   = $mode->pool_count;
-            $stageOptions[$mode->match_mode] = $this->getBracketStages($poolCount);
+            $poolsForMode = $tournament->pools->where('match_mode', $mode->match_mode);
+            $bracketsGrouped = $poolsForMode->groupBy('bracket_name');
+
+            if ($bracketsGrouped->isNotEmpty()) {
+                $bList = [];
+                $bracketIdx = 1;
+                foreach ($bracketsGrouped as $bracketName => $pools) {
+                    $bPoolCount = $pools->count();
+                    $bList[] = [
+                        'bracket_number' => $bracketIdx++,
+                        'bracket_name'   => $bracketName ?: "Braket {$bracketIdx}",
+                        'pool_count'     => $bPoolCount,
+                        'pools'          => $pools->values()->map(fn($p) => [
+                            'id'           => $p->id,
+                            'name'         => $p->name,
+                            'display_name' => $p->display_name ?? "Pool {$p->name}",
+                            'teams_count'  => in_array($mode->match_mode, ['team_regu', 'team_double'])
+                                ? $p->superTeams->count()
+                                : $p->teams->count(),
+                        ]),
+                        'is_single_pool' => $bPoolCount <= 1,
+                        'stages'         => $this->getBracketStages($bPoolCount),
+                    ];
+                }
+                $modeBrackets[$mode->match_mode] = $bList;
+                $stageOptions[$mode->match_mode] = $this->getBracketStages($poolsForMode->count());
+            } else {
+                $poolCount = $mode->pool_count ?? 2;
+                $modeBrackets[$mode->match_mode] = [
+                    [
+                        'bracket_number' => 1,
+                        'bracket_name'   => 'Braket Utama',
+                        'pool_count'     => $poolCount,
+                        'pools'          => [],
+                        'is_single_pool' => $poolCount <= 1,
+                        'stages'         => $this->getBracketStages($poolCount),
+                    ],
+                ];
+                $stageOptions[$mode->match_mode] = $this->getBracketStages($poolCount);
+            }
         }
 
         return Inertia::render('Tournament/MasterSchedule/BracketMatrix', [
             'tournament'   => $tournament,
             'activeModes'  => $activeModes,
+            'modeBrackets' => $modeBrackets,
             'matrices'     => $matrices,
             'stageOptions' => $stageOptions,
         ]);
