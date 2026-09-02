@@ -6,19 +6,20 @@ use App\Models\Match_;
 use App\Models\Team;
 use App\Models\Tournament;
 use App\Models\User;
+use App\Services\AthletePerformanceService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): Response
+    public function __invoke(Request $request, AthletePerformanceService $performanceService): Response
     {
         $user = $request->user();
 
         return match ($user->role) {
             'admin' => $this->adminDashboard(),
-            'coach' => $this->coachDashboard($user),
+            'coach' => $this->coachDashboard($user, $performanceService),
             'referee' => $this->refereeDashboard($user),
         };
     }
@@ -43,7 +44,7 @@ class DashboardController extends Controller
         ]);
     }
 
-    private function coachDashboard(User $user): Response
+    private function coachDashboard(User $user, AthletePerformanceService $performanceService): Response
     {
         $teams = $user->coachedTeams()->with(['athletes', 'tournaments'])->get();
         $superTeams = $user->coachedSuperTeams()->with(['members.athletes', 'tournament'])->get();
@@ -114,6 +115,8 @@ class DashboardController extends Controller
         $totalFinished = $winsCount + $lossCount;
         $winRate = $totalFinished > 0 ? round(($winsCount / $totalFinished) * 100) : 0;
 
+        $athleteAwards = $performanceService->getCoachAthleteAwards($user->id);
+
         return Inertia::render('Dashboard/Coach', [
             'teams' => $teams,
             'superTeams' => $superTeams,
@@ -122,6 +125,7 @@ class DashboardController extends Controller
             'completedTournaments' => $completedTournaments,
             'upcomingMatches' => $upcomingMatches,
             'recentMatches' => $recentMatches,
+            'athleteAwards' => $athleteAwards,
             'stats' => [
                 'totalTeams' => $teams->count(),
                 'totalSuperTeams' => $superTeams->count(),

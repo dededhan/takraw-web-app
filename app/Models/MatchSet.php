@@ -43,6 +43,11 @@ class MatchSet extends Model
         return $this->hasMany(SetStat::class, 'match_set_id');
     }
 
+    public function setStats(): HasMany
+    {
+        return $this->hasMany(SetStat::class, 'match_set_id');
+    }
+
     // ─── Helpers ────────────────────────────────────
 
     public function isLive(): bool

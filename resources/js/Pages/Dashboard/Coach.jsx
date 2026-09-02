@@ -11,6 +11,7 @@ export default function CoachDashboard({
     completedTournaments = [],
     upcomingMatches = [],
     recentMatches = [],
+    athleteAwards = [],
     stats = {}
 }) {
     const [activeTab, setActiveTab] = useState('tournaments'); // tournaments, upcoming, history
@@ -50,6 +51,39 @@ export default function CoachDashboard({
     return (
         <AuthenticatedLayout header="Dashboard Pelatih">
             <Head title="Dashboard Pelatih" />
+
+            {/* Athlete Awards Banner if any */}
+            {athleteAwards && athleteAwards.length > 0 && (
+                <div className="mb-6 p-5 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/15 via-surface-900/80 to-surface-900 shadow-lg shadow-amber-500/5">
+                    <div className="flex items-center justify-between mb-3.5">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xl">🏆</span>
+                            <h3 className="text-sm font-bold text-surface-100 uppercase tracking-wider">
+                                Prestasi & Penghargaan Atlet Binaan
+                            </h3>
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
+                                {athleteAwards.length} Gelar Diraih
+                            </span>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {athleteAwards.map((aw, idx) => (
+                            <div key={idx} className="p-3.5 rounded-xl bg-surface-950/60 border border-amber-500/20 flex items-center gap-3 hover:border-amber-500/40 transition-colors">
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
+                                    {aw.badge}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-bold text-amber-300 truncate">{aw.category_title}</p>
+                                    <p className="text-sm font-black text-surface-100 truncate">{aw.athlete?.name}</p>
+                                    <p className="text-[10px] text-surface-400 truncate">
+                                        {aw.tournament_name} • {aw.scope}
+                                    </p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

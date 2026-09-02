@@ -7,6 +7,7 @@ use App\Models\Team;
 use App\Models\SuperTeam;
 use App\Models\Match_;
 use App\Models\Athlete;
+use App\Services\AthletePerformanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -64,7 +65,7 @@ class CoachTournamentController extends Controller
     /**
      * Display tournament history for coach.
      */
-    public function history(Request $request): Response
+    public function history(Request $request, AthletePerformanceService $performanceService): Response
     {
         $user = $request->user();
         $teamIds = Team::where('coach_id', $user->id)->pluck('id');
@@ -103,8 +104,11 @@ class CoachTournamentController extends Controller
             ->latest('start_date')
             ->get();
 
+        $athleteAwards = $performanceService->getCoachAthleteAwards($user->id);
+
         return Inertia::render('Coach/TournamentHistory', [
-            'tournaments' => $tournaments,
+            'tournaments'   => $tournaments,
+            'athleteAwards' => $athleteAwards,
         ]);
     }
 

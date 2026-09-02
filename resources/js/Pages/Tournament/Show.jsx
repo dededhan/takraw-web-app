@@ -9,9 +9,10 @@ const TABS = [
     { key: 'pools', label: 'Pool', icon: '🏊' },
     { key: 'matches', label: 'Pertandingan', icon: '⚔️' },
     { key: 'bracket', label: 'Bagan Bracket', icon: '👑' },
+    { key: 'best_players', label: 'Pemain Terbaik', icon: '🎖️' },
 ];
 
-export default function TournamentShow({ tournament, availableTeams = [] }) {
+export default function TournamentShow({ tournament, availableTeams = [], bestPlayersData = null }) {
     const [activeTab, setActiveTab] = useState('overview');
     const [copiedKey, setCopiedKey] = useState(false);
     const modeLabels = {
@@ -168,6 +169,7 @@ export default function TournamentShow({ tournament, availableTeams = [] }) {
                 {activeTab === 'pools' && <PoolsTab pools={tournament.pools} tournamentId={tournament.id} />}
                 {activeTab === 'matches' && <MatchesTab matches={tournament.matches} />}
                 {activeTab === 'bracket' && <BracketTab tournament={tournament} />}
+                {activeTab === 'best_players' && <BestPlayersTab bestPlayersData={bestPlayersData} tournament={tournament} />}
             </div>
         </AuthenticatedLayout>
     );
@@ -1438,6 +1440,438 @@ function BracketMatchCard({ match }) {
                 </span>
             </div>
         </Link>
+    );
+}
+
+function BestPlayersTab({ bestPlayersData, tournament }) {
+    if (!bestPlayersData || !bestPlayersData.has_data) {
+        return (
+            <div className="rounded-2xl border border-surface-700/40 bg-surface-900/60 p-12 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center text-3xl mx-auto mb-4 shadow-inner">
+                    🎖️
+                </div>
+                <h3 className="text-lg font-bold text-surface-100 mb-2">Belum Ada Data Statistik Pertandingan</h3>
+                <p className="text-xs text-surface-400 max-w-md mx-auto leading-relaxed mb-6">
+                    Pemain Terbaik (MVP & Kategori Tekong, Smasher, Blocker, Feeder) akan otomatis terkalkulasi saat wasit mencatat aksi pertandingan melalui menu <strong>Live Scoring</strong>.
+                </p>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-800/80 border border-surface-700/60 text-xs text-surface-300">
+                    <span>💡 Tips:</span>
+                    <span>Setiap Service Ace (+3), Smash (+3), Blok (+3), Umpan (+2) dan Receive (+1) akan menambah skor performa atlet.</span>
+                </div>
+            </div>
+        );
+    }
+
+    const [selectedScope, setSelectedScope] = useState('overall');
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Build available scope options
+    const scopeOptions = [
+        { key: 'overall', label: '🌟 Keseluruhan Turnamen', awards: bestPlayersData.overall?.awards, leaderboard: bestPlayersData.overall?.leaderboard || [] },
+    ];
+
+    if (bestPlayersData.brackets && bestPlayersData.brackets.length > 0) {
+        bestPlayersData.brackets.forEach((b) => {
+            scopeOptions.push({
+                key: `bracket_${b.bracket_number}`,
+                label: `👑 ${b.bracket_name}`,
+                awards: b.awards,
+                leaderboard: b.leaderboard || [],
+            });
+
+            if (b.pools && b.pools.length > 0) {
+                b.pools.forEach((p) => {
+                    scopeOptions.push({
+                        key: `pool_${p.pool_id}`,
+                        label: `🏊 ${p.display_name}`,
+                        awards: p.awards,
+                        leaderboard: p.leaderboard || [],
+                    });
+                });
+            }
+        });
+    }
+
+    const currentScope = scopeOptions.find((s) => s.key === selectedScope) || scopeOptions[0];
+    const currentAwards = currentScope.awards || {};
+    const rawLeaderboard = currentScope.leaderboard || [];
+
+    const filteredLeaderboard = rawLeaderboard.filter((player) => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            player.name.toLowerCase().includes(q) ||
+            player.team_name.toLowerCase().includes(q) ||
+            (player.position && player.position.toLowerCase().includes(q))
+        );
+    });
+
+    return (
+        <div className="space-y-8">
+            {/* Header & Scope Filter */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-surface-900/60 to-surface-900 border border-amber-500/20">
+                <div>
+                    <h2 className="text-xl font-bold text-surface-100 flex items-center gap-2">
+                        <span>🎖️ Pemain Terbaik (Best Players & MVP)</span>
+                    </h2>
+                    <p className="text-xs text-surface-400 mt-1">
+                        Peringkat performa dan gelar pemain terbaik per Bracket, Pool, atau Keseluruhan Turnamen.
+                    </p>
+                </div>
+
+                {/* Scope Switcher Pills */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
+                    {scopeOptions.map((opt) => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setSelectedScope(opt.key)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                                selectedScope === opt.key
+                                    ? 'bg-amber-500 text-surface-950 shadow-md shadow-amber-500/20'
+                                    : 'bg-surface-800/80 hover:bg-surface-700 text-surface-300 border border-surface-700/60'
+                            }`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Award Cards Grid (MVP + 4 Categories) */}
+            <div>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                        <span>🏆 Penghargaan Kategori — {currentScope.label}</span>
+                    </h3>
+                    <span className="text-xs text-surface-500">
+                        {rawLeaderboard.length} Atlet Terdata
+                    </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                    {/* 1. MVP (Pemain Terbaik Keseluruhan) */}
+                    <PlayerAwardCard
+                        title="MVP / Pemain Terbaik"
+                        subtitle="Skor Performa Tertinggi"
+                        badgeIcon="👑"
+                        theme="gold"
+                        athlete={currentAwards.mvp}
+                        mainStatLabel="Skor MVP"
+                        mainStatValue={currentAwards.mvp?.mvp_score}
+                        extraStatLabel="Total Poin"
+                        extraStatValue={currentAwards.mvp?.total_points}
+                    />
+
+                    {/* 2. Tekong Terbaik */}
+                    <PlayerAwardCard
+                        title="Tekong Terbaik"
+                        subtitle="Best Server"
+                        badgeIcon="⚡"
+                        theme="sky"
+                        athlete={currentAwards.best_server}
+                        mainStatLabel="Service Ace"
+                        mainStatValue={currentAwards.best_server?.stats?.service_ace ?? 0}
+                        extraStatLabel="Servis Masuk"
+                        extraStatValue={currentAwards.best_server?.stats?.service_in ?? 0}
+                    />
+
+                    {/* 3. Killer/Smasher Terbaik */}
+                    <PlayerAwardCard
+                        title="Smasher Terbaik"
+                        subtitle="Best Striker / Killer"
+                        badgeIcon="💥"
+                        theme="rose"
+                        athlete={currentAwards.best_striker}
+                        mainStatLabel="Spike Ace"
+                        mainStatValue={currentAwards.best_striker?.stats?.strike_ace ?? 0}
+                        extraStatLabel="Smash Sukses"
+                        extraStatValue={currentAwards.best_striker?.stats?.strike_success ?? 0}
+                    />
+
+                    {/* 4. Blocker/Defender Terbaik */}
+                    <PlayerAwardCard
+                        title="Defender Terbaik"
+                        subtitle="Best Blocker / Receiver"
+                        badgeIcon="🛡️"
+                        theme="emerald"
+                        athlete={currentAwards.best_blocker}
+                        mainStatLabel="Block Poin"
+                        mainStatValue={(currentAwards.best_blocker?.stats?.blocking_ace ?? 0) + (currentAwards.best_blocker?.stats?.block_success ?? 0)}
+                        extraStatLabel="Receive Bagus"
+                        extraStatValue={currentAwards.best_blocker?.stats?.receive_success ?? 0}
+                    />
+
+                    {/* 5. Feeder/Setter Terbaik */}
+                    <PlayerAwardCard
+                        title="Feeder Terbaik"
+                        subtitle="Best Setter / Assist"
+                        badgeIcon="🎯"
+                        theme="purple"
+                        athlete={currentAwards.best_feeder}
+                        mainStatLabel="Umpan Sukses"
+                        mainStatValue={currentAwards.best_feeder?.stats?.feeding_success ?? 0}
+                        extraStatLabel="Feeding Ace"
+                        extraStatValue={currentAwards.best_feeder?.stats?.feeding_ace ?? 0}
+                    />
+                </div>
+            </div>
+
+            {/* Detailed Leaderboard Table */}
+            <div className="rounded-2xl border border-surface-700/50 bg-surface-900/60 overflow-hidden backdrop-blur-sm">
+                <div className="p-5 border-b border-surface-700/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-surface-900/80">
+                    <div>
+                        <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
+                            <span>📊 Klasemen & Leaderboard Seluruh Pemain</span>
+                        </h3>
+                        <p className="text-xs text-surface-400 mt-0.5">
+                            Rincian statistik seluruh aksi dan skor index performa atlet ({currentScope.label}).
+                        </p>
+                    </div>
+
+                    <div className="relative w-full sm:w-64">
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Cari pemain atau tim..."
+                            className="w-full pl-9 pr-3 py-2 rounded-xl bg-surface-800/80 border border-surface-700/60 text-xs text-surface-100 placeholder-surface-500 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors"
+                        />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500 text-xs">🔍</span>
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                        <thead className="bg-surface-800/50 text-surface-400 uppercase tracking-wider font-semibold border-b border-surface-700/40 text-[11px]">
+                            <tr>
+                                <th className="py-3 px-4 text-center w-12">#</th>
+                                <th className="py-3 px-4">Pemain</th>
+                                <th className="py-3 px-4">Tim</th>
+                                <th className="py-3 px-3 text-center">Posisi</th>
+                                <th className="py-3 px-3 text-center">Match / Set</th>
+                                <th className="py-3 px-3 text-center font-bold text-amber-400">Total Poin</th>
+                                <th className="py-3 px-3 text-center">Servis (Ace/In/Err)</th>
+                                <th className="py-3 px-3 text-center">Smash (Ace/Ok/Err)</th>
+                                <th className="py-3 px-3 text-center">Blok (Ace/Ok)</th>
+                                <th className="py-3 px-3 text-center">Umpan (Ok/Err)</th>
+                                <th className="py-3 px-3 text-center">Receive (Ok/Err)</th>
+                                <th className="py-3 px-4 text-right font-bold text-amber-300">Skor MVP</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-surface-800/40 text-surface-200">
+                            {filteredLeaderboard.length === 0 ? (
+                                <tr>
+                                    <td colSpan="12" className="py-8 text-center text-surface-500">
+                                        Tidak ada pemain yang cocok dengan pencarian "{searchQuery}".
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredLeaderboard.map((p, idx) => (
+                                    <tr
+                                        key={p.athlete_id}
+                                        className={`hover:bg-surface-800/30 transition-colors ${
+                                            p.rank === 1 ? 'bg-amber-500/5' : ''
+                                        }`}
+                                    >
+                                        <td className="py-3 px-4 text-center font-bold">
+                                            {p.rank === 1 && <span className="text-base" title="Rank 1">🥇</span>}
+                                            {p.rank === 2 && <span className="text-base" title="Rank 2">🥈</span>}
+                                            {p.rank === 3 && <span className="text-base" title="Rank 3">🥉</span>}
+                                            {p.rank > 3 && <span className="text-surface-400">{p.rank}</span>}
+                                        </td>
+                                        <td className="py-3 px-4">
+                                            <div className="flex items-center gap-2.5">
+                                                {p.photo_url ? (
+                                                    <img
+                                                        src={p.photo_url}
+                                                        alt={p.name}
+                                                        className="w-8 h-8 rounded-full object-cover border border-surface-700/60 shrink-0"
+                                                    />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-surface-800 border border-surface-700/60 flex items-center justify-center font-bold text-xs text-amber-300 shrink-0">
+                                                        {p.name.charAt(0)}
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <div className="font-bold text-surface-100 flex items-center gap-1.5">
+                                                        <span>{p.name}</span>
+                                                        {p.jersey_number && (
+                                                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-800 border border-surface-700 text-surface-400 font-mono">
+                                                                #{p.jersey_number}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-3 px-4 text-surface-300 font-medium">
+                                            {p.team_name}
+                                        </td>
+                                        <td className="py-3 px-3 text-center">
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-800 border border-surface-700/50 text-surface-300 capitalize">
+                                                {p.position || 'All-Round'}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 px-3 text-center text-surface-400 font-mono">
+                                            {p.matches_played}m / {p.sets_played}s
+                                        </td>
+                                        <td className="py-3 px-3 text-center font-bold text-amber-400 font-mono text-sm">
+                                            {p.total_points}
+                                        </td>
+                                        <td className="py-3 px-3 text-center font-mono text-[11px] text-surface-300">
+                                            <span className="text-emerald-400 font-bold">{p.stats.service_ace}</span> / {p.stats.service_in} / <span className="text-red-400">{p.stats.service_error}</span>
+                                        </td>
+                                        <td className="py-3 px-3 text-center font-mono text-[11px] text-surface-300">
+                                            <span className="text-rose-400 font-bold">{p.stats.strike_ace}</span> / {p.stats.strike_success} / <span className="text-red-400">{p.stats.strike_fail}</span>
+                                        </td>
+                                        <td className="py-3 px-3 text-center font-mono text-[11px] text-surface-300">
+                                            <span className="text-teal-400 font-bold">{p.stats.blocking_ace}</span> / {p.stats.block_success}
+                                        </td>
+                                        <td className="py-3 px-3 text-center font-mono text-[11px] text-surface-300">
+                                            <span className="text-purple-400 font-bold">{p.stats.feeding_success}</span> / <span className="text-red-400">{p.stats.feeding_fail}</span>
+                                        </td>
+                                        <td className="py-3 px-3 text-center font-mono text-[11px] text-surface-300">
+                                            <span className="text-emerald-400">{p.stats.receive_success}</span> / <span className="text-red-400">{p.stats.receive_fail}</span>
+                                        </td>
+                                        <td className="py-3 px-4 text-right">
+                                            <span className="inline-block px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-black font-mono text-xs">
+                                                {p.mvp_score}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function PlayerAwardCard({
+    title,
+    subtitle,
+    badgeIcon,
+    theme = 'gold',
+    athlete,
+    mainStatLabel,
+    mainStatValue,
+    extraStatLabel,
+    extraStatValue,
+}) {
+    const themeStyles = {
+        gold: {
+            border: 'border-amber-500/40',
+            bg: 'from-amber-500/15 via-surface-900/80 to-surface-900',
+            badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+            statText: 'text-amber-400',
+            glow: 'shadow-amber-500/10',
+        },
+        sky: {
+            border: 'border-sky-500/40',
+            bg: 'from-sky-500/15 via-surface-900/80 to-surface-900',
+            badgeBg: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+            statText: 'text-sky-400',
+            glow: 'shadow-sky-500/10',
+        },
+        rose: {
+            border: 'border-rose-500/40',
+            bg: 'from-rose-500/15 via-surface-900/80 to-surface-900',
+            badgeBg: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+            statText: 'text-rose-400',
+            glow: 'shadow-rose-500/10',
+        },
+        emerald: {
+            border: 'border-emerald-500/40',
+            bg: 'from-emerald-500/15 via-surface-900/80 to-surface-900',
+            badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+            statText: 'text-emerald-400',
+            glow: 'shadow-emerald-500/10',
+        },
+        purple: {
+            border: 'border-purple-500/40',
+            bg: 'from-purple-500/15 via-surface-900/80 to-surface-900',
+            badgeBg: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+            statText: 'text-purple-400',
+            glow: 'shadow-purple-500/10',
+        },
+    };
+
+    const s = themeStyles[theme] || themeStyles.gold;
+
+    if (!athlete) {
+        return (
+            <div className={`rounded-2xl border ${s.border} bg-surface-900/40 p-4 flex flex-col justify-between opacity-60`}>
+                <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-surface-400 uppercase tracking-wider">{title}</span>
+                    <span className="text-lg">{badgeIcon}</span>
+                </div>
+                <div className="py-6 text-center text-xs text-surface-500">
+                    Belum ada data aksi
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className={`relative overflow-hidden rounded-2xl border ${s.border} bg-gradient-to-br ${s.bg} p-4 flex flex-col justify-between shadow-lg ${s.glow} transition-all duration-300 hover:scale-[1.02]`}>
+            {/* Top Badge */}
+            <div>
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-lg">{badgeIcon}</span>
+                        <div>
+                            <p className="text-xs font-bold text-surface-100 uppercase tracking-wide">{title}</p>
+                            <p className="text-[10px] text-surface-400">{subtitle}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Athlete Info */}
+                <div className="flex items-center gap-3 my-3">
+                    {athlete.photo_url ? (
+                        <img
+                            src={athlete.photo_url}
+                            alt={athlete.name}
+                            className="w-12 h-12 rounded-xl object-cover border border-surface-700/60 shadow-md shrink-0"
+                        />
+                    ) : (
+                        <div className={`w-12 h-12 rounded-xl border flex items-center justify-center text-base font-black shrink-0 ${s.badgeBg}`}>
+                            {athlete.name.charAt(0)}
+                        </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-surface-100 truncate flex items-center gap-1.5" title={athlete.name}>
+                            <span className="truncate">{athlete.name}</span>
+                            {athlete.jersey_number && (
+                                <span className="text-[10px] px-1 py-0.2 rounded bg-black/40 text-surface-400 font-mono shrink-0">
+                                    #{athlete.jersey_number}
+                                </span>
+                            )}
+                        </p>
+                        <p className="text-xs text-surface-300 truncate mt-0.5" title={athlete.team_name}>
+                            {athlete.team_name}
+                        </p>
+                        <span className="inline-block mt-1 text-[9px] px-1.5 py-0.2 rounded bg-surface-800/80 text-surface-400 uppercase font-semibold">
+                            {athlete.position || 'Pemain'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Stats Highlight */}
+            <div className="mt-3 pt-3 border-t border-surface-700/40 grid grid-cols-2 gap-2 text-center">
+                <div className="p-1.5 rounded-lg bg-black/30 border border-surface-800/50">
+                    <p className={`text-sm font-black font-mono ${s.statText}`}>{mainStatValue ?? 0}</p>
+                    <p className="text-[9px] text-surface-400 font-medium">{mainStatLabel}</p>
+                </div>
+                <div className="p-1.5 rounded-lg bg-black/30 border border-surface-800/50">
+                    <p className="text-sm font-bold font-mono text-surface-200">{extraStatValue ?? 0}</p>
+                    <p className="text-[9px] text-surface-400 font-medium">{extraStatLabel}</p>
+                </div>
+            </div>
+        </div>
     );
 }
 

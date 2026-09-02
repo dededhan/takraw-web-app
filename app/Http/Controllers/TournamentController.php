@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Tournament;
 use App\Models\Team;
+use App\Services\AthletePerformanceService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -59,7 +60,7 @@ class TournamentController extends Controller
             ->with('success', 'Turnamen berhasil dibuat dengan ' . count($validated['modes']) . ' mode tanding! Silakan kelola Master Schedule.');
     }
 
-    public function show(Tournament $tournament): Response
+    public function show(Tournament $tournament, AthletePerformanceService $performanceService): Response
     {
         $tournament->load([
             'creator',
@@ -83,9 +84,12 @@ class TournamentController extends Controller
             ->orderBy('name')
             ->get();
 
+        $bestPlayersData = $performanceService->getTournamentBestPlayers($tournament);
+
         return Inertia::render('Tournament/Show', [
             'tournament' => $tournament,
             'availableTeams' => $availableTeams,
+            'bestPlayersData'=> $bestPlayersData,
         ]);
     }
 
