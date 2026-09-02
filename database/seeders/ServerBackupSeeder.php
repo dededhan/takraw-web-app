@@ -35,6 +35,7 @@ class ServerBackupSeeder extends Seeder
             'teams',
             'athletes',
             'tournament_teams',
+            'tournament_super_teams',
             'super_team_members',
             'pools',
             'pool_teams',
@@ -43,6 +44,7 @@ class ServerBackupSeeder extends Seeder
             'match_sets',
             'set_stats',
             'bracket_matrices',
+            'schedule_conflicts',
         ];
 
         foreach ($tables as $table) {

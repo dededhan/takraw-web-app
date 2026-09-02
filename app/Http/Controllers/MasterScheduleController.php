@@ -784,20 +784,20 @@ class MasterScheduleController extends Controller
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Publish jadwal (hanya jika tidak ada konflik error).
+     * Publish jadwal (dapat dipublikasi dengan pemberitahuan konflik jika ada).
      */
-    public function publish(Tournament $tournament)
+    public function publish(Request $request, Tournament $tournament)
     {
         $errorCount = ScheduleConflict::where('tournament_id', $tournament->id)
             ->whereNull('resolved_at')
             ->where('severity', 'error')
             ->count();
 
-        if ($errorCount > 0) {
-            return back()->with('error', "Tidak dapat publish — masih ada {$errorCount} konflik error yang harus diselesaikan terlebih dahulu.");
-        }
-
         $tournament->update(['schedule_status' => 'published']);
+
+        if ($errorCount > 0) {
+            return back()->with('success', "Jadwal Master berhasil dipublikasikan! 🎉 (Terdapat {$errorCount} konflik yang diabaikan/dapat diselesaikan nanti).");
+        }
 
         return back()->with('success', 'Jadwal Master berhasil dipublikasi! 🎉');
     }
