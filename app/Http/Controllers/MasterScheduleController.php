@@ -276,14 +276,21 @@ class MasterScheduleController extends Controller
             ->with(['match', 'conflictingMatch'])
             ->get();
 
+        $superTeamMemberIds = \Illuminate\Support\Facades\DB::table('super_team_members')
+            ->join('super_teams', 'super_teams.id', '=', 'super_team_members.super_team_id')
+            ->where('super_teams.tournament_id', $tournament->id)
+            ->pluck('super_team_members.team_id')
+            ->toArray();
+
         return Inertia::render('Tournament/MasterSchedule/Grid', [
-            'tournament'      => $tournament,
-            'matches'         => $matches,
-            'timeSlots'       => $timeSlots,
-            'courts'          => $courts,
-            'referees'        => $referees,
-            'activeConflicts' => $activeConflicts,
-            'totalDays'       => $tournament->total_days,
+            'tournament'         => $tournament,
+            'matches'            => $matches,
+            'timeSlots'          => $timeSlots,
+            'courts'             => $courts,
+            'referees'           => $referees,
+            'activeConflicts'    => $activeConflicts,
+            'totalDays'          => $tournament->total_days,
+            'superTeamMemberIds' => $superTeamMemberIds,
         ]);
     }
 

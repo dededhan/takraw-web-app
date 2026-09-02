@@ -30,33 +30,25 @@ export function isSideMatchingTeam(match, side, searchedTeam) {
     const sName = (searchedTeam.name || '').trim().toLowerCase();
 
     if (side === 'home') {
-        if (sId) {
-            if (searchedTeam.type === 'super_team') {
-                if (match.home_super_team_id === sId) return true;
-            } else {
-                if (match.home_team_id === sId) return true;
-                const members = match.home_super_team?.members || [];
-                if (members.some(m => m.id === sId)) return true;
-            }
+        if (searchedTeam.type === 'super_team') {
+            if (sId && match.home_super_team_id === sId) return true;
+            const homeStName = (match.home_super_team?.name || (match.home_super_team_id ? match.home_display_name : '') || '').trim().toLowerCase();
+            if (sName && homeStName === sName) return true;
+        } else {
+            if (sId && match.home_team_id === sId) return true;
+            const homeName = (match.home_team?.name || (match.home_team_id ? match.home_display_name : '') || match.home_placeholder || '').trim().toLowerCase();
+            if (sName && homeName === sName) return true;
         }
-        const homeName = (match.home_display_name || match.home_super_team?.name || match.home_team?.name || match.home_placeholder || '').trim().toLowerCase();
-        if (sName && homeName === sName) return true;
-        const members = match.home_super_team?.members || [];
-        if (sName && members.some(m => (m.name || '').trim().toLowerCase() === sName)) return true;
     } else {
-        if (sId) {
-            if (searchedTeam.type === 'super_team') {
-                if (match.away_super_team_id === sId) return true;
-            } else {
-                if (match.away_team_id === sId) return true;
-                const members = match.away_super_team?.members || [];
-                if (members.some(m => m.id === sId)) return true;
-            }
+        if (searchedTeam.type === 'super_team') {
+            if (sId && match.away_super_team_id === sId) return true;
+            const awayStName = (match.away_super_team?.name || (match.away_super_team_id ? match.away_display_name : '') || '').trim().toLowerCase();
+            if (sName && awayStName === sName) return true;
+        } else {
+            if (sId && match.away_team_id === sId) return true;
+            const awayName = (match.away_team?.name || (match.away_team_id ? match.away_display_name : '') || match.away_placeholder || '').trim().toLowerCase();
+            if (sName && awayName === sName) return true;
         }
-        const awayName = (match.away_display_name || match.away_super_team?.name || match.away_team?.name || match.away_placeholder || '').trim().toLowerCase();
-        if (sName && awayName === sName) return true;
-        const members = match.away_super_team?.members || [];
-        if (sName && members.some(m => (m.name || '').trim().toLowerCase() === sName)) return true;
     }
     return false;
 }

@@ -10,9 +10,17 @@ import MatchCard, { isSideMatchingTeam } from '@/Components/Schedule/MatchCard';
 
 const SLOT_HEIGHT = 68; // px per slot waktu
 
+const MODE_ICONS = {
+    regu:        { label: 'Regu',        icon: '🏐' },
+    double:      { label: 'Double',      icon: '👥' },
+    quadrant:    { label: 'Quadrant',    icon: '⬡'  },
+    team_regu:   { label: 'Team Regu',   icon: '🏆' },
+    team_double: { label: 'Team Double', icon: '🥇' },
+};
+
 /**
  * Grid — Kalender Grid Master Schedule dengan Pencarian Tim (Max 2 Tim),
- * Pewarnaan Khusus Duel / Clash, Panel Insight Lawan & Waktu,
+ * Mode Filter / Lock, Pewarnaan Khusus Duel / Clash, Panel Insight Lawan & Waktu,
  * serta Pengeditan Ulang Jadwal Published dengan Alert Konfirmasi.
  */
 export default function Grid({
@@ -22,6 +30,7 @@ export default function Grid({
     courts,
     referees = [],
     totalDays,
+    superTeamMemberIds = [],
 }) {
     const [draggingItem,       setDraggingItem]       = useState(null);
     const [isLoading,          setIsLoading]          = useState(false);
@@ -29,6 +38,9 @@ export default function Grid({
     const [showRefereeModal,   setShowRefereeModal]   = useState(false);
     const [showReEditModal,    setShowReEditModal]    = useState(false);
     const [isEditUnlocked,     setIsEditUnlocked]     = useState(tournament.schedule_status !== 'published');
+
+    // Filter Mode Kategori untuk Pencarian Tim
+    const [selectedSearchMode, setSelectedSearchMode] = useState('all');
 
     // Pencarian Tim (Maksimal 2 Tim)
     const [searchedTeam1,      setSearchedTeam1]      = useState(null);
@@ -42,38 +54,97 @@ export default function Grid({
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
     );
 
-    // Kumpulkan seluruh daftar tim unik yang berpartisipasi (Reguler & Super Team)
+    // Kategori Mode yang tersedia pada turnamen
+    const availableModes = useMemo(() => {
+        const list = [{ key: 'all', label: 'Semua Mode', icon: '🌐' }];
+        (tournament.modes || []).filter(m => m.is_active).forEach(m => {
+            const info = MODE_ICONS[m.match_mode] || { label: m.match_mode, icon: '🏆' };
+            list.push({ key: m.match_mode, label: info.label, icon: info.icon });
+        });
+        return list;
+    }, [tournament.modes]);
+
+    // Kumpulkan seluruh daftar tim unik yang berpartisipasi (HANYA Tim Utama / Super Team, TANPA Sub-Tim)
     const allContenders = useMemo(() => {
         const list = [];
         const seen = new Set();
+        const subIds = new Set((superTeamMemberIds || []).map(Number));
 
-        const addContender = (id, name, type = 'team', region = '') => {
-            if (!name || name === 'TBD') return;
-            const key = `${type}-${id || name.trim().toLowerCase()}`;
-            if (seen.has(key)) return;
-            seen.add(key);
-            list.push({ id, name: name.trim(), type, region });
-        };
-
-        // Dari data turnamen
-        (tournament.teams || []).forEach(t => addContender(t.id, t.name, 'team', t.region));
+        // Tambah juga ID sub-tim dari tournament.super_teams
         (tournament.super_teams || tournament.superTeams || []).forEach(st => {
-            addContender(st.id, st.name, 'super_team');
-            (st.members || []).forEach(m => addContender(m.id, m.name, 'team', m.region));
+            (st.members || []).forEach(m => subIds.add(Number(m.id)));
         });
 
-        // Dari matches
+        const addContender = (id, name, type = 'team', mode = 'all', region = '') => {
+            if (!name || name === 'TBD') return;
+            // JANGAN MASUKKAN SUB-TIM!
+            if (type === 'team' && id && subIds.has(Number(id))) return;
+
+            const key = `${type}-${id || name.trim().toLowerCase()}-${mode}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            list.push({ id, name: name.trim(), type, mode, region });
+        };
+
+        // 1. Dari Super Teams (Mode: team_regu / team_double)
+        (tournament.super_teams || tournament.superTeams || []).forEach(st => {
+            const stMode = st.match_mode || 'team_regu';
+            addContender(st.id, st.name, 'super_team', stMode);
+        });
+
+        // 2. Dari Regular Teams (Tunggal: regu / double / quadrant)
+        (tournament.teams || []).forEach(t => {
+            if (subIds.has(Number(t.id))) return; // Lewati sub-tim!
+            const tMode = t.match_mode || 'regu';
+            addContender(t.id, t.name, 'team', tMode, t.region);
+        });
+
+        // 3. Dari Matches yang sudah ada
         matches.forEach(m => {
-            if (m.home_team) addContender(m.home_team.id, m.home_team.name, 'team', m.home_team.region);
-            if (m.away_team) addContender(m.away_team.id, m.away_team.name, 'team', m.away_team.region);
-            if (m.home_super_team) addContender(m.home_super_team.id, m.home_super_team.name, 'super_team');
-            if (m.away_super_team) addContender(m.away_super_team.id, m.away_super_team.name, 'super_team');
-            if (m.home_display_name && m.home_display_name !== 'TBD') addContender(null, m.home_display_name, 'team');
-            if (m.away_display_name && m.away_display_name !== 'TBD') addContender(null, m.away_display_name, 'team');
+            if (m.home_super_team) {
+                addContender(m.home_super_team.id, m.home_super_team.name, 'super_team', m.match_mode || 'team_regu');
+            } else if (m.home_super_team_id && m.home_display_name && m.home_display_name !== 'TBD') {
+                addContender(m.home_super_team_id, m.home_display_name, 'super_team', m.match_mode || 'team_regu');
+            }
+
+            if (m.away_super_team) {
+                addContender(m.away_super_team.id, m.away_super_team.name, 'super_team', m.match_mode || 'team_regu');
+            } else if (m.away_super_team_id && m.away_display_name && m.away_display_name !== 'TBD') {
+                addContender(m.away_super_team_id, m.away_display_name, 'super_team', m.match_mode || 'team_regu');
+            }
+
+            if (m.home_team && !subIds.has(Number(m.home_team.id))) {
+                addContender(m.home_team.id, m.home_team.name, 'team', m.match_mode || 'regu', m.home_team.region);
+            } else if (m.home_team_id && m.home_display_name && m.home_display_name !== 'TBD' && !subIds.has(Number(m.home_team_id))) {
+                addContender(m.home_team_id, m.home_display_name, 'team', m.match_mode || 'regu');
+            }
+
+            if (m.away_team && !subIds.has(Number(m.away_team.id))) {
+                addContender(m.away_team.id, m.away_team.name, 'team', m.match_mode || 'regu', m.away_team.region);
+            } else if (m.away_team_id && m.away_display_name && m.away_display_name !== 'TBD' && !subIds.has(Number(m.away_team_id))) {
+                addContender(m.away_team_id, m.away_display_name, 'team', m.match_mode || 'regu');
+            }
         });
 
         return list.sort((a, b) => a.name.localeCompare(b.name));
-    }, [tournament, matches]);
+    }, [tournament, matches, superTeamMemberIds]);
+
+    // Tim yang sudah difilter berdasarkan mode pencarian aktif
+    const filteredContenders = useMemo(() => {
+        if (selectedSearchMode === 'all') {
+            const unique = [];
+            const seen = new Set();
+            allContenders.forEach(c => {
+                const k = `${c.type}-${c.id || c.name}`;
+                if (!seen.has(k)) {
+                    seen.add(k);
+                    unique.push(c);
+                }
+            });
+            return unique;
+        }
+        return allContenders.filter(c => c.mode === selectedSearchMode || c.mode === 'all');
+    }, [allContenders, selectedSearchMode]);
 
     // Helper untuk mengecek apakah match melibatkan tim tertentu secara tepat (EXACT)
     const isMatchInvolvingTeam = useCallback((match, searchedTeam) => {
@@ -305,49 +376,82 @@ export default function Grid({
                 {/* ─── TOOLBAR PENCARIAN TIM (MAX 2 TIM) & KONTROL ─── */}
                 <div className="bg-surface-900 border border-surface-700/80 rounded-2xl p-4 shadow-xl space-y-3">
                     <div className="flex items-center justify-between flex-wrap gap-3">
-                        {/* Team Search Selectors */}
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-surface-300">
-                                <span>🔍</span>
-                                <span>Cari Tim (Maks 2):</span>
+                        {/* Team Search Selectors & Mode Lock */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                            {/* Mode Lock Selector */}
+                            <div className="flex items-center gap-1 bg-surface-950/80 p-1 rounded-xl border border-surface-750">
+                                <span className="text-[11px] font-bold text-surface-400 px-2 flex items-center gap-1">
+                                    <span>🔒</span>
+                                    <span>Mode:</span>
+                                </span>
+                                {availableModes.map(m => (
+                                    <button
+                                        key={m.key}
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedSearchMode(m.key);
+                                            if (searchedTeam1 && m.key !== 'all' && searchedTeam1.mode !== 'all' && searchedTeam1.mode !== m.key) {
+                                                setSearchedTeam1(null);
+                                            }
+                                            if (searchedTeam2 && m.key !== 'all' && searchedTeam2.mode !== 'all' && searchedTeam2.mode !== m.key) {
+                                                setSearchedTeam2(null);
+                                            }
+                                        }}
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                                            selectedSearchMode === m.key
+                                                ? 'bg-primary-600 text-white shadow-sm'
+                                                : 'text-surface-400 hover:text-surface-200 hover:bg-surface-850'
+                                        }`}
+                                    >
+                                        <span>{m.icon}</span>
+                                        <span>{m.label}</span>
+                                    </button>
+                                ))}
                             </div>
 
-                            {/* Dropdown Tim 1 (Sky Blue / Cyan) */}
-                            <TeamSearchDropdown
-                                label="Pilih Tim 1"
-                                badgeColor="sky"
-                                colorTheme="bg-sky-950/80 text-sky-200 border-sky-500/80"
-                                contenders={allContenders}
-                                selectedContender={searchedTeam1}
-                                onSelect={setSearchedTeam1}
-                                onClear={() => setSearchedTeam1(null)}
-                                placeholder="Ketik nama Tim 1..."
-                            />
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1 text-xs font-bold text-surface-300">
+                                    <span>🔍</span>
+                                    <span>Tim:</span>
+                                </div>
 
-                            {/* Dropdown Tim 2 (Vibrant Amber / Orange) */}
-                            <TeamSearchDropdown
-                                label="Pilih Tim 2"
-                                badgeColor="amber"
-                                colorTheme="bg-amber-950/80 text-amber-200 border-amber-500/80"
-                                contenders={allContenders}
-                                selectedContender={searchedTeam2}
-                                onSelect={setSearchedTeam2}
-                                onClear={() => setSearchedTeam2(null)}
-                                placeholder="Ketik nama Tim 2..."
-                            />
+                                {/* Dropdown Tim 1 (Sky Blue / Cyan) */}
+                                <TeamSearchDropdown
+                                    label="Pilih Tim 1"
+                                    badgeColor="sky"
+                                    colorTheme="bg-sky-950/80 text-sky-200 border-sky-500/80"
+                                    contenders={filteredContenders}
+                                    selectedContender={searchedTeam1}
+                                    onSelect={setSearchedTeam1}
+                                    onClear={() => setSearchedTeam1(null)}
+                                    placeholder={selectedSearchMode === 'all' ? "Ketik nama Tim 1..." : `Ketik Tim 1 (${MODE_ICONS[selectedSearchMode]?.label || selectedSearchMode})...`}
+                                />
 
-                            {/* Reset Button */}
-                            {(searchedTeam1 || searchedTeam2) && (
-                                <button
-                                    onClick={() => {
-                                        setSearchedTeam1(null);
-                                        setSearchedTeam2(null);
-                                    }}
-                                    className="text-xs font-semibold text-surface-400 hover:text-surface-200 px-2.5 py-1 rounded-lg bg-surface-800 border border-surface-700 hover:bg-surface-750 transition-colors"
-                                >
-                                    ✕ Reset Pencarian
-                                </button>
-                            )}
+                                {/* Dropdown Tim 2 (Vibrant Amber / Orange) */}
+                                <TeamSearchDropdown
+                                    label="Pilih Tim 2"
+                                    badgeColor="amber"
+                                    colorTheme="bg-amber-950/80 text-amber-200 border-amber-500/80"
+                                    contenders={filteredContenders}
+                                    selectedContender={searchedTeam2}
+                                    onSelect={setSearchedTeam2}
+                                    onClear={() => setSearchedTeam2(null)}
+                                    placeholder={selectedSearchMode === 'all' ? "Ketik nama Tim 2..." : `Ketik Tim 2 (${MODE_ICONS[selectedSearchMode]?.label || selectedSearchMode})...`}
+                                />
+
+                                {/* Reset Button */}
+                                {(searchedTeam1 || searchedTeam2) && (
+                                    <button
+                                        onClick={() => {
+                                            setSearchedTeam1(null);
+                                            setSearchedTeam2(null);
+                                        }}
+                                        className="text-xs font-semibold text-surface-400 hover:text-surface-200 px-2.5 py-1 rounded-lg bg-surface-800 border border-surface-700 hover:bg-surface-750 transition-colors"
+                                    >
+                                        ✕ Reset
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* Mode Legend & Toggle Insight */}
@@ -620,21 +724,29 @@ function TeamSearchDropdown({
                                 ) : (
                                     filtered.map(c => (
                                         <button
-                                            key={`${c.type}-${c.id || c.name}`}
+                                            key={`${c.type}-${c.id || c.name}-${c.mode}`}
                                             type="button"
                                             onClick={() => {
                                                 onSelect(c);
                                                 setIsOpen(false);
                                                 setSearchQuery('');
                                             }}
-                                            className="w-full text-left px-3 py-2 text-xs font-medium text-surface-200 hover:bg-surface-800 hover:text-primary-300 rounded-lg transition-colors flex items-center justify-between"
+                                            className="w-full text-left px-3 py-2 text-xs font-medium text-surface-200 hover:bg-surface-800 hover:text-primary-300 rounded-lg transition-colors flex items-center justify-between gap-2"
                                         >
                                             <span className="truncate">{c.name}</span>
-                                            {c.type === 'super_team' && (
-                                                <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 shrink-0">
-                                                    Super
-                                                </span>
-                                            )}
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                {c.type === 'super_team' ? (
+                                                    <span className="text-[9.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                                        🏆 Super Team
+                                                    </span>
+                                                ) : (
+                                                    c.mode && c.mode !== 'all' && (
+                                                        <span className="text-[9.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-surface-800 text-surface-400 border border-surface-700">
+                                                            {MODE_ICONS[c.mode]?.icon} {MODE_ICONS[c.mode]?.label || c.mode}
+                                                        </span>
+                                                    )
+                                                )}
+                                            </div>
                                         </button>
                                     ))
                                 )}
