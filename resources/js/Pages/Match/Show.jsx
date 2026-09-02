@@ -363,24 +363,17 @@ export default function MatchShow({ match: m }) {
                 <div className="flex flex-wrap items-center gap-2">
                     <button
                         onClick={() => exportMatchReportPdf(m, 'home')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary-500/20 border border-primary-500/40 text-primary-300 hover:bg-primary-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary-500/20 border border-primary-500/40 text-primary-300 hover:bg-primary-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
                         title={`Download Laporan PDF Khusus ${homeName}`}
                     >
                         <span>📄 PDF {homeName}</span>
                     </button>
                     <button
                         onClick={() => exportMatchReportPdf(m, 'away')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
                         title={`Download Laporan PDF Khusus ${awayName}`}
                     >
                         <span>📄 PDF {awayName}</span>
-                    </button>
-                    <button
-                        onClick={() => exportMatchReportPdf(m, 'all')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-surface-700 text-surface-200 text-xs font-bold transition-all active:scale-95 shadow-sm"
-                        title="Download Laporan PDF Lengkap (Kedua Tim)"
-                    >
-                        <span>📥 PDF Lengkap</span>
                     </button>
                 </div>
             </div>

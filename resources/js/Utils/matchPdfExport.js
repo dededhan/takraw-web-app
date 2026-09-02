@@ -2,38 +2,34 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 /**
- * Generate and download an official Takraw match report PDF per team or combined.
- * Supports 10-zone ball position grids and complete team/athlete performance & serve zone scoring statistics.
+ * Generate and download an official Takraw match report PDF per team.
+ * Supports:
+ * - Final match score & winner status (e.g. "MENANG 2-1 Regu" / "MENANG 2-0 Set")
+ * - Per-Grub / Regu breakdown (Grub A, Grub B, Grub C) with All-Sets + per-set statistics
+ * - Per-Player performance tables within each grub with All-Sets + per-set details
+ * - 10-zone court distribution tables
  *
  * @param {Object} match
- * @param {'home' | 'away' | 'all'} targetTeam - Specify whether to export for Home team, Away team, or full match
+ * @param {'home' | 'away'} targetTeam - Specify whether to export for Home team or Away team
  */
-export function exportMatchReportPdf(match, targetTeam = 'all') {
+export function exportMatchReportPdf(match, targetTeam = 'home') {
     const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4',
     });
 
+    const isHome = targetTeam !== 'away';
+    const isTeamMode = match.match_mode === 'team_regu' || match.match_mode === 'team_double';
+
     const homeName = match.home_display_name || match.home_team?.name || match.home_super_team?.name || 'Tim Tuan Rumah';
     const awayName = match.away_display_name || match.away_team?.name || match.away_super_team?.name || 'Tim Tamu';
 
-    const finishedSets = match.sets?.filter(s => s.status === 'finished') || [];
-    const setsWonHome = finishedSets.filter(s => s.winner_team_id === match.home_team_id || s.winner_team_id === match.home_super_team_id).length;
-    const setsWonAway = finishedSets.filter(s => s.winner_team_id === match.away_team_id || s.winner_team_id === match.away_super_team_id).length;
+    const focusedTeamName = isHome ? homeName : awayName;
+    const opponentTeamName = isHome ? awayName : homeName;
 
-    const homeTeamId = match.home_team_id || match.home_super_team_id;
-    const awayTeamId = match.away_team_id || match.away_super_team_id;
-
-    const isSingleTeam = targetTeam === 'home' || targetTeam === 'away';
-    const focusedTeamId = targetTeam === 'away' ? awayTeamId : homeTeamId;
-    const focusedTeamName = targetTeam === 'away' ? awayName : homeName;
-    const opponentTeamName = targetTeam === 'away' ? homeName : awayName;
-
-    const isTeamMode = match.match_mode === 'team_regu' || match.match_mode === 'team_double';
-
-    const homeAthletes = match.home_team?.athletes || match.home_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
-    const awayAthletes = match.away_team?.athletes || match.away_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
+    const focusedSuperTeam = isHome ? match.home_super_team : match.away_super_team;
+    const opponentSuperTeam = isHome ? match.away_super_team : match.home_super_team;
 
     const homeTeamIds = isTeamMode
         ? [match.home_super_team_id, ...(match.home_super_team?.members?.map(mem => mem.id) || [])].filter(Boolean)
@@ -43,112 +39,207 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
         ? [match.away_super_team_id, ...(match.away_super_team?.members?.map(mem => mem.id) || [])].filter(Boolean)
         : [match.away_team_id].filter(Boolean);
 
+    const homeAthletes = match.home_team?.athletes || match.home_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
+    const awayAthletes = match.away_team?.athletes || match.away_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
+
     const homeAthleteIds = homeAthletes.map(a => a.id);
     const awayAthleteIds = awayAthletes.map(a => a.id);
 
-    // Helper: calculate athlete stats
-    const getAthleteStatsForSet = (athleteId, setId = null) => {
+    const focusedTeamIds = isHome ? homeTeamIds : awayTeamIds;
+    const focusedAthleteIds = isHome ? homeAthleteIds : awayAthleteIds;
+
+    // ─────────────────────────────────────────────────────────────────
+    // 1. CALCULATE MATCH & REGU OUTCOMES
+    // ─────────────────────────────────────────────────────────────────
+    let matchWinnerStatus = '';
+    let matchScoreText = '';
+    let reguSummaries = [];
+
+    if (isTeamMode) {
+        let homeReguWins = 0;
+        let awayReguWins = 0;
+
+        reguSummaries = [0, 1, 2].map(rIdx => {
+            const setNums = [rIdx * 3 + 1, rIdx * 3 + 2, rIdx * 3 + 3];
+            const rSets = match.sets?.filter(s => setNums.includes(s.set_number)) || [];
+            const finishedSets = rSets.filter(s => s.status === 'finished');
+
+            const hWon = finishedSets.filter(s => s.home_score > s.away_score).length;
+            const aWon = finishedSets.filter(s => s.away_score > s.home_score).length;
+
+            let winner = null;
+            if (hWon >= 2 || (finishedSets.length >= 3 && hWon > aWon)) winner = 'home';
+            else if (aWon >= 2 || (finishedSets.length >= 3 && aWon > hWon)) winner = 'away';
+
+            if (winner === 'home') homeReguWins++;
+            else if (winner === 'away') awayReguWins++;
+
+            const homeMember = match.home_super_team?.members?.[rIdx];
+            const awayMember = match.away_super_team?.members?.[rIdx];
+            const focusedMember = isHome ? homeMember : awayMember;
+            const oppMember = isHome ? awayMember : homeMember;
+
+            const fWon = isHome ? hWon : aWon;
+            const oWon = isHome ? aWon : hWon;
+            const isReguWin = (isHome && winner === 'home') || (!isHome && winner === 'away');
+
+            return {
+                index: rIdx,
+                grubLetter: String.fromCharCode(65 + rIdx), // 'A', 'B', 'C'
+                reguLabel: `Regu ${rIdx + 1} (Grub ${String.fromCharCode(65 + rIdx)})`,
+                memberName: focusedMember?.name || `Regu ${rIdx + 1}`,
+                oppMemberName: oppMember?.name || `Regu ${rIdx + 1} Lawan`,
+                member: focusedMember,
+                setNumbers: setNums,
+                sets: rSets,
+                finishedSets,
+                focusedWon: fWon,
+                oppWon: oWon,
+                winner,
+                isWin: isReguWin,
+                scoreSummary: finishedSets.length > 0
+                    ? finishedSets.map(s => `Set ${s.set_number}: ${isHome ? s.home_score : s.away_score}-${isHome ? s.away_score : s.home_score}`).join(' | ')
+                    : 'Belum dimainkan',
+            };
+        });
+
+        const focusedReguWins = isHome ? homeReguWins : awayReguWins;
+        const oppReguWins = isHome ? awayReguWins : homeReguWins;
+
+        if (focusedReguWins > oppReguWins) {
+            matchWinnerStatus = `MENANG (${focusedReguWins} - ${oppReguWins} Regu)`;
+        } else if (oppReguWins > focusedReguWins) {
+            matchWinnerStatus = `KALAH (${focusedReguWins} - ${oppReguWins} Regu)`;
+        } else {
+            matchWinnerStatus = `IMBANG / BERJALAN (${focusedReguWins} - ${oppReguWins} Regu)`;
+        }
+        matchScoreText = `${focusedTeamName} ${focusedReguWins} - ${oppReguWins} ${opponentTeamName}`;
+    } else {
+        const finishedSets = match.sets?.filter(s => s.status === 'finished') || [];
+        const hWon = finishedSets.filter(s => s.home_score > s.away_score).length;
+        const aWon = finishedSets.filter(s => s.away_score > s.home_score).length;
+        const fWon = isHome ? hWon : aWon;
+        const oWon = isHome ? aWon : hWon;
+
+        if (fWon > oWon) {
+            matchWinnerStatus = `MENANG (${fWon} - ${oWon} Set)`;
+        } else if (oWon > fWon) {
+            matchWinnerStatus = `KALAH (${fWon} - ${oWon} Set)`;
+        } else {
+            matchWinnerStatus = `IMBANG / BERJALAN (${fWon} - ${oWon} Set)`;
+        }
+        matchScoreText = `${focusedTeamName} ${fWon} - ${oWon} ${opponentTeamName}`;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 2. HELPER STATS CALCULATORS
+    // ─────────────────────────────────────────────────────────────────
+    const aggregateStats = (statsList) => {
+        const agg = {
+            service_in: 0, service_ace: 0, service_error: 0,
+            strike_in: 0, strike_ace: 0, strike_error: 0,
+            freeball_in: 0, freeball_ace: 0, freeball_error: 0,
+            firstball_in: 0, firstball_ace: 0, firstball_error: 0,
+            feeding_in: 0, feeding_ace: 0, feeding_error: 0,
+            blocking_in: 0, blocking_ace: 0, blocking_error: 0,
+            opponent_mistake: 0,
+            strike_success: 0, strike_fail: 0,
+            receive_success: 0, receive_fail: 0,
+            feeding_success: 0, feeding_fail: 0,
+            block_success: 0, block_fail: 0,
+            action_zones: { service: {}, strike: {}, blocking: {}, freeball: {}, firstball: {}, feeding: {} },
+        };
+
+        for (let i = 1; i <= 10; i++) {
+            agg[`zone_${i}`] = 0;
+            agg[`zone_${i}_ace`] = 0;
+            agg[`zone_${i}_in`] = 0;
+        }
+
+        statsList.forEach(s => {
+            Object.keys(agg).forEach(k => {
+                if (k !== 'action_zones') {
+                    agg[k] += Number(s[k]) || 0;
+                }
+            });
+
+            let az = s.action_zones;
+            if (typeof az === 'string') {
+                try { az = JSON.parse(az); } catch(e) { az = null; }
+            }
+            if (az && typeof az === 'object') {
+                Object.keys(az).forEach(act => {
+                    if (!agg.action_zones[act]) agg.action_zones[act] = {};
+                    let actObj = az[act];
+                    if (typeof actObj === 'string') {
+                        try { actObj = JSON.parse(actObj); } catch(e) { actObj = null; }
+                    }
+                    if (actObj && typeof actObj === 'object') {
+                        Object.keys(actObj).forEach(zk => {
+                            agg.action_zones[act][zk] = (agg.action_zones[act][zk] || 0) + (Number(actObj[zk]) || 0);
+                        });
+                    }
+                });
+            }
+        });
+
+        return agg;
+    };
+
+    // Retrieve stats for a specific athlete (all sets, or specific set_number)
+    const getAthleteStats = (athleteId, setNumber = null) => {
         let stats = [];
-        if (setId === 'all' || !setId) {
-            match.sets?.forEach(s => {
+        match.sets?.forEach(s => {
+            if (setNumber === null || s.set_number === setNumber) {
                 s.stats?.forEach(st => {
                     if (st.athlete_id === athleteId) stats.push(st);
                 });
-            });
-        } else {
-            const set = match.sets?.find(s => s.id === setId || s.set_number === setId);
-            stats = set?.stats?.filter(st => st.athlete_id === athleteId) || [];
-        }
-
-        const agg = {
-            service_in: 0, service_ace: 0, service_error: 0,
-            strike_in: 0, strike_ace: 0, strike_error: 0,
-            freeball_in: 0, freeball_ace: 0, freeball_error: 0,
-            firstball_in: 0, firstball_ace: 0, firstball_error: 0,
-            feeding_in: 0, feeding_ace: 0, feeding_error: 0,
-            blocking_in: 0, blocking_ace: 0, blocking_error: 0,
-            opponent_mistake: 0,
-            // Backwards compatibility mappings:
-            strike_success: 0, strike_fail: 0,
-            receive_success: 0, receive_fail: 0,
-            feeding_success: 0, feeding_fail: 0,
-            block_success: 0, block_fail: 0,
-        };
-
-        for (let i = 1; i <= 10; i++) {
-            agg[`zone_${i}`] = 0;
-            agg[`zone_${i}_ace`] = 0;
-            agg[`zone_${i}_in`] = 0;
-        }
-
-        stats.forEach(s => {
-            Object.keys(agg).forEach(k => {
-                agg[k] += Number(s[k]) || 0;
-            });
+            }
         });
-
-        return agg;
+        return aggregateStats(stats);
     };
 
-    // Helper: calculate team stats
-    const getTeamStatsForSet = (teamId, setId = null) => {
+    // Retrieve stats for a team / regu / super team (all sets, or specific set_number / set_numbers array)
+    const getTeamStats = (filterTeamIds, filterAthleteIds, setNumbers = null) => {
         let stats = [];
-        const isTargetTeam = (st) => {
-            if (st.team_id === teamId) return true;
-            if (homeTeamIds.includes(teamId)) {
-                return (st.team_id && homeTeamIds.includes(st.team_id)) || (st.athlete_id && homeAthleteIds.includes(st.athlete_id));
-            }
-            if (awayTeamIds.includes(teamId)) {
-                return (st.team_id && awayTeamIds.includes(st.team_id)) || (st.athlete_id && awayAthleteIds.includes(st.athlete_id));
-            }
+        const isMatch = (st) => {
+            if (st.athlete_id && filterAthleteIds.includes(st.athlete_id)) return true;
+            if (st.team_id && filterTeamIds.includes(st.team_id)) return true;
             return false;
         };
 
-        if (setId === 'all' || !setId) {
-            match.sets?.forEach(s => {
+        match.sets?.forEach(s => {
+            let includeSet = false;
+            if (setNumbers === null) includeSet = true;
+            else if (Array.isArray(setNumbers)) includeSet = setNumbers.includes(s.set_number);
+            else includeSet = s.set_number === setNumbers;
+
+            if (includeSet) {
                 s.stats?.forEach(st => {
-                    if (isTargetTeam(st)) stats.push(st);
+                    if (isMatch(st)) stats.push(st);
                 });
-            });
-        } else {
-            const set = match.sets?.find(s => s.id === setId || s.set_number === setId);
-            stats = set?.stats?.filter(st => isTargetTeam(st)) || [];
-        }
-
-        const agg = {
-            service_in: 0, service_ace: 0, service_error: 0,
-            strike_in: 0, strike_ace: 0, strike_error: 0,
-            freeball_in: 0, freeball_ace: 0, freeball_error: 0,
-            firstball_in: 0, firstball_ace: 0, firstball_error: 0,
-            feeding_in: 0, feeding_ace: 0, feeding_error: 0,
-            blocking_in: 0, blocking_ace: 0, blocking_error: 0,
-            opponent_mistake: 0,
-            // Backwards compatibility mappings:
-            strike_success: 0, strike_fail: 0,
-            receive_success: 0, receive_fail: 0,
-            feeding_success: 0, feeding_fail: 0,
-            block_success: 0, block_fail: 0,
-        };
-
-        for (let i = 1; i <= 10; i++) {
-            agg[`zone_${i}`] = 0;
-            agg[`zone_${i}_ace`] = 0;
-            agg[`zone_${i}_in`] = 0;
-        }
-
-        stats.forEach(s => {
-            Object.keys(agg).forEach(k => {
-                agg[k] += Number(s[k]) || 0;
-            });
+            }
         });
 
-        return agg;
+        return aggregateStats(stats);
     };
 
-    // Helper: Draw 10-zone Court Grid Box
+    // Helper: Build 10-zone data object
+    const buildZoneData = (stats) => {
+        const zd = {};
+        for (let i = 1; i <= 10; i++) {
+            zd[`zone_${i}`] = {
+                ace: stats[`zone_${i}_ace`] || 0,
+                in: stats[`zone_${i}_in`] || (stats[`zone_${i}_ace`] === 0 ? stats[`zone_${i}`] || 0 : 0),
+            };
+        }
+        return zd;
+    };
+
+    // Helper: Draw 10-zone mini-table
     const drawCourtZoneTable = (startX, startY, width, title, zoneData) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
+        doc.setFontSize(8);
         doc.setTextColor(31, 41, 55);
         doc.text(title, startX, startY);
 
@@ -161,7 +252,7 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
             const zd = zoneData[`zone_${zoneNum}`] || { ace: 0, in: 0 };
             const hits = zd.ace + zd.in;
             const pct = totalHits > 0 ? ((hits / totalHits) * 100).toFixed(1) + '%' : '0.0%';
-            return `${pct}\n(${zd.ace}/${zd.in})`;
+            return `${pct} (${zd.ace}/${zd.in})`;
         };
 
         const rows = [
@@ -173,7 +264,7 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
         ];
 
         autoTable(doc, {
-            startY: startY + 2,
+            startY: startY + 1.5,
             margin: { left: startX },
             tableWidth: width,
             head: [['Zona', '% (Ace/In)', 'Zona', '% (Ace/In)']],
@@ -182,15 +273,15 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
             headStyles: {
                 fillColor: [31, 41, 55],
                 textColor: [255, 255, 255],
-                fontSize: 6.5,
+                fontSize: 6,
                 halign: 'center',
                 fontStyle: 'bold',
             },
             styles: {
-                fontSize: 6,
+                fontSize: 5.5,
                 halign: 'center',
                 valign: 'middle',
-                cellPadding: 1,
+                cellPadding: 0.8,
             },
             columnStyles: {
                 0: { halign: 'left', fontStyle: 'bold', width: width * 0.32 },
@@ -203,106 +294,285 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
         return doc.lastAutoTable.finalY;
     };
 
-    const buildTeamZoneData = (teamId, setNum = null) => {
-        const stats = getTeamStatsForSet(teamId, setNum);
-        const zd = {};
-        for (let i = 1; i <= 10; i++) {
-            zd[`zone_${i}`] = {
-                ace: stats[`zone_${i}_ace`] || 0,
-                in: stats[`zone_${i}_in`] || (stats[`zone_${i}_ace`] === 0 ? stats[`zone_${i}`] || 0 : 0),
-            };
-        }
-        return zd;
-    };
-
-    // ==========================================
-    // PAGE 1: HEADER & STATISTIK TIM
-    // ==========================================
+    // ─────────────────────────────────────────────────────────────────
+    // 3. RENDER HEADER & OVERALL MATCH SCORE BANNER
+    // ─────────────────────────────────────────────────────────────────
+    const primaryColor = isHome ? [16, 185, 129] : [245, 158, 11]; // Emerald for Home, Amber for Away
     const darkBg = [24, 24, 27];
 
-    // Header Background
+    // Header Background Banner
     doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
-    doc.rect(0, 0, 210, 36, 'F');
+    doc.rect(0, 0, 210, 32, 'F');
 
-    // Title
+    // Header Title
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    const mainTitle = isSingleTeam 
-        ? `LAPORAN PERFORMA & DISTRIBUSI SERVIS: ${focusedTeamName.toUpperCase()}`
-        : 'LAPORAN HASIL PERTANDINGAN SEPAK TAKRAW';
-    doc.text(mainTitle, 105, 13, { align: 'center' });
+    doc.setFontSize(13);
+    doc.text(`LAPORAN REKAP PERFORMA TIM & PEMAIN: ${focusedTeamName.toUpperCase()}`, 105, 12, { align: 'center' });
 
-    doc.setFontSize(8.5);
+    // Header Subtitle / Metadata
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(209, 213, 219);
     const tournamentName = match.tournament?.name || 'Turnamen Sepak Takraw';
-    const matchMeta = `${tournamentName}  |  Stage: ${(match.stage || 'Group').toUpperCase()}  |  Lap: ${match.court_number || 1}  |  Wasit: ${match.referee?.name || '-'}`;
-    doc.text(matchMeta, 105, 21, { align: 'center' });
+    const matchMeta = `${tournamentName}  |  Mode: ${(match.match_mode || 'regu').toUpperCase()}  |  Babak: ${(match.stage || 'Penyisihan').toUpperCase()}  |  Lap: ${match.court_number || 1}  |  Wasit: ${match.referee?.name || '-'}`;
+    doc.text(matchMeta, 105, 19, { align: 'center' });
 
-    // Matchup Banner Box
+    // ─────────────────────────────────────────────────────────────────
+    // OVERALL SCORECARD BANNER
+    // ─────────────────────────────────────────────────────────────────
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(14, 40, 182, 24, 3, 3, 'F');
+    doc.roundedRect(14, 36, 182, 22, 2.5, 2.5, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(14, 40, 182, 24, 3, 3, 'S');
+    doc.roundedRect(14, 36, 182, 22, 2.5, 2.5, 'S');
 
-    // Home Team Name & Score
-    doc.setTextColor(16, 185, 129);
+    // Win/Loss Outcome Badge
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(homeName, 55, 48, { align: 'center' });
-    doc.setFontSize(16);
-    doc.text(String(setsWonHome), 55, 58, { align: 'center' });
-
-    // VS
-    doc.setTextColor(148, 163, 184);
     doc.setFontSize(11);
-    doc.text('VS', 105, 53, { align: 'center' });
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.text(`HASIL: ${matchWinnerStatus}`, 105, 43, { align: 'center' });
 
-    // Away Team Name & Score
-    doc.setTextColor(245, 158, 11);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(awayName, 155, 48, { align: 'center' });
-    doc.setFontSize(16);
-    doc.text(String(setsWonAway), 155, 58, { align: 'center' });
+    // Team vs Team & Scores
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(matchScoreText, 105, 49, { align: 'center' });
 
-    // Set Scores summary
-    const setScoreText = match.sets?.map(s => `Set ${s.set_number}: ${s.home_score}-${s.away_score}`).join('   |   ') || '';
-    if (setScoreText) {
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
+    // Breakdown sub-text
+    if (isTeamMode) {
+        const reguQuick = reguSummaries.map(r => `${r.reguLabel}: ${r.isWin ? 'Menang' : (r.winner ? 'Kalah' : '—')} (${r.focusedWon}-${r.oppWon})`).join('  |  ');
+        doc.setFontSize(7);
         doc.setTextColor(100, 116, 139);
-        doc.text(setScoreText, 105, 62, { align: 'center' });
+        doc.text(reguQuick, 105, 54, { align: 'center' });
     }
 
-    if (isSingleTeam) {
-        // ==========================================
-        // DEDICATED SINGLE TEAM REPORT
-        // ==========================================
-        
-        // 1. Rekapitulasi Tim per Set (Compact Table)
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(31, 41, 55);
-        doc.text(`1. REKAPITULASI STATISTIK PER SET (${focusedTeamName})`, 14, 70);
+    let currentY = 62;
 
-        const tAll = getTeamStatsForSet(focusedTeamId, 'all');
-        const tSet1 = getTeamStatsForSet(focusedTeamId, 1);
-        const tSet2 = getTeamStatsForSet(focusedTeamId, 2);
-        const tSet3 = getTeamStatsForSet(focusedTeamId, 3);
+    // ─────────────────────────────────────────────────────────────────
+    // 4. RENDER TEAM STATS & ATHLETES (SUPER TEAM MODE)
+    // ─────────────────────────────────────────────────────────────────
+    if (isTeamMode) {
+        reguSummaries.forEach((regu, rIndex) => {
+            const memberTeam = regu.member;
+            const memberTeamId = memberTeam?.id;
+            const memberAthletes = memberTeam?.athletes || [];
+            const memberAthleteIds = memberAthletes.map(a => a.id);
 
-        const metricsSingle = [
-            { label: 'Servis (In / Ace / Err)', fn: (t) => `${t.service_in} / ${t.service_ace} / ${t.service_error}` },
-            { label: 'Strike (In / Ace / Err)', fn: (t) => `${t.strike_in || t.strike_success} / ${t.strike_ace} / ${t.strike_error || t.strike_fail}` },
-            { label: 'Freeball (In / Ace / Err)', fn: (t) => `${t.freeball_in} / ${t.freeball_ace} / ${t.freeball_error}` },
-            { label: 'Firstball (In / Ace / Err)', fn: (t) => `${t.firstball_in || t.receive_success} / ${t.firstball_ace} / ${t.firstball_error || t.receive_fail}` },
-            { label: 'Feeding (In / Ace / Err)', fn: (t) => `${t.feeding_in || t.feeding_success} / ${t.feeding_ace} / ${t.feeding_error || t.feeding_fail}` },
-            { label: 'Blocking (In / Ace / Err)', fn: (t) => `${t.blocking_in || t.block_success} / ${t.blocking_ace} / ${t.blocking_error || t.block_fail}` },
-            { label: 'Kesalahan Lawan (Poin Hadiah)', fn: (t) => `+${t.opponent_mistake || 0}` },
+            // Cek jika halaman hampir penuh, buat halaman baru
+            if (currentY > 230) {
+                doc.addPage();
+                currentY = 16;
+            }
+
+            // Section Header: REGU X (GRUB A/B/C)
+            doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+            doc.roundedRect(14, currentY, 182, 9, 1.5, 1.5, 'F');
+
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            const reguTitle = `${regu.reguLabel.toUpperCase()} — ${regu.memberName.toUpperCase()}  |  Hasil: ${regu.isWin ? 'MENANG' : (regu.winner ? 'KALAH' : '—')} (${regu.focusedWon}-${regu.oppWon} Set)`;
+            doc.text(reguTitle, 18, currentY + 6);
+
+            currentY += 12;
+
+            // Skor Sesi Regu Ini
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(71, 85, 105);
+            doc.text(`Rincian Skor: ${regu.scoreSummary}`, 14, currentY);
+            currentY += 4;
+
+            // ─── TABEL 1: PERFORMA TIM REGU (All Sets + Set 1, 2, 3) ───
+            const sNums = regu.setNumbers; // e.g. [1, 2, 3] or [4, 5, 6] or [7, 8, 9]
+            const tAll = getTeamStats([memberTeamId], memberAthleteIds, sNums);
+            const tSet1 = getTeamStats([memberTeamId], memberAthleteIds, sNums[0]);
+            const tSet2 = getTeamStats([memberTeamId], memberAthleteIds, sNums[1]);
+            const tSet3 = getTeamStats([memberTeamId], memberAthleteIds, sNums[2]);
+
+            const metricsList = [
+                { label: '🏐 Servis', fn: (t) => `${t.service_in} In / ${t.service_ace} Ace / ${t.service_error} Err` },
+                { label: '⚡ Strike / Smash', fn: (t) => `${t.strike_in || t.strike_success} In / ${t.strike_ace} Ace / ${t.strike_error || t.strike_fail} Err` },
+                { label: '🔄 Freeball', fn: (t) => `${t.freeball_in} In / ${t.freeball_ace} Ace / ${t.freeball_error} Err` },
+                { label: '🤲 Firstball / Receive', fn: (t) => `${t.firstball_in || t.receive_success} In / ${t.firstball_ace} Ace / ${t.firstball_error || t.receive_fail} Err` },
+                { label: '🎯 Feeding', fn: (t) => `${t.feeding_in || t.feeding_success} In / ${t.feeding_ace} Ace / ${t.feeding_error || t.feeding_fail} Err` },
+                { label: '🛡️ Blocking', fn: (t) => `${t.blocking_in || t.block_success} In / ${t.blocking_ace} Ace / ${t.blocking_error || t.block_fail} Err` },
+                { label: '⚠️ Kesalahan Lawan', fn: (t) => `+${t.opponent_mistake || 0} Poin` },
+            ];
+
+            const reguTableRows = metricsList.map(m => [
+                m.label,
+                m.fn(tAll),
+                m.fn(tSet1),
+                m.fn(tSet2),
+                m.fn(tSet3),
+            ]);
+
+            autoTable(doc, {
+                startY: currentY,
+                head: [[
+                    `Parameter Statistik (${regu.memberName})`,
+                    `All Sets (${regu.reguLabel})`,
+                    `Set ${sNums[0]}`,
+                    `Set ${sNums[1]}`,
+                    `Set ${sNums[2]}`,
+                ]],
+                body: reguTableRows,
+                theme: 'striped',
+                headStyles: {
+                    fillColor: [31, 41, 55],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                    fontSize: 7,
+                },
+                columnStyles: {
+                    0: { halign: 'left', fontStyle: 'bold', width: 50 },
+                    1: { halign: 'center', fontStyle: 'bold', textColor: [16, 185, 129], width: 34 },
+                    2: { halign: 'center', width: 32 },
+                    3: { halign: 'center', width: 32 },
+                    4: { halign: 'center', width: 34 },
+                },
+                styles: { fontSize: 6.5, cellPadding: 1 },
+                margin: { left: 14, right: 14 },
+            });
+
+            currentY = doc.lastAutoTable.finalY + 5;
+
+            // ─── TABEL 2: PERFORMA INDIVIDUAL PEMAIN DI REGU INI ───
+            if (memberAthletes.length > 0) {
+                doc.setFontSize(8.5);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(31, 41, 55);
+                doc.text(`👤 STATISTIK INDIVIDU PEMAIN — ${regu.reguLabel.toUpperCase()} (${regu.memberName})`, 14, currentY);
+                currentY += 2;
+
+                const athleteDetailRows = [];
+                memberAthletes.forEach(ath => {
+                    const aAll = getAthleteStats(ath.id, null);
+                    const aS1 = getAthleteStats(ath.id, sNums[0]);
+                    const aS2 = getAthleteStats(ath.id, sNums[1]);
+                    const aS3 = getAthleteStats(ath.id, sNums[2]);
+
+                    const athHeader = `#${ath.jersey_number || '-'} ${ath.name} (${ath.position || 'Pemain'})`;
+
+                    athleteDetailRows.push([
+                        { content: athHeader, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } }
+                    ]);
+
+                    athleteDetailRows.push([
+                        '  • Servis (In/Ace/Err)',
+                        `${aAll.service_in}/${aAll.service_ace}/${aAll.service_error}`,
+                        `${aS1.service_in}/${aS1.service_ace}/${aS1.service_error}`,
+                        `${aS2.service_in}/${aS2.service_ace}/${aS2.service_error}`,
+                        `${aS3.service_in}/${aS3.service_ace}/${aS3.service_error}`,
+                    ]);
+                    athleteDetailRows.push([
+                        '  • Strike (In/Ace/Err)',
+                        `${aAll.strike_in || aAll.strike_success}/${aAll.strike_ace}/${aAll.strike_error || aAll.strike_fail}`,
+                        `${aS1.strike_in || aS1.strike_success}/${aS1.strike_ace}/${aS1.strike_error || aS1.strike_fail}`,
+                        `${aS2.strike_in || aS2.strike_success}/${aS2.strike_ace}/${aS2.strike_error || aS2.strike_fail}`,
+                        `${aS3.strike_in || aS3.strike_success}/${aS3.strike_ace}/${aS3.strike_error || aS3.strike_fail}`,
+                    ]);
+                    athleteDetailRows.push([
+                        '  • Freeball (In/Ace/Err)',
+                        `${aAll.freeball_in}/${aAll.freeball_ace}/${aAll.freeball_error}`,
+                        `${aS1.freeball_in}/${aS1.freeball_ace}/${aS1.freeball_error}`,
+                        `${aS2.freeball_in}/${aS2.freeball_ace}/${aS2.freeball_error}`,
+                        `${aS3.freeball_in}/${aS3.freeball_ace}/${aS3.freeball_error}`,
+                    ]);
+                    athleteDetailRows.push([
+                        '  • Firstball (In/Ace/Err)',
+                        `${aAll.firstball_in || aAll.receive_success}/${aAll.firstball_ace}/${aAll.firstball_error || aAll.receive_fail}`,
+                        `${aS1.firstball_in || aS1.receive_success}/${aS1.firstball_ace}/${aS1.firstball_error || aS1.receive_fail}`,
+                        `${aS2.firstball_in || aS2.receive_success}/${aS2.firstball_ace}/${aS2.firstball_error || aS2.receive_fail}`,
+                        `${aS3.firstball_in || aS3.receive_success}/${aS3.firstball_ace}/${aS3.firstball_error || aS3.receive_fail}`,
+                    ]);
+                    athleteDetailRows.push([
+                        '  • Feeding (In/Ace/Err)',
+                        `${aAll.feeding_in || aAll.feeding_success}/${aAll.feeding_ace}/${aAll.feeding_error || aAll.feeding_fail}`,
+                        `${aS1.feeding_in || aS1.feeding_success}/${aS1.feeding_ace}/${aS1.feeding_error || aS1.feeding_fail}`,
+                        `${aS2.feeding_in || aS2.feeding_success}/${aS2.feeding_ace}/${aS2.feeding_error || aS2.feeding_fail}`,
+                        `${aS3.feeding_in || aS3.feeding_success}/${aS3.feeding_ace}/${aS3.feeding_error || aS3.feeding_fail}`,
+                    ]);
+                    athleteDetailRows.push([
+                        '  • Blocking (In/Ace/Err)',
+                        `${aAll.blocking_in || aAll.block_success}/${aAll.blocking_ace}/${aAll.blocking_error || aAll.block_fail}`,
+                        `${aS1.blocking_in || aS1.block_success}/${aS1.blocking_ace}/${aS1.blocking_error || aS1.block_fail}`,
+                        `${aS2.blocking_in || aS2.block_success}/${aS2.blocking_ace}/${aS2.blocking_error || aS2.block_fail}`,
+                        `${aS3.blocking_in || aS3.block_success}/${aS3.blocking_ace}/${aS3.blocking_error || aS3.block_fail}`,
+                    ]);
+                });
+
+                autoTable(doc, {
+                    startY: currentY,
+                    head: [['Nama Pemain / Parameter Aksi', 'All Sets (3 Set)', `Set ${sNums[0]}`, `Set ${sNums[1]}`, `Set ${sNums[2]}`]],
+                    body: athleteDetailRows,
+                    theme: 'grid',
+                    headStyles: {
+                        fillColor: isHome ? [16, 185, 129] : [217, 119, 6],
+                        textColor: [255, 255, 255],
+                        fontStyle: 'bold',
+                        halign: 'center',
+                        fontSize: 6.5,
+                    },
+                    columnStyles: {
+                        0: { halign: 'left', fontStyle: 'bold', width: 50 },
+                        1: { halign: 'center', fontStyle: 'bold', width: 34 },
+                        2: { halign: 'center', width: 32 },
+                        3: { halign: 'center', width: 32 },
+                        4: { halign: 'center', width: 34 },
+                    },
+                    styles: { fontSize: 6, cellPadding: 0.8 },
+                    margin: { left: 14, right: 14 },
+                });
+
+                currentY = doc.lastAutoTable.finalY + 6;
+            }
+
+            // ─── TABEL 3: PETA 10 ZONA SERVIS REGU INI ───
+            if (currentY > 215) {
+                doc.addPage();
+                currentY = 16;
+            }
+
+            const reguAllZone = buildZoneData(tAll);
+            const reguS1Zone = buildZoneData(tSet1);
+            const reguS2Zone = buildZoneData(tSet2);
+            const reguS3Zone = buildZoneData(tSet3);
+
+            const colW = 88;
+            const yA = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS (10 ZONA) — ${regu.reguLabel} ALL SETS`, reguAllZone);
+            const yB = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET ${sNums[0]}`, reguS1Zone);
+
+            currentY = Math.max(yA, yB) + 4;
+
+            const yC = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS — SET ${sNums[1]}`, reguS2Zone);
+            const yD = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET ${sNums[2]}`, reguS3Zone);
+
+            currentY = Math.max(yC, yD) + 8;
+        });
+
+    } else {
+        // ─────────────────────────────────────────────────────────────────
+        // 5. RENDER SINGLE TEAM MODE (REGU / DOUBLE / QUADRANT)
+        // ─────────────────────────────────────────────────────────────────
+        const tAll = getTeamStats(focusedTeamIds, focusedAthleteIds, null);
+        const tSet1 = getTeamStats(focusedTeamIds, focusedAthleteIds, 1);
+        const tSet2 = getTeamStats(focusedTeamIds, focusedAthleteIds, 2);
+        const tSet3 = getTeamStats(focusedTeamIds, focusedAthleteIds, 3);
+
+        const metricsList = [
+            { label: '🏐 Servis', fn: (t) => `${t.service_in} In / ${t.service_ace} Ace / ${t.service_error} Err` },
+            { label: '⚡ Strike / Smash', fn: (t) => `${t.strike_in || t.strike_success} In / ${t.strike_ace} Ace / ${t.strike_error || t.strike_fail} Err` },
+            { label: '🔄 Freeball', fn: (t) => `${t.freeball_in} In / ${t.freeball_ace} Ace / ${t.freeball_error} Err` },
+            { label: '🤲 Firstball / Receive', fn: (t) => `${t.firstball_in || t.receive_success} In / ${t.firstball_ace} Ace / ${t.firstball_error || t.receive_fail} Err` },
+            { label: '🎯 Feeding', fn: (t) => `${t.feeding_in || t.feeding_success} In / ${t.feeding_ace} Ace / ${t.feeding_error || t.feeding_fail} Err` },
+            { label: '🛡️ Blocking', fn: (t) => `${t.blocking_in || t.block_success} In / ${t.blocking_ace} Ace / ${t.blocking_error || t.block_fail} Err` },
+            { label: '⚠️ Kesalahan Lawan', fn: (t) => `+${t.opponent_mistake || 0} Poin` },
         ];
 
-        const singleTeamRows = metricsSingle.map(m => [
+        const singleTableRows = metricsList.map(m => [
             m.label,
             m.fn(tAll),
             m.fn(tSet1),
@@ -311,9 +581,9 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
         ]);
 
         autoTable(doc, {
-            startY: 73,
-            head: [['Parameter Statistik (Format: In / Ace / Err)', 'All Sets', 'Set 1', 'Set 2', 'Set 3']],
-            body: singleTeamRows,
+            startY: currentY,
+            head: [[`Parameter Statistik (${focusedTeamName})`, 'All Sets (Total)', 'Set 1', 'Set 2', 'Set 3']],
+            body: singleTableRows,
             theme: 'striped',
             headStyles: {
                 fillColor: [31, 41, 55],
@@ -323,357 +593,131 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
                 fontSize: 7.5,
             },
             columnStyles: {
-                0: { halign: 'left', fontStyle: 'bold', width: 70 },
-                1: { halign: 'center', fontStyle: 'bold', textColor: [16, 185, 129], width: 28 },
-                2: { halign: 'center', width: 28 },
-                3: { halign: 'center', width: 28 },
-                4: { halign: 'center', width: 28 },
+                0: { halign: 'left', fontStyle: 'bold', width: 50 },
+                1: { halign: 'center', fontStyle: 'bold', textColor: [16, 185, 129], width: 34 },
+                2: { halign: 'center', width: 32 },
+                3: { halign: 'center', width: 32 },
+                4: { halign: 'center', width: 34 },
             },
             styles: { fontSize: 7, cellPadding: 1.2 },
             margin: { left: 14, right: 14 },
         });
 
-        // 2. Individual Athletes Table for focused team (Ringkasan Aksi)
-        const athleteY = doc.lastAutoTable.finalY + 5;
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(31, 41, 55);
-        doc.text(`2. REKAPITULASI AKSI INDIVIDUAL PEMAIN (${focusedTeamName})`, 14, athleteY);
+        currentY = doc.lastAutoTable.finalY + 6;
 
-        const athletes = (targetTeam === 'away'
-            ? (match.away_team?.athletes || match.away_super_team?.members?.flatMap(m => m.athletes || []) || [])
-            : (match.home_team?.athletes || match.home_super_team?.members?.flatMap(m => m.athletes || []) || []));
+        // Individual athletes table
+        const athletes = isHome ? homeAthletes : awayAthletes;
+        if (athletes.length > 0) {
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(31, 41, 55);
+            doc.text(`👤 STATISTIK PERFORMA INDIVIDU PEMAIN (${focusedTeamName})`, 14, currentY);
+            currentY += 2;
 
-        const athleteRows = athletes.map(a => {
-            const st = getAthleteStatsForSet(a.id, 'all');
-            const servText = `${st.service_in}/${st.service_ace}/${st.service_error}`;
-            const strikeText = `${st.strike_in || st.strike_success}/${st.strike_ace}/${st.strike_error || st.strike_fail}`;
-            const freeText = `${st.freeball_in}/${st.freeball_ace}/${st.freeball_error}`;
-            const firstText = `${st.firstball_in || st.receive_success}/${st.firstball_ace}/${st.firstball_error || st.receive_fail}`;
-            const feedText = `${st.feeding_in || st.feeding_success}/${st.feeding_ace}/${st.feeding_error || st.feeding_fail}`;
-            const blockText = `${st.blocking_in || st.block_success}/${st.blocking_ace}/${st.blocking_error || st.block_fail}`;
+            const athleteDetailRows = [];
+            athletes.forEach(ath => {
+                const aAll = getAthleteStats(ath.id, null);
+                const aS1 = getAthleteStats(ath.id, 1);
+                const aS2 = getAthleteStats(ath.id, 2);
+                const aS3 = getAthleteStats(ath.id, 3);
 
-            return [
-                `#${a.jersey_number || '-'}`,
-                a.name,
-                a.position || 'Pemain',
-                servText,
-                strikeText,
-                freeText,
-                firstText,
-                feedText,
-                blockText,
-            ];
-        });
+                const athHeader = `#${ath.jersey_number || '-'} ${ath.name} (${ath.position || 'Pemain'})`;
 
-        autoTable(doc, {
-            startY: athleteY + 2,
-            head: [['No', 'Nama Pemain', 'Posisi', 'Servis', 'Strike', 'Freeball', 'Firstball', 'Feeding', 'Block']],
-            body: athleteRows,
-            theme: 'grid',
-            headStyles: {
-                fillColor: targetTeam === 'away' ? [217, 119, 6] : [16, 185, 129],
-                textColor: [255, 255, 255],
-                fontStyle: 'bold',
-                halign: 'center',
-                fontSize: 7,
-            },
-            styles: { fontSize: 6, halign: 'center', cellPadding: 1 },
-            columnStyles: {
-                0: { width: 10 },
-                1: { halign: 'left', fontStyle: 'bold', width: 38 },
-                2: { width: 18 },
-                3: { width: 20 },
-                4: { width: 20 },
-                5: { width: 20 },
-                6: { width: 20 },
-                7: { width: 20 },
-                8: { width: 16 },
-            },
-            margin: { left: 14, right: 14 },
-        });
+                athleteDetailRows.push([
+                    { content: athHeader, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } }
+                ]);
 
-        // 3. TABEL RINCIAN SKOR SERVIS PER ZONA (Z1 - Z10) INDIVIDU PEMAIN
-        const zoneTableY = doc.lastAutoTable.finalY + 5;
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(31, 41, 55);
-        doc.text(`3. RINCIAN SKOR SERVIS PER ZONA (Z1 - Z10) PEMAIN — Format: (ACE / IN)`, 14, zoneTableY);
+                athleteDetailRows.push([
+                    '  • Servis (In/Ace/Err)',
+                    `${aAll.service_in}/${aAll.service_ace}/${aAll.service_error}`,
+                    `${aS1.service_in}/${aS1.service_ace}/${aS1.service_error}`,
+                    `${aS2.service_in}/${aS2.service_ace}/${aS2.service_error}`,
+                    `${aS3.service_in}/${aS3.service_ace}/${aS3.service_error}`,
+                ]);
+                athleteDetailRows.push([
+                    '  • Strike (In/Ace/Err)',
+                    `${aAll.strike_in || aAll.strike_success}/${aAll.strike_ace}/${aAll.strike_error || aAll.strike_fail}`,
+                    `${aS1.strike_in || aS1.strike_success}/${aS1.strike_ace}/${aS1.strike_error || aS1.strike_fail}`,
+                    `${aS2.strike_in || aS2.strike_success}/${aS2.strike_ace}/${aS2.strike_error || aS2.strike_fail}`,
+                    `${aS3.strike_in || aS3.strike_success}/${aS3.strike_ace}/${aS3.strike_error || aS3.strike_fail}`,
+                ]);
+                athleteDetailRows.push([
+                    '  • Freeball (In/Ace/Err)',
+                    `${aAll.freeball_in}/${aAll.freeball_ace}/${aAll.freeball_error}`,
+                    `${aS1.freeball_in}/${aS1.freeball_ace}/${aS1.freeball_error}`,
+                    `${aS2.freeball_in}/${aS2.freeball_ace}/${aS2.freeball_error}`,
+                    `${aS3.freeball_in}/${aS3.freeball_ace}/${aS3.freeball_error}`,
+                ]);
+                athleteDetailRows.push([
+                    '  • Firstball (In/Ace/Err)',
+                    `${aAll.firstball_in || aAll.receive_success}/${aAll.firstball_ace}/${aAll.firstball_error || aAll.receive_fail}`,
+                    `${aS1.firstball_in || aS1.receive_success}/${aS1.firstball_ace}/${aS1.firstball_error || aS1.receive_fail}`,
+                    `${aS2.firstball_in || aS2.receive_success}/${aS2.firstball_ace}/${aS2.firstball_error || aS2.receive_fail}`,
+                    `${aS3.firstball_in || aS3.receive_success}/${aS3.firstball_ace}/${aS3.firstball_error || aS3.receive_fail}`,
+                ]);
+                athleteDetailRows.push([
+                    '  • Feeding (In/Ace/Err)',
+                    `${aAll.feeding_in || aAll.feeding_success}/${aAll.feeding_ace}/${aAll.feeding_error || aAll.feeding_fail}`,
+                    `${aS1.feeding_in || aS1.feeding_success}/${aS1.feeding_ace}/${aS1.feeding_error || aS1.feeding_fail}`,
+                    `${aS2.feeding_in || aS2.feeding_success}/${aS2.feeding_ace}/${aS2.feeding_error || aS2.feeding_fail}`,
+                    `${aS3.feeding_in || aS3.feeding_success}/${aS3.feeding_ace}/${aS3.feeding_error || aS3.feeding_fail}`,
+                ]);
+                athleteDetailRows.push([
+                    '  • Blocking (In/Ace/Err)',
+                    `${aAll.blocking_in || aAll.block_success}/${aAll.blocking_ace}/${aAll.blocking_error || aAll.block_fail}`,
+                    `${aS1.blocking_in || aS1.block_success}/${aS1.blocking_ace}/${aS1.blocking_error || aS1.block_fail}`,
+                    `${aS2.blocking_in || aS2.block_success}/${aS2.blocking_ace}/${aS2.blocking_error || aS2.block_fail}`,
+                    `${aS3.blocking_in || aS3.block_success}/${aS3.blocking_ace}/${aS3.blocking_error || aS3.block_fail}`,
+                ]);
+            });
 
-        const playerZoneRows = athletes.map(a => {
-            const st = getAthleteStatsForSet(a.id, 'all');
-            const totalIn = st.service_in;
-            const totalAce = st.service_ace;
+            autoTable(doc, {
+                startY: currentY,
+                head: [['Nama Pemain / Parameter Aksi', 'All Sets (Total)', 'Set 1', 'Set 2', 'Set 3']],
+                body: athleteDetailRows,
+                theme: 'grid',
+                headStyles: {
+                    fillColor: isHome ? [16, 185, 129] : [217, 119, 6],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                    fontSize: 7,
+                },
+                columnStyles: {
+                    0: { halign: 'left', fontStyle: 'bold', width: 50 },
+                    1: { halign: 'center', fontStyle: 'bold', width: 34 },
+                    2: { halign: 'center', width: 32 },
+                    3: { halign: 'center', width: 32 },
+                    4: { halign: 'center', width: 34 },
+                },
+                styles: { fontSize: 6.5, cellPadding: 1 },
+                margin: { left: 14, right: 14 },
+            });
 
-            const formatCell = (zNum) => {
-                const ace = st[`zone_${zNum}_ace`] || 0;
-                const inC = st[`zone_${zNum}_in`] || 0;
-                if (ace === 0 && inC === 0) return '-';
-                return `${ace}/${inC}`;
-            };
+            currentY = doc.lastAutoTable.finalY + 6;
+        }
 
-            return [
-                `#${a.jersey_number || '-'}`,
-                a.name,
-                a.position || 'Pemain',
-                formatCell(1),
-                formatCell(2),
-                formatCell(3),
-                formatCell(4),
-                formatCell(5),
-                formatCell(6),
-                formatCell(7),
-                formatCell(8),
-                formatCell(9),
-                formatCell(10),
-                `${totalAce} Ace`,
-                `${totalIn} In`,
-            ];
-        });
+        // 10-Zone Distribution for Single Team
+        if (currentY > 215) {
+            doc.addPage();
+            currentY = 16;
+        }
 
-        autoTable(doc, {
-            startY: zoneTableY + 2,
-            head: [['No', 'Nama Pemain', 'Posisi', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7', 'Z8', 'Z9', 'Z10', 'Ace', 'In']],
-            body: playerZoneRows,
-            theme: 'grid',
-            headStyles: {
-                fillColor: [31, 41, 55],
-                textColor: [255, 255, 255],
-                fontStyle: 'bold',
-                halign: 'center',
-                fontSize: 6.5,
-            },
-            styles: { fontSize: 6, halign: 'center', cellPadding: 1 },
-            columnStyles: {
-                0: { width: 8 },
-                1: { halign: 'left', fontStyle: 'bold', width: 34 },
-                2: { width: 16 },
-                3: { width: 10 },
-                4: { width: 10 },
-                5: { width: 10 },
-                6: { width: 10 },
-                7: { width: 10 },
-                8: { width: 10 },
-                9: { width: 10 },
-                10: { width: 10 },
-                11: { width: 10 },
-                12: { width: 10 },
-                13: { fontStyle: 'bold', textColor: [217, 119, 6], width: 12 },
-                14: { fontStyle: 'bold', textColor: [16, 185, 129], width: 12 },
-            },
-            margin: { left: 14, right: 14 },
-        });
+        const teamAllZone = buildZoneData(tAll);
+        const teamS1Zone = buildZoneData(tSet1);
+        const teamS2Zone = buildZoneData(tSet2);
+        const teamS3Zone = buildZoneData(tSet3);
 
-        // 4. 10 Zones Ball Distribution Visual Grids (Page 2)
-        doc.addPage();
-        doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
-        doc.rect(0, 0, 210, 24, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(13);
-        doc.text(`DISTRIBUSI ZONA JATUH SERVIS (10 ZONA) — ${focusedTeamName.toUpperCase()}`, 105, 12, { align: 'center' });
-        doc.setFontSize(7.5);
-        doc.setTextColor(209, 213, 219);
-        doc.text('Format: Persentase %  |  (ACE / IN)', 105, 18, { align: 'center' });
+        const colW = 88;
+        const yA = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS (10 ZONA) — ALL SETS`, teamAllZone);
+        const yB = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET 1`, teamS1Zone);
 
-        const colWidth = 88;
-        let yOffset = 32;
+        currentY = Math.max(yA, yB) + 4;
 
-        const allZone = buildTeamZoneData(focusedTeamId, 'all');
-        const set1Zone = buildTeamZoneData(focusedTeamId, 1);
-        const set2Zone = buildTeamZoneData(focusedTeamId, 2);
-        const set3Zone = buildTeamZoneData(focusedTeamId, 3);
-
-        const y1 = drawCourtZoneTable(14, yOffset, colWidth, 'SERVE - ALL SETS', allZone);
-        const y2 = drawCourtZoneTable(108, yOffset, colWidth, 'SERVE - SET 1', set1Zone);
-
-        const nextY = Math.max(y1, y2) + 6;
-        drawCourtZoneTable(14, nextY, colWidth, 'SERVE - SET 2', set2Zone);
-        drawCourtZoneTable(108, nextY, colWidth, 'SERVE - SET 3', set3Zone);
-
-        const filename = `Laporan_${focusedTeamName.replace(/\s+/g, '_')}_vs_${opponentTeamName.replace(/\s+/g, '_')}.pdf`;
-        doc.save(filename);
-        return;
+        const yC = drawCourtZoneTable(14, currentY, colW, `DISTRIBUSI SERVIS — SET 2`, teamS2Zone);
+        const yD = drawCourtZoneTable(108, currentY, colW, `DISTRIBUSI SERVIS — SET 3 (Jika Ada)`, teamS3Zone);
     }
 
-    // ==========================================
-    // COMBINED (ALL TEAMS) REPORT
-    // ==========================================
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(31, 41, 55);
-    doc.text('1. REKAPITULASI STATISTIK PERFORMA TIM (In / Ace / Err)', 14, 72);
-
-    const homeAll = getTeamStatsForSet(homeTeamId, 'all');
-    const awayAll = getTeamStatsForSet(awayTeamId, 'all');
-
-    const metricsCombined = [
-        { label: 'Servis', hFn: (t) => `${t.service_in}/${t.service_ace}/${t.service_error}`, aFn: (t) => `${t.service_in}/${t.service_ace}/${t.service_error}` },
-        { label: 'Strike / Smash', hFn: (t) => `${t.strike_in || t.strike_success}/${t.strike_ace}/${t.strike_error || t.strike_fail}`, aFn: (t) => `${t.strike_in || t.strike_success}/${t.strike_ace}/${t.strike_error || t.strike_fail}` },
-        { label: 'Freeball', hFn: (t) => `${t.freeball_in}/${t.freeball_ace}/${t.freeball_error}`, aFn: (t) => `${t.freeball_in}/${t.freeball_ace}/${t.freeball_error}` },
-        { label: 'Firstball', hFn: (t) => `${t.firstball_in || t.receive_success}/${t.firstball_ace}/${t.firstball_error || t.receive_fail}`, aFn: (t) => `${t.firstball_in || t.receive_success}/${t.firstball_ace}/${t.firstball_error || t.receive_fail}` },
-        { label: 'Feeding', hFn: (t) => `${t.feeding_in || t.feeding_success}/${t.feeding_ace}/${t.feeding_error || t.feeding_fail}`, aFn: (t) => `${t.feeding_in || t.feeding_success}/${t.feeding_ace}/${t.feeding_error || t.feeding_fail}` },
-        { label: 'Blocking', hFn: (t) => `${t.blocking_in || t.block_success}/${t.blocking_ace}/${t.blocking_error || t.block_fail}`, aFn: (t) => `${t.blocking_in || t.block_success}/${t.blocking_ace}/${t.blocking_error || t.block_fail}` },
-        { label: 'Kesalahan Lawan (+Poin)', hFn: (t) => `+${t.opponent_mistake || 0}`, aFn: (t) => `+${t.opponent_mistake || 0}` },
-    ];
-
-    const teamTableRows = metricsCombined.map(m => [
-        m.hFn(homeAll),
-        m.label,
-        m.aFn(awayAll),
-    ]);
-
-    autoTable(doc, {
-        startY: 75,
-        head: [[homeName, 'PARAMETER STATISTIK', awayName]],
-        body: teamTableRows,
-        theme: 'striped',
-        headStyles: {
-            fillColor: [31, 41, 55],
-            textColor: [255, 255, 255],
-            fontStyle: 'bold',
-            halign: 'center',
-            fontSize: 7.5,
-        },
-        columnStyles: {
-            0: { halign: 'center', fontStyle: 'bold', textColor: [16, 185, 129], width: 45 },
-            1: { halign: 'center', fontStyle: 'bold', width: 92 },
-            2: { halign: 'center', fontStyle: 'bold', textColor: [245, 158, 11], width: 45 },
-        },
-        styles: { fontSize: 7, cellPadding: 1.2 },
-        margin: { left: 14, right: 14 },
-    });
-
-    const athleteY = doc.lastAutoTable.finalY + 5;
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(31, 41, 55);
-    doc.text('2. STATISTIK RINCIAN ZONA SERVIS (Z1 - Z10) SELURUH PEMAIN', 14, athleteY);
-
-    const allCombinedAthletes = [
-        ...(match.home_team?.athletes || match.home_super_team?.members?.flatMap(m => m.athletes || []) || []),
-        ...(match.away_team?.athletes || match.away_super_team?.members?.flatMap(m => m.athletes || []) || []),
-    ];
-
-    const combinedZoneRows = allCombinedAthletes.map(a => {
-        const st = getAthleteStatsForSet(a.id, 'all');
-        const isHome = match.home_team?.athletes?.some(ha => ha.id === a.id) || false;
-        const totalIn = st.service_in;
-        const totalAce = st.service_ace;
-
-        const formatCell = (zNum) => {
-            const ace = st[`zone_${zNum}_ace`] || 0;
-            const inC = st[`zone_${zNum}_in`] || 0;
-            if (ace === 0 && inC === 0) return '-';
-            return `${ace}/${inC}`;
-        };
-
-        return [
-            `#${a.jersey_number || '-'}`,
-            a.name,
-            isHome ? homeName : awayName,
-            a.position || 'Pemain',
-            formatCell(1),
-            formatCell(2),
-            formatCell(3),
-            formatCell(4),
-            formatCell(5),
-            formatCell(6),
-            formatCell(7),
-            formatCell(8),
-            formatCell(9),
-            formatCell(10),
-            `${totalAce} / ${totalIn}`,
-        ];
-    });
-
-    autoTable(doc, {
-        startY: athleteY + 2,
-        head: [['No', 'Nama Pemain', 'Tim', 'Posisi', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7', 'Z8', 'Z9', 'Z10', 'Ace/In']],
-        body: combinedZoneRows,
-        theme: 'grid',
-        headStyles: {
-            fillColor: [16, 185, 129],
-            textColor: [255, 255, 255],
-            fontStyle: 'bold',
-            halign: 'center',
-            fontSize: 6.5,
-        },
-        styles: { fontSize: 6, halign: 'center', cellPadding: 1 },
-        columnStyles: {
-            0: { width: 8 },
-            1: { halign: 'left', fontStyle: 'bold', width: 30 },
-            2: { halign: 'left', width: 22 },
-            3: { width: 14 },
-            4: { width: 9 },
-            5: { width: 9 },
-            6: { width: 9 },
-            7: { width: 9 },
-            8: { width: 9 },
-            9: { width: 9 },
-            10: { width: 9 },
-            11: { width: 9 },
-            12: { width: 9 },
-            13: { width: 9 },
-            14: { fontStyle: 'bold', width: 16 },
-        },
-        margin: { left: 14, right: 14 },
-    });
-
-    // Page 2: Zone distributions for both teams
-    doc.addPage();
-    doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
-    doc.rect(0, 0, 210, 24, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('DISTRIBUSI ZONA JATUH BOLA SERVIS (10 ZONA)', 105, 12, { align: 'center' });
-    doc.setFontSize(7.5);
-    doc.setTextColor(209, 213, 219);
-    doc.text('Format Tampilan: Persentase %  |  (ACE / IN)', 105, 18, { align: 'center' });
-
-    let yOffset = 30;
-    doc.setFontSize(10.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(16, 185, 129);
-    doc.text(`🟢 DISTRIBUSI SERVIS TIM: ${homeName}`, 14, yOffset);
-    yOffset += 4;
-
-    const colWidth = 88;
-    const homeAllZone = buildTeamZoneData(homeTeamId, 'all');
-    const homeSet1Zone = buildTeamZoneData(homeTeamId, 1);
-    const homeSet2Zone = buildTeamZoneData(homeTeamId, 2);
-    const homeSet3Zone = buildTeamZoneData(homeTeamId, 3);
-
-    const y1 = drawCourtZoneTable(14, yOffset, colWidth, 'SERVE - ALL SETS', homeAllZone);
-    const y2 = drawCourtZoneTable(108, yOffset, colWidth, 'SERVE - SET 1', homeSet1Zone);
-
-    yOffset = Math.max(y1, y2) + 6;
-
-    const y3 = drawCourtZoneTable(14, yOffset, colWidth, 'SERVE - SET 2', homeSet2Zone);
-    drawCourtZoneTable(108, yOffset, colWidth, 'SERVE - SET 3 (Jika Ada)', homeSet3Zone);
-
-    yOffset = Math.max(y3, yOffset) + 8;
-
-    doc.setFontSize(10.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(245, 158, 11);
-    doc.text(`🟡 DISTRIBUSI SERVIS TIM: ${awayName}`, 14, yOffset);
-    yOffset += 4;
-
-    const awayAllZone = buildTeamZoneData(awayTeamId, 'all');
-    const awaySet1Zone = buildTeamZoneData(awayTeamId, 1);
-    const awaySet2Zone = buildTeamZoneData(awayTeamId, 2);
-    const awaySet3Zone = buildTeamZoneData(awayTeamId, 3);
-
-    const y5 = drawCourtZoneTable(14, yOffset, colWidth, 'SERVE - ALL SETS', awayAllZone);
-    const y6 = drawCourtZoneTable(108, yOffset, colWidth, 'SERVE - SET 1', awaySet1Zone);
-
-    yOffset = Math.max(y5, y6) + 6;
-
-    const y7 = drawCourtZoneTable(14, yOffset, colWidth, 'SERVE - SET 2', awaySet2Zone);
-    drawCourtZoneTable(108, yOffset, colWidth, 'SERVE - SET 3 (Jika Ada)', awaySet3Zone);
-
-    const filename = `${homeName.replace(/\s+/g, '_')}_vs_${awayName.replace(/\s+/g, '_')}_Match_Report.pdf`;
+    const filename = `Laporan_Statistik_${focusedTeamName.replace(/\s+/g, '_')}_vs_${opponentTeamName.replace(/\s+/g, '_')}.pdf`;
     doc.save(filename);
 }
