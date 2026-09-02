@@ -30,6 +30,22 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
     const focusedTeamName = targetTeam === 'away' ? awayName : homeName;
     const opponentTeamName = targetTeam === 'away' ? homeName : awayName;
 
+    const isTeamMode = match.match_mode === 'team_regu' || match.match_mode === 'team_double';
+
+    const homeAthletes = match.home_team?.athletes || match.home_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
+    const awayAthletes = match.away_team?.athletes || match.away_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
+
+    const homeTeamIds = isTeamMode
+        ? [match.home_super_team_id, ...(match.home_super_team?.members?.map(mem => mem.id) || [])].filter(Boolean)
+        : [match.home_team_id].filter(Boolean);
+
+    const awayTeamIds = isTeamMode
+        ? [match.away_super_team_id, ...(match.away_super_team?.members?.map(mem => mem.id) || [])].filter(Boolean)
+        : [match.away_team_id].filter(Boolean);
+
+    const homeAthleteIds = homeAthletes.map(a => a.id);
+    const awayAthleteIds = awayAthletes.map(a => a.id);
+
     // Helper: calculate athlete stats
     const getAthleteStatsForSet = (athleteId, setId = null) => {
         let stats = [];
@@ -67,7 +83,7 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
 
         stats.forEach(s => {
             Object.keys(agg).forEach(k => {
-                agg[k] += s[k] || 0;
+                agg[k] += Number(s[k]) || 0;
             });
         });
 
@@ -77,15 +93,26 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
     // Helper: calculate team stats
     const getTeamStatsForSet = (teamId, setId = null) => {
         let stats = [];
+        const isTargetTeam = (st) => {
+            if (st.team_id === teamId) return true;
+            if (homeTeamIds.includes(teamId)) {
+                return (st.team_id && homeTeamIds.includes(st.team_id)) || (st.athlete_id && homeAthleteIds.includes(st.athlete_id));
+            }
+            if (awayTeamIds.includes(teamId)) {
+                return (st.team_id && awayTeamIds.includes(st.team_id)) || (st.athlete_id && awayAthleteIds.includes(st.athlete_id));
+            }
+            return false;
+        };
+
         if (setId === 'all' || !setId) {
             match.sets?.forEach(s => {
                 s.stats?.forEach(st => {
-                    if (st.team_id === teamId) stats.push(st);
+                    if (isTargetTeam(st)) stats.push(st);
                 });
             });
         } else {
             const set = match.sets?.find(s => s.id === setId || s.set_number === setId);
-            stats = set?.stats?.filter(st => st.team_id === teamId) || [];
+            stats = set?.stats?.filter(st => isTargetTeam(st)) || [];
         }
 
         const agg = {
@@ -111,7 +138,7 @@ export function exportMatchReportPdf(match, targetTeam = 'all') {
 
         stats.forEach(s => {
             Object.keys(agg).forEach(k => {
-                agg[k] += s[k] || 0;
+                agg[k] += Number(s[k]) || 0;
             });
         });
 

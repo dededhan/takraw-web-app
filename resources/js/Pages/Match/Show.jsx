@@ -37,7 +37,10 @@ function PlayerCourtMiniature({ stats }) {
             return { ace, inC, total: ace + inC };
         }
 
-        const az = stats.action_zones?.[actionFilter];
+        let az = stats.action_zones?.[actionFilter];
+        if (typeof az === 'string') {
+            try { az = JSON.parse(az); } catch(e) { az = null; }
+        }
         const hasSpecificActionData = az && Object.keys(az).length > 0;
 
         if (hasSpecificActionData) {
@@ -232,22 +235,42 @@ export default function MatchShow({ match: m }) {
     const homeAthletes = m.home_team?.athletes || m.home_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
     const awayAthletes = m.away_team?.athletes || m.away_super_team?.members?.flatMap(mem => mem.athletes || []) || [];
 
+    const homeTeamIds = isTeamMode
+        ? [m.home_super_team_id, ...(m.home_super_team?.members?.map(mem => mem.id) || [])].filter(Boolean)
+        : [m.home_team_id].filter(Boolean);
+
+    const awayTeamIds = isTeamMode
+        ? [m.away_super_team_id, ...(m.away_super_team?.members?.map(mem => mem.id) || [])].filter(Boolean)
+        : [m.away_team_id].filter(Boolean);
+
+    const homeAthleteIds = homeAthletes.map(a => a.id);
+    const awayAthleteIds = awayAthletes.map(a => a.id);
+
     const [selectedHomeAthleteId, setSelectedHomeAthleteId] = useState('all');
     const [selectedAwayAthleteId, setSelectedAwayAthleteId] = useState('all');
 
     // Helpers to retrieve team stats
-    const getTeamStats = (teamId, setFilterVal) => {
+    const getTeamStats = (side, setFilterVal) => {
+        const teamIds = side === 'home' ? homeTeamIds : awayTeamIds;
+        const athleteIds = side === 'home' ? homeAthleteIds : awayAthleteIds;
+
+        const isSideStat = (st) => {
+            if (st.athlete_id && athleteIds.includes(st.athlete_id)) return true;
+            if (st.team_id && teamIds.includes(st.team_id)) return true;
+            return false;
+        };
+
         let stats = [];
         if (setFilterVal === 'all') {
             m.sets?.forEach(s => {
                 s.stats?.forEach(st => {
-                    if (st.team_id === teamId) stats.push(st);
+                    if (isSideStat(st)) stats.push(st);
                 });
             });
         } else {
             const setNum = parseInt(setFilterVal);
             const set = m.sets?.find(s => s.set_number === setNum || s.id === setFilterVal);
-            stats = set?.stats?.filter(st => st.team_id === teamId) || [];
+            stats = set?.stats?.filter(st => isSideStat(st)) || [];
         }
         return stats;
     };
@@ -279,15 +302,25 @@ export default function MatchShow({ match: m }) {
         stats.forEach(s => {
             Object.keys(agg).forEach(k => {
                 if (k !== 'action_zones') {
-                    agg[k] += s[k] || 0;
+                    agg[k] += Number(s[k]) || 0;
                 }
             });
-            if (s.action_zones && typeof s.action_zones === 'object') {
-                Object.keys(s.action_zones).forEach(act => {
+            let az = s.action_zones;
+            if (typeof az === 'string') {
+                try { az = JSON.parse(az); } catch(e) { az = null; }
+            }
+            if (az && typeof az === 'object') {
+                Object.keys(az).forEach(act => {
                     if (!agg.action_zones[act]) agg.action_zones[act] = {};
-                    Object.keys(s.action_zones[act]).forEach(zk => {
-                        agg.action_zones[act][zk] = (agg.action_zones[act][zk] || 0) + (s.action_zones[act][zk] || 0);
-                    });
+                    let actObj = az[act];
+                    if (typeof actObj === 'string') {
+                        try { actObj = JSON.parse(actObj); } catch(e) { actObj = null; }
+                    }
+                    if (actObj && typeof actObj === 'object') {
+                        Object.keys(actObj).forEach(zk => {
+                            agg.action_zones[act][zk] = (agg.action_zones[act][zk] || 0) + (Number(actObj[zk]) || 0);
+                        });
+                    }
                 });
             }
         });
@@ -311,8 +344,8 @@ export default function MatchShow({ match: m }) {
     };
 
     // Calculate aggregated team stats for selected filter
-    const homeTeamAggStats = aggregateStats(getTeamStats(homeTeamId, homeSetFilter));
-    const awayTeamAggStats = aggregateStats(getTeamStats(awayTeamId, awaySetFilter));
+    const homeTeamAggStats = aggregateStats(getTeamStats('home', homeSetFilter));
+    const awayTeamAggStats = aggregateStats(getTeamStats('away', awaySetFilter));
 
     return (
         <AuthenticatedLayout header="Detail Pertandingan">
