@@ -412,25 +412,33 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
     // 5. RENDER TEAM STATS & ATHLETES (SUPER TEAM MODE)
     // ─────────────────────────────────────────────────────────────────
     if (isTeamMode) {
-        reguSummaries.forEach((regu, rIndex) => {
-            const memberTeam = regu.member;
-            const memberAthletes = memberTeam?.athletes || [];
-            
-            // Ambil semua atlet member regu ini, dan tambahkan atlet home yang mencatat statistik pada set regu ini
-            const sNums = regu.setNumbers; // [1, 2, 3] or [4, 5, 6] or [7, 8, 9]
-            const activeAthleteIdsInRegu = new Set(memberAthletes.map(a => a.id));
+        // Pre-calculate athletes for each regu:
+        // - Grub A & B: Only athletes who actually recorded scores/actions (attempts > 0) in that grub
+        // - Grub C (or last regu): Athletes who recorded scores in Grub C + all remaining unplayed team members
+        const uniqueAllAthletes = Array.from(new Map(focusedAthletes.map(a => [a.id, a])).values());
+        const reguAthletesMap = {};
+        const assignedAthleteIds = new Set();
 
-            match.sets?.forEach(s => {
-                if (sNums.includes(s.set_number)) {
-                    s.stats?.forEach(st => {
-                        if (focusedAthleteIds.includes(st.athlete_id)) {
-                            activeAthleteIdsInRegu.add(st.athlete_id);
-                        }
-                    });
-                }
+        reguSummaries.forEach((regu, rIdx) => {
+            const isLastRegu = rIdx === reguSummaries.length - 1;
+            const scoredAthletes = uniqueAllAthletes.filter(a => {
+                const perf = calculateTotalPerformance(getAthleteStats(a.id, regu.setNumbers));
+                return perf.totalAttempts > 0;
             });
 
-            const athletesForRegu = focusedAthletes.filter(a => activeAthleteIdsInRegu.has(a.id));
+            if (!isLastRegu) {
+                const list = scoredAthletes.length > 0 ? scoredAthletes : (regu.member?.athletes || []);
+                reguAthletesMap[rIdx] = list;
+                list.forEach(a => assignedAthleteIds.add(a.id));
+            } else {
+                const remainingAthletes = uniqueAllAthletes.filter(a => !assignedAthleteIds.has(a.id) && !scoredAthletes.some(sa => sa.id === a.id));
+                reguAthletesMap[rIdx] = [...scoredAthletes, ...remainingAthletes];
+            }
+        });
+
+        reguSummaries.forEach((regu, rIndex) => {
+            const sNums = regu.setNumbers; // [1, 2, 3] or [4, 5, 6] or [7, 8, 9]
+            const athletesForRegu = reguAthletesMap[rIndex] || [];
 
             // Cek jika halaman hampir penuh, buat halaman baru
             if (currentY > 230) {
