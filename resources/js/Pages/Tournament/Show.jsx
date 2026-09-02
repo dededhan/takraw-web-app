@@ -229,21 +229,25 @@ function computePoolStandings(pool, tournamentMatches = []) {
 
         let homeSetsWon = 0;
         let awaySetsWon = 0;
+        let homeGamesWon = 0;
+        let awayGamesWon = 0;
 
-        (m.sets || []).forEach(s => {
-            if (s.status !== 'finished') return;
-            const hScore = s.home_score || 0;
-            const aScore = s.away_score || 0;
+        const sets = m.sets || [];
+        const playedSets = sets.filter(s => s.status === 'finished' || (Number(s.home_score) > 0 || Number(s.away_score) > 0));
+
+        // 1. Poin Bola & Set
+        playedSets.forEach(s => {
+            const hScore = Number(s.home_score) || 0;
+            const aScore = Number(s.away_score) || 0;
 
             homeEntry.pts_won += hScore;
             homeEntry.pts_lost += aScore;
             awayEntry.pts_won += aScore;
             awayEntry.pts_lost += hScore;
 
-            // Check set winner matching team or super team
-            if (s.winner_team_id === homeId || (isTeamMode && (s.winner_team_id === m.home_super_team_id || s.winner_team_id === m.home_team_id))) {
+            if (hScore > aScore) {
                 homeSetsWon += 1;
-            } else if (s.winner_team_id === awayId || (isTeamMode && (s.winner_team_id === m.away_super_team_id || s.winner_team_id === m.away_team_id))) {
+            } else if (aScore > hScore) {
                 awaySetsWon += 1;
             }
         });
@@ -253,25 +257,66 @@ function computePoolStandings(pool, tournamentMatches = []) {
         awayEntry.set_won += awaySetsWon;
         awayEntry.set_lost += homeSetsWon;
 
-        const winnerId = m.winner_team_id || (homeSetsWon > awaySetsWon ? homeId : awayId);
-
-        if (winnerId === homeId) {
-            homeEntry.matches_won += 1;
-            awayEntry.matches_lost += 1;
-            homeEntry.score += 3;
-            awayEntry.score += 0;
-        } else if (winnerId === awayId) {
-            awayEntry.matches_won += 1;
-            homeEntry.matches_lost += 1;
-            awayEntry.score += 3;
-            homeEntry.score += 0;
-        }
-
         if (isTeamMode) {
-            homeEntry.game_won += homeSetsWon;
-            homeEntry.game_lost += awaySetsWon;
-            awayEntry.game_won += awaySetsWon;
-            awayEntry.game_lost += homeSetsWon;
+            // SuperTeam: Game / Regu Won (Regu 1=Set 1-3, Regu 2=Set 4-6, Regu 3=Set 7-9)
+            [0, 1, 2].forEach(rIdx => {
+                const setNums = [rIdx * 3 + 1, rIdx * 3 + 2, rIdx * 3 + 3];
+                const rSets = playedSets.filter(s => setNums.includes(Number(s.set_number)));
+                const rH = rSets.filter(s => Number(s.home_score) > Number(s.away_score)).length;
+                const rA = rSets.filter(s => Number(s.away_score) > Number(s.home_score)).length;
+
+                if (rH >= 2 || (rSets.length >= 3 && rH > rA)) {
+                    homeGamesWon += 1;
+                } else if (rA >= 2 || (rSets.length >= 3 && rA > rH)) {
+                    awayGamesWon += 1;
+                }
+            });
+
+            // Fallback jika regu belum selesai tapi set ada
+            if (homeGamesWon === 0 && awayGamesWon === 0 && (homeSetsWon > 0 || awaySetsWon > 0)) {
+                if (homeSetsWon > awaySetsWon) homeGamesWon = 1;
+                else if (awaySetsWon > homeSetsWon) awayGamesWon = 1;
+            }
+
+            homeEntry.game_won += homeGamesWon;
+            homeEntry.game_lost += awayGamesWon;
+            awayEntry.game_won += awayGamesWon;
+            awayEntry.game_lost += homeGamesWon;
+
+            const isHomeMatchWinner = homeGamesWon > awayGamesWon || (homeGamesWon === awayGamesWon && homeSetsWon > awaySetsWon) || m.winner_super_team_id === homeId;
+            const isAwayMatchWinner = awayGamesWon > homeGamesWon || (homeGamesWon === awayGamesWon && awaySetsWon > homeSetsWon) || m.winner_super_team_id === awayId;
+
+            if (isHomeMatchWinner) {
+                homeEntry.matches_won += 1;
+                awayEntry.matches_lost += 1;
+                homeEntry.score += 2;
+            } else if (isAwayMatchWinner) {
+                awayEntry.matches_won += 1;
+                homeEntry.matches_lost += 1;
+                awayEntry.score += 2;
+            }
+        } else {
+            // Single Regu / Double / Quadrant
+            const isHomeMatchWinner = homeSetsWon > awaySetsWon || m.winner_team_id === homeId;
+            const isAwayMatchWinner = awaySetsWon > homeSetsWon || m.winner_team_id === awayId;
+
+            homeGamesWon = isHomeMatchWinner ? 1 : 0;
+            awayGamesWon = isAwayMatchWinner ? 1 : 0;
+
+            homeEntry.game_won += homeGamesWon;
+            homeEntry.game_lost += awayGamesWon;
+            awayEntry.game_won += awayGamesWon;
+            awayEntry.game_lost += homeGamesWon;
+
+            if (isHomeMatchWinner) {
+                homeEntry.matches_won += 1;
+                awayEntry.matches_lost += 1;
+                homeEntry.score += 2;
+            } else if (isAwayMatchWinner) {
+                awayEntry.matches_won += 1;
+                homeEntry.matches_lost += 1;
+                awayEntry.score += 2;
+            }
         }
     });
 
@@ -284,9 +329,15 @@ function computePoolStandings(pool, tournamentMatches = []) {
     });
 
     standingsList.sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
+        // 1. Matches Won DESC
+        if (b.matches_won !== a.matches_won) return b.matches_won - a.matches_won;
+        // 2. Matches Diff DESC
         if (b.matches_diff !== a.matches_diff) return b.matches_diff - a.matches_diff;
+        // 3. Game Diff DESC
+        if (b.game_diff !== a.game_diff) return b.game_diff - a.game_diff;
+        // 4. Set Diff DESC
         if (b.set_diff !== a.set_diff) return b.set_diff - a.set_diff;
+        // 5. Points Diff DESC
         return b.pts_diff - a.pts_diff;
     });
 
@@ -1215,17 +1266,49 @@ function MatchesTab({ matches }) {
                                 {match.home_display_name || match.home_team?.name || 'TBD'}
                             </span>
                             <div className="text-center">
-                                {match.status === 'finished' ? (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-lg font-bold text-primary-400">
-                                            {match.sets?.filter(s => s.winner_team_id === match.home_team_id).length}
-                                        </span>
-                                        <span className="text-xs text-surface-600">—</span>
-                                        <span className="text-lg font-bold text-accent-400">
-                                            {match.sets?.filter(s => s.winner_team_id === match.away_team_id).length}
-                                        </span>
-                                    </div>
-                                ) : (
+                                {match.status === 'finished' ? (() => {
+                                    const isTeamMode = match.match_mode === 'team_regu' || match.match_mode === 'team_double';
+                                    const playedSets = (match.sets || []).filter(s => s.status === 'finished' || (Number(s.home_score) > 0 || Number(s.away_score) > 0));
+
+                                    let hScore = 0;
+                                    let aScore = 0;
+                                    let unit = 'Set';
+
+                                    if (isTeamMode) {
+                                        unit = 'Regu';
+                                        [0, 1, 2].forEach(rIdx => {
+                                            const setNums = [rIdx * 3 + 1, rIdx * 3 + 2, rIdx * 3 + 3];
+                                            const rSets = playedSets.filter(s => setNums.includes(Number(s.set_number)));
+                                            const rH = rSets.filter(s => Number(s.home_score) > Number(s.away_score)).length;
+                                            const rA = rSets.filter(s => Number(s.away_score) > Number(s.home_score)).length;
+                                            if (rH >= 2 || (rSets.length >= 3 && rH > rA)) hScore++;
+                                            else if (rA >= 2 || (rSets.length >= 3 && rA > rH)) aScore++;
+                                        });
+                                        if (hScore === 0 && aScore === 0 && playedSets.length > 0) {
+                                            hScore = playedSets.filter(s => Number(s.home_score) > Number(s.away_score)).length;
+                                            aScore = playedSets.filter(s => Number(s.away_score) > Number(s.home_score)).length;
+                                            unit = 'Set';
+                                        }
+                                    } else {
+                                        hScore = playedSets.filter(s => Number(s.home_score) > Number(s.away_score)).length;
+                                        aScore = playedSets.filter(s => Number(s.away_score) > Number(s.home_score)).length;
+                                    }
+
+                                    return (
+                                        <div className="flex flex-col items-center">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-lg font-black ${hScore > aScore ? 'text-emerald-400' : 'text-surface-300'}`}>
+                                                    {hScore}
+                                                </span>
+                                                <span className="text-xs text-surface-600">—</span>
+                                                <span className={`text-lg font-black ${aScore > hScore ? 'text-emerald-400' : 'text-surface-300'}`}>
+                                                    {aScore}
+                                                </span>
+                                            </div>
+                                            <span className="text-[9px] text-surface-500 font-bold uppercase">{unit}</span>
+                                        </div>
+                                    );
+                                })() : (
                                     <span className="text-xs text-surface-600 font-bold px-3 py-1 bg-surface-800 rounded-lg">VS</span>
                                 )}
                             </div>

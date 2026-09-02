@@ -73,8 +73,16 @@ class TournamentController extends Controller
             'superTeams.members.athletes',
             'pools.teams',
             'pools.superTeams.members',
-            'pools.standings' => fn($q) => $q->with('team')->orderBy('rank'),
             'matches' => fn($q) => $q->with(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'referee', 'sets'])->orderBy('scheduled_at'),
+        ]);
+
+        // Sync and recalculate standings for each pool
+        foreach ($tournament->pools as $pool) {
+            \App\Models\PoolStanding::recalculate($pool->id);
+        }
+
+        $tournament->load([
+            'pools.standings' => fn($q) => $q->with(['team', 'superTeam.members'])->orderBy('rank'),
         ]);
 
         // Get all teams in the system that are NOT registered in this tournament
