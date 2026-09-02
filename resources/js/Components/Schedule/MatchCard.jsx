@@ -22,34 +22,49 @@ const STAGE_LABELS = {
 };
 
 /**
- * Helper untuk memeriksa apakah satu sisi (Home/Away) cocok secara TEPAT (EXACT) dengan tim yang dicari
+ * Helper untuk memeriksa apakah satu sisi (Home/Away) cocok dengan tim/super team yang dicari
  */
 export function isSideMatchingTeam(match, side, searchedTeam) {
-    if (!searchedTeam) return false;
+    if (!searchedTeam || !match) return false;
     const sId = searchedTeam.id ? Number(searchedTeam.id) : null;
     const sName = (searchedTeam.name || '').trim().toLowerCase();
+    if (!sId && !sName) return false;
 
-    if (side === 'home') {
-        if (searchedTeam.type === 'super_team') {
-            if (sId && match.home_super_team_id === sId) return true;
-            const homeStName = (match.home_super_team?.name || (match.home_super_team_id ? match.home_display_name : '') || '').trim().toLowerCase();
-            if (sName && homeStName === sName) return true;
-        } else {
-            if (sId && match.home_team_id === sId) return true;
-            const homeName = (match.home_team?.name || (match.home_team_id ? match.home_display_name : '') || match.home_placeholder || '').trim().toLowerCase();
-            if (sName && homeName === sName) return true;
+    const isHome = side === 'home';
+    const matchStId = isHome ? (match.home_super_team_id || match.home_super_team?.id) : (match.away_super_team_id || match.away_super_team?.id);
+    const matchTeamId = isHome ? (match.home_team_id || match.home_team?.id) : (match.away_team_id || match.away_team?.id);
+
+    const stObj = isHome ? match.home_super_team : match.away_super_team;
+    const teamObj = isHome ? match.home_team : match.away_team;
+    const displayName = (isHome ? match.home_display_name : match.away_display_name) || '';
+    const placeholder = (isHome ? match.home_placeholder : match.away_placeholder) || '';
+
+    // 1. Direct ID match (Super Team ID or Team ID)
+    if (sId) {
+        if (matchStId && Number(matchStId) === sId) return true;
+        if (matchTeamId && Number(matchTeamId) === sId) return true;
+    }
+
+    // 2. Name matching across all available name fields on that side
+    if (sName) {
+        const candidateNames = [
+            stObj?.name,
+            teamObj?.name,
+            displayName,
+            placeholder,
+        ].filter(Boolean).map(n => n.trim().toLowerCase());
+
+        if (candidateNames.some(cn => cn === sName || cn.includes(sName) || sName.includes(cn))) {
+            return true;
         }
-    } else {
-        if (searchedTeam.type === 'super_team') {
-            if (sId && match.away_super_team_id === sId) return true;
-            const awayStName = (match.away_super_team?.name || (match.away_super_team_id ? match.away_display_name : '') || '').trim().toLowerCase();
-            if (sName && awayStName === sName) return true;
-        } else {
-            if (sId && match.away_team_id === sId) return true;
-            const awayName = (match.away_team?.name || (match.away_team_id ? match.away_display_name : '') || match.away_placeholder || '').trim().toLowerCase();
-            if (sName && awayName === sName) return true;
+
+        // Also check if any super team member matches this name (for super team lineups)
+        const members = stObj?.members || [];
+        if (members.some(m => (m.name || '').trim().toLowerCase() === sName || (m.id && Number(m.id) === sId))) {
+            return true;
         }
     }
+
     return false;
 }
 
@@ -73,10 +88,22 @@ export default function MatchCard({
         disabled: !canDrag,
     });
 
+    // Evaluasi EXACT match untuk Tim 1 dan Tim 2
+    const isHomeT1 = isSideMatchingTeam(match, 'home', searchedTeam1);
+    const isAwayT1 = isSideMatchingTeam(match, 'away', searchedTeam1);
+    const isHomeT2 = isSideMatchingTeam(match, 'home', searchedTeam2);
+    const isAwayT2 = isSideMatchingTeam(match, 'away', searchedTeam2);
+
+    const isTeam1 = isHomeT1 || isAwayT1;
+    const isTeam2 = isHomeT2 || isAwayT2;
+    const isClash = Boolean(searchedTeam1 && searchedTeam2 && isTeam1 && isTeam2);
+    const hasSearch = Boolean(searchedTeam1 || searchedTeam2);
+    const isDimmed = hasSearch && !isTeam1 && !isTeam2;
+
     const style = {
         transform: CSS.Translate.toString(transform),
         opacity:   isDragging ? 0.5 : 1,
-        zIndex:    isDragging ? 999 : isFocused ? 30 : 'auto',
+        zIndex:    isDragging ? 999 : isFocused ? 60 : isClash ? 55 : (isTeam1 || isTeam2) ? 50 : (hasSearch ? 5 : 20),
         cursor:    canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default',
     };
 
@@ -104,26 +131,14 @@ export default function MatchCard({
 
     const isTeamMode = span >= 3;
 
-    // Evaluasi EXACT match untuk Tim 1 dan Tim 2
-    const isHomeT1 = isSideMatchingTeam(match, 'home', searchedTeam1);
-    const isAwayT1 = isSideMatchingTeam(match, 'away', searchedTeam1);
-    const isHomeT2 = isSideMatchingTeam(match, 'home', searchedTeam2);
-    const isAwayT2 = isSideMatchingTeam(match, 'away', searchedTeam2);
-
-    const isTeam1 = isHomeT1 || isAwayT1;
-    const isTeam2 = isHomeT2 || isAwayT2;
-    const isClash = Boolean(searchedTeam1 && searchedTeam2 && isTeam1 && isTeam2);
-    const hasSearch = Boolean(searchedTeam1 || searchedTeam2);
-    const isDimmed = hasSearch && !isTeam1 && !isTeam2;
-
     // Card border & container dynamic classes
-    let containerHighlightClasses = 'border-surface-700/40';
+    let containerHighlightClasses = 'border-surface-700/40 bg-surface-900';
     let headerStyle = { backgroundColor: colors.bg };
     let headerBadge = null;
 
     if (isClash) {
         // Duel Head-to-Head Tim 1 vs Tim 2!
-        containerHighlightClasses = 'ring-2.5 ring-fuchsia-400 border-fuchsia-500 shadow-[0_0_22px_rgba(217,70,239,0.7)] scale-[1.01]';
+        containerHighlightClasses = 'ring-3 ring-fuchsia-400 border-fuchsia-500 shadow-[0_0_25px_rgba(217,70,239,0.85)] scale-[1.01] bg-surface-900';
         headerStyle = { background: 'linear-gradient(135deg, #7e22ce 0%, #c026d3 50%, #e11d48 100%)' };
         headerBadge = (
             <span className="bg-white text-fuchsia-950 font-black text-[9px] px-1.5 py-0.2 rounded-full uppercase tracking-tighter shadow-sm animate-pulse">
@@ -132,7 +147,7 @@ export default function MatchCard({
         );
     } else if (isTeam1) {
         // Tim 1 (Sky Blue / Cyan)
-        containerHighlightClasses = 'ring-2 ring-sky-400 border-sky-500 shadow-[0_0_16px_rgba(14,165,233,0.55)] scale-[1.01]';
+        containerHighlightClasses = 'ring-2.5 ring-sky-400 border-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.7)] scale-[1.01] bg-surface-900';
         headerStyle = { background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' };
         headerBadge = (
             <span className="bg-sky-950 text-sky-200 font-extrabold text-[9px] px-1.5 py-0.2 rounded-full border border-sky-400/60 uppercase tracking-tighter">
@@ -141,7 +156,7 @@ export default function MatchCard({
         );
     } else if (isTeam2) {
         // Tim 2 (Vibrant Amber / Orange)
-        containerHighlightClasses = 'ring-2 ring-amber-400 border-amber-500 shadow-[0_0_16px_rgba(245,158,11,0.55)] scale-[1.01]';
+        containerHighlightClasses = 'ring-2.5 ring-amber-400 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.7)] scale-[1.01] bg-surface-900';
         headerStyle = { background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' };
         headerBadge = (
             <span className="bg-amber-950 text-amber-200 font-extrabold text-[9px] px-1.5 py-0.2 rounded-full border border-amber-400/60 uppercase tracking-tighter">
@@ -176,7 +191,7 @@ export default function MatchCard({
                 relative rounded-lg select-none overflow-hidden transition-all duration-200 flex flex-col justify-between
                 shadow-sm hover:shadow-md border
                 ${containerHighlightClasses}
-                ${isDimmed ? 'opacity-35 grayscale-[25%] hover:opacity-100 hover:grayscale-0' : ''}
+                ${isDimmed ? 'opacity-30 grayscale-[35%] hover:opacity-100 hover:grayscale-0' : ''}
                 ${isFocused ? 'ring-4 ring-yellow-400 scale-[1.03] shadow-[0_0_25px_rgba(250,204,21,0.8)]' : ''}
                 ${isDragging ? 'shadow-2xl z-50 opacity-90' : ''}
             `}

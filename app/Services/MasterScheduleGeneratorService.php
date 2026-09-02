@@ -455,8 +455,10 @@ class MasterScheduleGeneratorService
         bool $isSuper
     ): ?array {
         $courtIds = $courts->pluck('id')->toArray();
+        $homeKey = ($isSuper ? 'super_' : '') . $homeId;
+        $awayKey = ($isSuper ? 'super_' : '') . $awayId;
 
-        // Iterasi slot berurutan, lewati yang sudah terisi atau ada rest violation
+        // Pass 1: Cari slot dengan rest time yang ideal (1 sesi jeda)
         for ($i = 0; $i < $this->matchSlots->count(); $i++) {
             $slot = $this->matchSlots[$i];
 
@@ -472,14 +474,51 @@ class MasterScheduleGeneratorService
             }
 
             // Cek rest time untuk kedua tim
-            $homeKey = ($isSuper ? 'super_' : '') . $homeId;
-            $awayKey = ($isSuper ? 'super_' : '') . $awayId;
-
             if ($this->isRestViolation($homeKey, $slotIds[0]) || $this->isRestViolation($awayKey, $slotIds[0])) {
                 continue;
             }
 
             // Cek slot tersedia di lapangan manapun
+            foreach ($courtIds as $courtId) {
+                $allClear = true;
+                foreach ($slotIds as $slotId) {
+                    if (isset($this->courtSlotMap[$courtId][$slotId])) {
+                        $allClear = false;
+                        break;
+                    }
+                }
+
+                if ($allClear) {
+                    return [
+                        'slot_id'    => $slotIds[0],
+                        'slot_ids'   => $slotIds,
+                        'court_id'   => $courtId,
+                        'day_number' => $slot->day_number,
+                        'start_time' => $slot->start_time,
+                    ];
+                }
+            }
+        }
+
+        // Pass 2: Fallback jika rest time membuat slot kosong tidak terpakai (agar match TIDAK HILANG / UNSCHEDULED)
+        for ($i = 0; $i < $this->matchSlots->count(); $i++) {
+            $slot = $this->matchSlots[$i];
+
+            if ($span > 1) {
+                $consecutiveSlots = $this->getConsecutiveSlots($i, $span);
+                if (!$consecutiveSlots) {
+                    continue;
+                }
+                $slotIds = $consecutiveSlots->pluck('id')->toArray();
+            } else {
+                $slotIds = [$slot->id];
+            }
+
+            // Hindari hanya jika tim bertanding di jam yang PERSIS sama di lapangan lain (bentrok waktu langsung)
+            if ($this->isSameSlotClash($homeKey, $slotIds) || $this->isSameSlotClash($awayKey, $slotIds)) {
+                continue;
+            }
+
             foreach ($courtIds as $courtId) {
                 $allClear = true;
                 foreach ($slotIds as $slotId) {
@@ -555,6 +594,35 @@ class MasterScheduleGeneratorService
             }
         }
 
+        // Fallback untuk bracket jika ketat
+        foreach ($this->matchSlots as $i => $slot) {
+            if ($slot->day_number < $afterDayNumber) continue;
+            if ($slot->day_number === $afterDayNumber && $slot->slot_number <= $afterSlotNumber) continue;
+
+            $slotIds = $span > 1
+                ? ($this->getConsecutiveSlots($i, $span)?->pluck('id')->toArray() ?? [$slot->id])
+                : [$slot->id];
+
+            foreach ($courtIds as $courtId) {
+                $allClear = true;
+                foreach ($slotIds as $slotId) {
+                    if (isset($this->courtSlotMap[$courtId][$slotId])) {
+                        $allClear = false;
+                        break;
+                    }
+                }
+                if ($allClear) {
+                    return [
+                        'slot_id'    => $slotIds[0],
+                        'slot_ids'   => $slotIds,
+                        'court_id'   => $courtId,
+                        'day_number' => $slot->day_number,
+                        'start_time' => $slot->start_time,
+                    ];
+                }
+            }
+        }
+
         return null;
     }
 
@@ -584,9 +652,30 @@ class MasterScheduleGeneratorService
             return false;
         }
 
-        // Slot berikutnya juga harus diblokir untuk memberi satu sesi jeda.
+        $currSlot = $this->matchSlots[$slotIndex];
         $prevSlot = $this->matchSlots[$slotIndex - 1];
+
+        // Jika slot sebelumnya berada di HARI BERBEDA, ada jeda semalam (bukan pelanggaran)
+        if ($prevSlot->day_number !== $currSlot->day_number) {
+            return false;
+        }
+
         return in_array($prevSlot->id, $occupied);
+    }
+
+    protected function isSameSlotClash(string $teamKey, array $slotIds): bool
+    {
+        if (!isset($this->teamOccupiedSlots[$teamKey])) {
+            return false;
+        }
+
+        $occupied = $this->teamOccupiedSlots[$teamKey];
+        foreach ($slotIds as $sId) {
+            if (in_array($sId, $occupied)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

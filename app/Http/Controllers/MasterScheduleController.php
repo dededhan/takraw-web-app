@@ -454,9 +454,9 @@ class MasterScheduleController extends Controller
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Update posisi match setelah drag & drop.
-     * Mendukung: geser waktu/lapangan + swap tim (single match & team_regu 3-slot span).
-     * Constraint utama: rest time validation (tidak boleh back-to-back).
+     * Reschedule / Drag & Drop Match ke Slot Waktu dan Lapangan Baru.
+     * Mendukung swap cerdas untuk multi-slot (Team Regu 3 Kotak) dan single slot
+     * tanpa menyebabkan laga lain tertimpa atau hilang dari jadwal.
      */
     public function reschedule(Request $request, Match_ $match)
     {
@@ -514,16 +514,17 @@ class MasterScheduleController extends Controller
         $targetSpanSlotIds = $targetSpanSlots->pluck('id')->all();
 
         // Ambil semua time slots pada hari asal untuk alokasi slot yang ditinggalkan
-        $oldDaySlots = TimeSlot::where('tournament_id', $match->tournament_id)
-            ->where('day_number', $oldDayNumber)
-            ->where('slot_type', 'match')
-            ->orderBy('slot_number')
-            ->get()
-            ->values();
+        $oldDaySlots = ($oldDayNumber && $oldSlotId)
+            ? TimeSlot::where('tournament_id', $match->tournament_id)
+                ->where('day_number', $oldDayNumber)
+                ->where('slot_type', 'match')
+                ->orderBy('slot_number')
+                ->get()
+                ->values()
+            : collect();
 
-        $oldSlotIndex = $oldDaySlots->search(fn($s) => $s->id == $oldSlotId);
-        if ($oldSlotIndex === false) $oldSlotIndex = 0;
-        $oldSpanSlots = $oldDaySlots->slice($oldSlotIndex, $matchSpan)->values();
+        $oldSlotIndex = $oldDaySlots->isNotEmpty() ? $oldDaySlots->search(fn($s) => $s->id == $oldSlotId) : false;
+        $oldSpanSlots = ($oldSlotIndex !== false) ? $oldDaySlots->slice($oldSlotIndex, $matchSpan)->values() : collect();
 
         // Cari semua matches yang saat ini menempati area target di lapangan target (selain $match sendiri)
         $allTargetCourtMatches = Match_::where('tournament_id', $match->tournament_id)
@@ -545,30 +546,124 @@ class MasterScheduleController extends Controller
             }
         }
 
-        // Lakukan SWAP jika ada match lain di area target
+        // Cari seluruh slot yang sedang kosong di turnamen hari itu untuk fallback alokasi
+        $allCourts = Court::where('tournament_id', $match->tournament_id)->where('is_active', true)->get();
+
+        // Lakukan SWAP cerdas jika ada match lain di area target
         $swappedCount = 0;
         if ($conflictingMatches->isNotEmpty()) {
-            // Jika match di target adalah sesama team_regu (span 3):
-            if ($conflictingMatches->count() === 1 && ($conflictingMatches->first()->slot_span > 1 || $conflictingMatches->first()->match_mode === 'team_regu' || $conflictingMatches->first()->match_mode === 'team_double')) {
+            // Skenario 1: Sesama match 3-slot (Team Regu ➔ Team Regu)
+            if ($matchSpan >= 3 && $conflictingMatches->count() === 1 && ($conflictingMatches->first()->slot_span >= 3 || in_array($conflictingMatches->first()->match_mode, ['team_regu', 'team_double']))) {
                 $targetTeamMatch = $conflictingMatches->first();
-                $targetTeamMatch->update([
-                    'time_slot_id' => $oldSlotId,
-                    'court_id'     => $oldCourtId,
-                    'day_number'   => $oldDayNumber,
-                    'scheduled_at' => $oldScheduled,
-                ]);
-                $swappedCount = 1;
-            } else {
-                // Jika match tunggal / multiple matches:
-                // Pindahkan ke slot-slot yang ditinggalkan oleh $match di lapangan asal
-                foreach ($conflictingMatches->values() as $idx => $cMatch) {
-                    $assignOldSlot = $oldSpanSlots->get($idx) ?? $oldSpanSlots->first();
-                    $cMatch->update([
-                        'time_slot_id' => $assignOldSlot?->id ?? $oldSlotId,
+                if ($oldSlotId && $oldCourtId) {
+                    $targetTeamMatch->update([
+                        'time_slot_id' => $oldSlotId,
                         'court_id'     => $oldCourtId,
                         'day_number'   => $oldDayNumber,
-                        'scheduled_at' => $assignOldSlot?->start_time ?? $oldScheduled,
+                        'scheduled_at' => $oldScheduled,
                     ]);
+                } else {
+                    // Match asal tidak punya slot (dari unscheduled tray)
+                    $targetTeamMatch->update([
+                        'time_slot_id' => null,
+                        'court_id'     => null,
+                        'day_number'   => null,
+                        'scheduled_at' => null,
+                    ]);
+                }
+                $swappedCount = 1;
+            }
+            // Skenario 2: Match 3-slot ($match) menimpa 1 atau beberapa single-match (1 slot)
+            else if ($matchSpan >= 3) {
+                $availableOldSlots = $oldSpanSlots->all();
+                foreach ($conflictingMatches->values() as $idx => $cMatch) {
+                    if (isset($availableOldSlots[$idx])) {
+                        $assignSlot = $availableOldSlots[$idx];
+                        $cMatch->update([
+                            'time_slot_id' => $assignSlot->id,
+                            'court_id'     => $oldCourtId,
+                            'day_number'   => $oldDayNumber,
+                            'scheduled_at' => $assignSlot->start_time,
+                        ]);
+                    } else {
+                        // Cari slot kosong terdekat di lapangan manapun
+                        $freeSlot = $this->findFreeSingleSlot($match->tournament_id, $targetDayNumber, $allCourts, $targetDaySlots);
+                        if ($freeSlot) {
+                            $cMatch->update([
+                                'time_slot_id' => $freeSlot['slot_id'],
+                                'court_id'     => $freeSlot['court_id'],
+                                'day_number'   => $targetDayNumber,
+                                'scheduled_at' => $freeSlot['start_time'],
+                            ]);
+                        } else {
+                            $cMatch->update([
+                                'time_slot_id' => null,
+                                'court_id'     => null,
+                                'day_number'   => null,
+                                'scheduled_at' => null,
+                            ]);
+                        }
+                    }
+                    $swappedCount++;
+                }
+            }
+            // Skenario 3: Single match ($match span 1) menimpa Team Regu (span 3)
+            else if ($conflictingMatches->contains(fn($m) => ($m->slot_span >= 3 || in_array($m->match_mode, ['team_regu', 'team_double'])))) {
+                $targetTeamMatch = $conflictingMatches->first(fn($m) => ($m->slot_span >= 3 || in_array($m->match_mode, ['team_regu', 'team_double'])));
+                // Cari blok 3 slot kosong untuk menempatkan Team Regu yang tergeser
+                $free3Block = $this->findFreeBlockSlots($match->tournament_id, $targetDayNumber, $allCourts, $targetDaySlots, 3);
+                if ($free3Block) {
+                    $targetTeamMatch->update([
+                        'time_slot_id' => $free3Block['slot_id'],
+                        'court_id'     => $free3Block['court_id'],
+                        'day_number'   => $targetDayNumber,
+                        'scheduled_at' => $free3Block['start_time'],
+                    ]);
+                } else if ($oldSlotId && $oldCourtId) {
+                    $targetTeamMatch->update([
+                        'time_slot_id' => $oldSlotId,
+                        'court_id'     => $oldCourtId,
+                        'day_number'   => $oldDayNumber,
+                        'scheduled_at' => $oldScheduled,
+                    ]);
+                } else {
+                    $targetTeamMatch->update([
+                        'time_slot_id' => null,
+                        'court_id'     => null,
+                        'day_number'   => null,
+                        'scheduled_at' => null,
+                    ]);
+                }
+                $swappedCount++;
+            }
+            // Skenario 4: Single match menimpa sesama single match
+            else {
+                foreach ($conflictingMatches->values() as $idx => $cMatch) {
+                    if ($oldSlotId && $oldCourtId) {
+                        $cMatch->update([
+                            'time_slot_id' => $oldSlotId,
+                            'court_id'     => $oldCourtId,
+                            'day_number'   => $oldDayNumber,
+                            'scheduled_at' => $oldScheduled,
+                        ]);
+                    } else {
+                        $freeSlot = $this->findFreeSingleSlot($match->tournament_id, $targetDayNumber, $allCourts, $targetDaySlots);
+                        if ($freeSlot) {
+                            $cMatch->update([
+                                'time_slot_id' => $freeSlot['slot_id'],
+                                'court_id'     => $freeSlot['court_id'],
+                                'day_number'   => $targetDayNumber,
+                                'scheduled_at' => $freeSlot['start_time'],
+                            ]);
+                        } else {
+                            $cMatch->update([
+                                'time_slot_id' => null,
+                                'court_id'     => null,
+                                'day_number'   => null,
+                                'scheduled_at' => null,
+                            ]);
+                        }
+                    }
                     $swappedCount++;
                 }
             }
@@ -583,6 +678,9 @@ class MasterScheduleController extends Controller
             'slot_span'    => $matchSpan,
         ]);
 
+        // Auto-scan conflict detection
+        $this->conflictDetector->scanAll(Tournament::find($match->tournament_id));
+
         // Hitung nomor urut match tagar (#1, #2, #3...) dalam turnamen ini
         $allMatches = Match_::where('tournament_id', $match->tournament_id)
             ->orderBy('day_number')
@@ -593,12 +691,92 @@ class MasterScheduleController extends Controller
         $matchNum = $allMatches->search($match->id);
         $displayNum = ($matchNum !== false) ? ($matchNum + 1) : $match->id;
 
-        $spanText = $matchSpan > 1 ? " (3 Slot / Kotak)" : "";
+        $spanText = $matchSpan > 1 ? " (3 Slot Kotak)" : "";
         $message = $swappedCount > 0
-            ? "Jadwal Match #{$displayNum}{$spanText} berhasil ditukar posisinya (Swap {$swappedCount} match)!"
+            ? "Jadwal Match #{$displayNum}{$spanText} berhasil dipindahkan dan ditukar posisinya secara aman ({$swappedCount} laga disesuaikan)!"
             : "Jadwal Match #{$displayNum}{$spanText} berhasil dipindahkan!";
 
         return back()->with('success', $message);
+    }
+
+    /**
+     * Helper: Cari 1 slot kosong pada hari tertentu di lapangan manapun.
+     */
+    protected function findFreeSingleSlot(int $tournamentId, int $dayNumber, \Illuminate\Support\Collection $courts, \Illuminate\Support\Collection $daySlots): ?array
+    {
+        $existingMatches = Match_::where('tournament_id', $tournamentId)
+            ->where('day_number', $dayNumber)
+            ->whereNotNull('time_slot_id')
+            ->get();
+
+        $occupied = [];
+        foreach ($existingMatches as $m) {
+            $span = $m->slot_span ?: (($m->match_mode === 'team_regu' || $m->match_mode === 'team_double') ? 3 : 1);
+            $idx = $daySlots->search(fn($s) => $s->id == $m->time_slot_id);
+            if ($idx !== false) {
+                foreach ($daySlots->slice($idx, $span) as $s) {
+                    $occupied[$m->court_id][$s->id] = true;
+                }
+            }
+        }
+
+        foreach ($daySlots as $slot) {
+            foreach ($courts as $court) {
+                if (!isset($occupied[$court->id][$slot->id])) {
+                    return [
+                        'slot_id'    => $slot->id,
+                        'court_id'   => $court->id,
+                        'start_time' => $slot->start_time,
+                    ];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Helper: Cari blok N slot berturut-turut yang kosong pada hari tertentu.
+     */
+    protected function findFreeBlockSlots(int $tournamentId, int $dayNumber, \Illuminate\Support\Collection $courts, \Illuminate\Support\Collection $daySlots, int $span): ?array
+    {
+        $existingMatches = Match_::where('tournament_id', $tournamentId)
+            ->where('day_number', $dayNumber)
+            ->whereNotNull('time_slot_id')
+            ->get();
+
+        $occupied = [];
+        foreach ($existingMatches as $m) {
+            $mSpan = $m->slot_span ?: (($m->match_mode === 'team_regu' || $m->match_mode === 'team_double') ? 3 : 1);
+            $idx = $daySlots->search(fn($s) => $s->id == $m->time_slot_id);
+            if ($idx !== false) {
+                foreach ($daySlots->slice($idx, $mSpan) as $s) {
+                    $occupied[$m->court_id][$s->id] = true;
+                }
+            }
+        }
+
+        for ($i = 0; $i <= $daySlots->count() - $span; $i++) {
+            $blockSlots = $daySlots->slice($i, $span)->values();
+            foreach ($courts as $court) {
+                $allClear = true;
+                foreach ($blockSlots as $s) {
+                    if (isset($occupied[$court->id][$s->id])) {
+                        $allClear = false;
+                        break;
+                    }
+                }
+                if ($allClear) {
+                    return [
+                        'slot_id'    => $blockSlots->first()->id,
+                        'court_id'   => $court->id,
+                        'start_time' => $blockSlots->first()->start_time,
+                    ];
+                }
+            }
+        }
+
+        return null;
     }
 
     // ─────────────────────────────────────────────────────────────────

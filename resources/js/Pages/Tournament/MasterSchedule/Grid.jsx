@@ -70,24 +70,26 @@ export default function Grid({
         const seen = new Set();
         const subIds = new Set((superTeamMemberIds || []).map(Number));
 
-        // Tambah juga ID sub-tim dari tournament.super_teams
-        (tournament.super_teams || tournament.superTeams || []).forEach(st => {
+        // Tambah juga ID sub-tim dari tournament.super_teams / tournament.superTeams
+        const superTeamsList = tournament.super_teams || tournament.superTeams || [];
+        superTeamsList.forEach(st => {
             (st.members || []).forEach(m => subIds.add(Number(m.id)));
         });
 
         const addContender = (id, name, type = 'team', mode = 'all', region = '') => {
             if (!name || name === 'TBD') return;
+            const cleanName = name.trim();
             // JANGAN MASUKKAN SUB-TIM!
             if (type === 'team' && id && subIds.has(Number(id))) return;
 
-            const key = `${type}-${id || name.trim().toLowerCase()}-${mode}`;
+            const key = `${type}-${id || cleanName.toLowerCase()}-${mode}`;
             if (seen.has(key)) return;
             seen.add(key);
-            list.push({ id, name: name.trim(), type, mode, region });
+            list.push({ id: id ? Number(id) : null, name: cleanName, type, mode, region });
         };
 
         // 1. Dari Super Teams (Mode: team_regu / team_double)
-        (tournament.super_teams || tournament.superTeams || []).forEach(st => {
+        superTeamsList.forEach(st => {
             const stMode = st.match_mode || 'team_regu';
             addContender(st.id, st.name, 'super_team', stMode);
         });
@@ -101,28 +103,33 @@ export default function Grid({
 
         // 3. Dari Matches yang sudah ada
         matches.forEach(m => {
-            if (m.home_super_team) {
-                addContender(m.home_super_team.id, m.home_super_team.name, 'super_team', m.match_mode || 'team_regu');
-            } else if (m.home_super_team_id && m.home_display_name && m.home_display_name !== 'TBD') {
-                addContender(m.home_super_team_id, m.home_display_name, 'super_team', m.match_mode || 'team_regu');
-            }
+            const isTeamMode = m.slot_span >= 3 || m.match_mode === 'team_regu' || m.match_mode === 'team_double';
+            const mMode = m.match_mode || (isTeamMode ? 'team_regu' : 'regu');
 
-            if (m.away_super_team) {
-                addContender(m.away_super_team.id, m.away_super_team.name, 'super_team', m.match_mode || 'team_regu');
-            } else if (m.away_super_team_id && m.away_display_name && m.away_display_name !== 'TBD') {
-                addContender(m.away_super_team_id, m.away_display_name, 'super_team', m.match_mode || 'team_regu');
-            }
+            if (isTeamMode) {
+                const homeStId = m.home_super_team_id || m.home_super_team?.id;
+                const homeStName = m.home_super_team?.name || m.home_display_name;
+                if (homeStName && homeStName !== 'TBD') {
+                    addContender(homeStId, homeStName, 'super_team', mMode);
+                }
 
-            if (m.home_team && !subIds.has(Number(m.home_team.id))) {
-                addContender(m.home_team.id, m.home_team.name, 'team', m.match_mode || 'regu', m.home_team.region);
-            } else if (m.home_team_id && m.home_display_name && m.home_display_name !== 'TBD' && !subIds.has(Number(m.home_team_id))) {
-                addContender(m.home_team_id, m.home_display_name, 'team', m.match_mode || 'regu');
-            }
+                const awayStId = m.away_super_team_id || m.away_super_team?.id;
+                const awayStName = m.away_super_team?.name || m.away_display_name;
+                if (awayStName && awayStName !== 'TBD') {
+                    addContender(awayStId, awayStName, 'super_team', mMode);
+                }
+            } else {
+                const homeId = m.home_team_id || m.home_team?.id;
+                const homeName = m.home_team?.name || m.home_display_name;
+                if (homeName && homeName !== 'TBD' && (!homeId || !subIds.has(Number(homeId)))) {
+                    addContender(homeId, homeName, 'team', mMode, m.home_team?.region);
+                }
 
-            if (m.away_team && !subIds.has(Number(m.away_team.id))) {
-                addContender(m.away_team.id, m.away_team.name, 'team', m.match_mode || 'regu', m.away_team.region);
-            } else if (m.away_team_id && m.away_display_name && m.away_display_name !== 'TBD' && !subIds.has(Number(m.away_team_id))) {
-                addContender(m.away_team_id, m.away_display_name, 'team', m.match_mode || 'regu');
+                const awayId = m.away_team_id || m.away_team?.id;
+                const awayName = m.away_team?.name || m.away_display_name;
+                if (awayName && awayName !== 'TBD' && (!awayId || !subIds.has(Number(awayId)))) {
+                    addContender(awayId, awayName, 'team', mMode, m.away_team?.region);
+                }
             }
         });
 
@@ -135,7 +142,7 @@ export default function Grid({
             const unique = [];
             const seen = new Set();
             allContenders.forEach(c => {
-                const k = `${c.type}-${c.id || c.name}`;
+                const k = `${c.name.toLowerCase()}`;
                 if (!seen.has(k)) {
                     seen.add(k);
                     unique.push(c);
@@ -143,7 +150,13 @@ export default function Grid({
             });
             return unique;
         }
-        return allContenders.filter(c => c.mode === selectedSearchMode || c.mode === 'all');
+        return allContenders.filter(c => {
+            if (c.mode === selectedSearchMode || c.mode === 'all') return true;
+            if (selectedSearchMode === 'team_regu' || selectedSearchMode === 'team_double') {
+                return c.type === 'super_team';
+            }
+            return false;
+        });
     }, [allContenders, selectedSearchMode]);
 
     // Helper untuk mengecek apakah match melibatkan tim tertentu secara tepat (EXACT)
@@ -168,12 +181,24 @@ export default function Grid({
         return localMatches.filter(m => isMatchInvolvingTeam(m, searchedTeam1) && isMatchInvolvingTeam(m, searchedTeam2));
     }, [localMatches, searchedTeam1, searchedTeam2, isMatchInvolvingTeam]);
 
+    const unscheduledMatches = useMemo(() => {
+        return localMatches.filter(m => !m.time_slot_id || !m.court_id);
+    }, [localMatches]);
+
     // Scroll halus dan fokus ke match tertentu
     const focusAndScrollToMatch = (matchId, dayNum) => {
         setFocusedMatchId(matchId);
-        const dayEl = document.getElementById(`day-section-${dayNum}`);
-        if (dayEl) {
-            dayEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const targetMatch = localMatches.find(m => m.id === matchId);
+        if (targetMatch && (!targetMatch.time_slot_id || !targetMatch.court_id)) {
+            const unschedEl = document.getElementById('unscheduled-matches-section');
+            if (unschedEl) {
+                unschedEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        } else if (dayNum) {
+            const dayEl = document.getElementById(`day-section-${dayNum}`);
+            if (dayEl) {
+                dayEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
         setTimeout(() => {
             const cardEl = document.getElementById(`match-card-${matchId}`);
@@ -184,7 +209,7 @@ export default function Grid({
 
         setTimeout(() => {
             setFocusedMatchId(null);
-        }, 3000);
+        }, 4000);
     };
 
     // Scroll halus ke section Hari tertentu
@@ -254,11 +279,13 @@ export default function Grid({
             const daySlots = timeSlotsByDay[m.day_number || 1] || [];
             const rootIdx = daySlots.findIndex(s => s.id === m.time_slot_id);
 
-            map[rootKey] = {
-                type: 'root',
-                match: m,
-                span,
-            };
+            if (!map[rootKey]) {
+                map[rootKey] = {
+                    matches: [],
+                    coveredBy: [],
+                };
+            }
+            map[rootKey].matches.push({ match: m, span });
 
             // Tandai slot-slot lanjutan (Covered) jika span > 1 (seperti Team Regu 3 Kotak)
             if (span > 1 && rootIdx !== -1) {
@@ -266,13 +293,13 @@ export default function Grid({
                     const coveredSlot = daySlots[rootIdx + offset];
                     if (coveredSlot) {
                         const coveredKey = `${coveredSlot.id}_${m.court_id}`;
-                        map[coveredKey] = {
-                            type: 'covered',
-                            rootMatch: m,
-                            rootSlotId: m.time_slot_id,
-                            offset,
-                            span,
-                        };
+                        if (!map[coveredKey]) {
+                            map[coveredKey] = {
+                                matches: [],
+                                coveredBy: [],
+                            };
+                        }
+                        map[coveredKey].coveredBy.push({ rootMatch: m, rootSlotId: m.time_slot_id, offset, span });
                     }
                 }
             }
@@ -548,6 +575,45 @@ export default function Grid({
                     onDragEnd={handleDragEnd}
                 >
                     <div className="space-y-6">
+                        {/* ─── DOCK PERTANDINGAN BELUM TERJADWAL (JIKA ADA MATCH TANPA SLOT) ─── */}
+                        {unscheduledMatches.length > 0 && (
+                            <div
+                                id="unscheduled-matches-section"
+                                className="p-5 rounded-3xl bg-amber-500/10 border-2 border-amber-500/40 space-y-4 shadow-xl animate-fade-in"
+                            >
+                                <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-amber-500/20">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="text-xl">⚠️</span>
+                                        <div>
+                                            <h4 className="text-sm font-extrabold text-amber-300">
+                                                {unscheduledMatches.length} Pertandingan Belum Masuk Slot Waktu
+                                            </h4>
+                                            <p className="text-xs text-amber-200/70">
+                                                Kapasitas slot waktu/lapangan turnamen penuh. Anda dapat melakukan drag & drop ke slot lapangan kosong di bawah, atau menambah durasi hari/lapangan di menu Konfigurasi.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                        {unscheduledMatches.length} Unassigned
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    {unscheduledMatches.map(m => (
+                                        <div key={m.id} style={{ height: `${(m.slot_span || 1) * 68}px`, minHeight: '68px' }}>
+                                            <MatchCard
+                                                match={m}
+                                                slotHeight={68}
+                                                searchedTeam1={searchedTeam1}
+                                                searchedTeam2={searchedTeam2}
+                                                isFocused={focusedMatchId === m.id}
+                                                isDraggable={isPublished ? isEditUnlocked : true}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {daysList.map(dayNum => {
                             const slots = timeSlotsByDay[dayNum] || [];
                             if (slots.length === 0) return null;
@@ -994,35 +1060,71 @@ function DroppableCell({
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: `${slotId}_${courtId}` });
 
-    const isRoot = cellState?.type === 'root';
-    const isCovered = cellState?.type === 'covered';
-    const match = cellState?.match;
+    const matches = cellState?.matches || [];
+    const isCovered = (cellState?.coveredBy || []).length > 0 && matches.length === 0;
+
+    // Cek apakah ada match di slot ini yang cocok dengan pencarian atau sedang difokuskan
+    const hasHighlightedMatch = useMemo(() => {
+        return matches.some(({ match }) => {
+            const isT1 = isSideMatchingTeam(match, 'home', searchedTeam1) || isSideMatchingTeam(match, 'away', searchedTeam1);
+            const isT2 = isSideMatchingTeam(match, 'home', searchedTeam2) || isSideMatchingTeam(match, 'away', searchedTeam2);
+            return isT1 || isT2 || (focusedMatchId === match.id);
+        });
+    }, [matches, searchedTeam1, searchedTeam2, focusedMatchId]);
+
+    // Cek apakah ada root match yang meng-cover slot ini yang cocok dengan pencarian
+    const hasHighlightedCoveredMatch = useMemo(() => {
+        return (cellState?.coveredBy || []).some(({ rootMatch }) => {
+            const isT1 = isSideMatchingTeam(rootMatch, 'home', searchedTeam1) || isSideMatchingTeam(rootMatch, 'away', searchedTeam1);
+            const isT2 = isSideMatchingTeam(rootMatch, 'home', searchedTeam2) || isSideMatchingTeam(rootMatch, 'away', searchedTeam2);
+            return isT1 || isT2 || (focusedMatchId === rootMatch.id);
+        });
+    }, [cellState?.coveredBy, searchedTeam1, searchedTeam2, focusedMatchId]);
+
+    const zClass = hasHighlightedMatch
+        ? 'z-40'
+        : hasHighlightedCoveredMatch
+        ? 'z-30'
+        : isCovered
+        ? 'z-0'
+        : 'z-10';
 
     return (
         <div
             ref={setNodeRef}
-            className={`flex-1 min-w-[150px] border-r border-surface-700/30 last:border-r-0 p-1 relative transition-colors ${
-                isOver ? 'bg-primary-500/20 ring-2 ring-primary-500 z-30' : ''
+            className={`flex-1 min-w-[150px] border-r border-surface-700/30 last:border-r-0 p-1 relative transition-colors ${zClass} ${
+                isOver ? 'bg-primary-500/20 ring-2 ring-primary-500 !z-50' : ''
             } ${isCovered ? 'bg-amber-500/[0.03]' : ''}`}
         >
-            {/* Jika slot ini adalah slot awal match (Root) */}
-            {isRoot && match && (
-                <div
-                    ref={el => { if (el) matchRefs.current[match.id] = el; }}
-                    className="absolute inset-x-1 top-1 z-20"
-                >
-                    <MatchCard
-                        match={match}
-                        slotHeight={slotHeight}
-                        searchedTeam1={searchedTeam1}
-                        searchedTeam2={searchedTeam2}
-                        isFocused={focusedMatchId === match.id}
-                        isDraggable={isDraggable}
-                    />
-                </div>
-            )}
+            {/* Render semua match yang mulai pada slot waktu ini */}
+            {matches.map(({ match }, idx) => {
+                const isT1 = isSideMatchingTeam(match, 'home', searchedTeam1) || isSideMatchingTeam(match, 'away', searchedTeam1);
+                const isT2 = isSideMatchingTeam(match, 'home', searchedTeam2) || isSideMatchingTeam(match, 'away', searchedTeam2);
+                const isFocused = focusedMatchId === match.id;
+                const isClash = Boolean(searchedTeam1 && searchedTeam2 && isT1 && isT2);
 
-            {/* Jika slot ini tertutup oleh span match di atasnya */}
+                const cardZ = isFocused ? 60 : isClash ? 55 : (isT1 || isT2) ? 50 : 20;
+
+                return (
+                    <div
+                        key={match.id}
+                        ref={el => { if (el) matchRefs.current[match.id] = el; }}
+                        style={{ zIndex: cardZ }}
+                        className={`absolute inset-x-1 top-1 ${idx > 0 ? 'mt-2' : ''}`}
+                    >
+                        <MatchCard
+                            match={match}
+                            slotHeight={slotHeight}
+                            searchedTeam1={searchedTeam1}
+                            searchedTeam2={searchedTeam2}
+                            isFocused={isFocused}
+                            isDraggable={isDraggable}
+                        />
+                    </div>
+                );
+            })}
+
+            {/* Placeholder jika slot tertutup oleh span match */}
             {isCovered && (
                 <div className="h-full select-none pointer-events-none" />
             )}
