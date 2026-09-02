@@ -22,52 +22,49 @@ export default function BracketMatrix({
     tournament,
     activeModes = [],
     modeBrackets = {},
-    matrices = {},
-    stageOptions = {}
 }) {
     const [activeTab, setActiveTab] = useState(activeModes[0]?.match_mode || 'regu');
     const [saving, setSaving] = useState(false);
     const [flash, setFlash] = useState(null);
 
-    // Inisialisasi formData dari matrices yang sudah ada di database atau stageOptions default
+    // Inisialisasi formData: keyed by [mode][bracketName] => Array of stages
     const [formData, setFormData] = useState(() => {
         const initial = {};
         activeModes.forEach(mode => {
-            const modeKey = mode.match_mode;
-            const savedList = matrices[modeKey] || [];
-            if (savedList.length > 0) {
-                initial[modeKey] = savedList.map(m => ({
-                    bracket_stage:    m.bracket_stage,
-                    bracket_position: Number(m.bracket_position || 1),
-                    home_source:      m.home_source,
-                    away_source:      m.away_source,
+            const mKey = mode.match_mode;
+            initial[mKey] = {};
+            const brackets = modeBrackets[mKey] || [];
+            brackets.forEach(b => {
+                initial[mKey][b.bracket_name] = (b.stages || []).map(s => ({
+                    bracket_stage:    s.bracket_stage || 'final',
+                    bracket_position: Number(s.bracket_position || 1),
+                    home_source:      s.home_source || 'pool_A_rank_1',
+                    away_source:      s.away_source || 'pool_B_rank_1',
                 }));
-            } else {
-                initial[modeKey] = (stageOptions[modeKey] || []).map(stage => ({
-                    bracket_stage:    stage.bracket_stage,
-                    bracket_position: Number(stage.bracket_position || 1),
-                    home_source:      stage.home_source,
-                    away_source:      stage.away_source,
-                }));
-            }
+            });
         });
         return initial;
     });
 
     const activeBrackets = modeBrackets[activeTab] || [];
-    const activeRows = formData[activeTab] || [];
-    const isAllSinglePool = activeBrackets.length > 0 && activeBrackets.every(b => b.is_single_pool);
 
-    const updateRow = (stageIdx, field, value) => {
+    // Helper: update stage row untuk braket tertentu
+    const updateBracketRow = (bracketName, stageIdx, field, value) => {
         setFormData(prev => ({
             ...prev,
-            [activeTab]: (prev[activeTab] || []).map((row, i) => i === stageIdx ? { ...row, [field]: value } : row),
+            [activeTab]: {
+                ...(prev[activeTab] || {}),
+                [bracketName]: (prev[activeTab]?.[bracketName] || []).map((row, i) =>
+                    i === stageIdx ? { ...row, [field]: value } : row
+                ),
+            },
         }));
     };
 
-    const addRow = (defaultStage = 'final') => {
-        const current = formData[activeTab] || [];
-        const nextPos = current.filter(r => r.bracket_stage === defaultStage).length + 1;
+    // Helper: tambah baris babak untuk braket tertentu
+    const addBracketRow = (bracketName, defaultStage = 'final') => {
+        const currentRows = formData[activeTab]?.[bracketName] || [];
+        const nextPos = currentRows.filter(r => r.bracket_stage === defaultStage).length + 1;
         const newRow = {
             bracket_stage:    defaultStage,
             bracket_position: nextPos,
@@ -76,71 +73,137 @@ export default function BracketMatrix({
         };
         setFormData(prev => ({
             ...prev,
-            [activeTab]: [...(prev[activeTab] || []), newRow],
+            [activeTab]: {
+                ...(prev[activeTab] || {}),
+                [bracketName]: [...currentRows, newRow],
+            },
         }));
     };
 
-    const deleteRow = (stageIdx) => {
+    // Helper: hapus baris babak untuk braket tertentu
+    const deleteBracketRow = (bracketName, stageIdx) => {
         setFormData(prev => ({
             ...prev,
-            [activeTab]: (prev[activeTab] || []).filter((_, i) => i !== stageIdx),
+            [activeTab]: {
+                ...(prev[activeTab] || {}),
+                [bracketName]: (prev[activeTab]?.[bracketName] || []).filter((_, i) => i !== stageIdx),
+            },
         }));
     };
 
-    const applyPreset = (presetType) => {
+    // Helper: terapkan preset ke braket tertentu
+    const applyBracketPreset = (bracketName, poolCount, presetType) => {
+        let newStages = [];
+
         if (presetType === 'empty') {
-            setFormData(prev => ({ ...prev, [activeTab]: [] }));
-        } else if (presetType === '2pool_two_finals') {
-            setFormData(prev => ({
-                ...prev,
-                [activeTab]: [
-                    { bracket_stage: 'final', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_A_rank_2' },
-                    { bracket_stage: 'final', bracket_position: 2, home_source: 'pool_B_rank_1', away_source: 'pool_B_rank_2' },
-                ],
-            }));
-        } else if (presetType === '2pool_direct_final') {
-            setFormData(prev => ({
-                ...prev,
-                [activeTab]: [
-                    { bracket_stage: 'final', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_1' },
-                ],
-            }));
+            newStages = [];
         } else if (presetType === '2pool_semifinal') {
-            setFormData(prev => ({
-                ...prev,
-                [activeTab]: [
-                    { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_2' },
-                    { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'pool_B_rank_1', away_source: 'pool_A_rank_2' },
-                    { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
-                ],
-            }));
+            newStages = [
+                { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_2' },
+                { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'pool_B_rank_1', away_source: 'pool_A_rank_2' },
+                { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
+            ];
+        } else if (presetType === '2pool_direct_final') {
+            newStages = [
+                { bracket_stage: 'final', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_1' },
+            ];
+        } else if (presetType === '2pool_two_finals') {
+            newStages = [
+                { bracket_stage: 'final', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_A_rank_2' },
+                { bracket_stage: 'final', bracket_position: 2, home_source: 'pool_B_rank_1', away_source: 'pool_B_rank_2' },
+            ];
+        } else if (presetType === '3pool_wildcard') {
+            newStages = [
+                { bracket_stage: 'round_of_8', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'bye' },
+                { bracket_stage: 'round_of_8', bracket_position: 2, home_source: 'pool_B_rank_1', away_source: 'wildcard_1' },
+                { bracket_stage: 'round_of_8', bracket_position: 3, home_source: 'pool_C_rank_1', away_source: 'wildcard_2' },
+                { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'winner_qf_1', away_source: 'winner_qf_2' },
+                { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'winner_qf_3', away_source: 'best_runner_up' },
+                { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
+            ];
+        } else if (presetType === '3pool_semifinal') {
+            newStages = [
+                { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_1' },
+                { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'pool_C_rank_1', away_source: 'wildcard_1' },
+                { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
+            ];
         } else if (presetType === '4pool_qf') {
-            setFormData(prev => ({
-                ...prev,
-                [activeTab]: [
-                    { bracket_stage: 'round_of_8', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_2' },
-                    { bracket_stage: 'round_of_8', bracket_position: 2, home_source: 'pool_C_rank_1', away_source: 'pool_D_rank_2' },
-                    { bracket_stage: 'round_of_8', bracket_position: 3, home_source: 'pool_B_rank_1', away_source: 'pool_A_rank_2' },
-                    { bracket_stage: 'round_of_8', bracket_position: 4, home_source: 'pool_D_rank_1', away_source: 'pool_C_rank_2' },
-                    { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'winner_qf_1', away_source: 'winner_qf_2' },
-                    { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'winner_qf_3', away_source: 'winner_qf_4' },
-                    { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
-                ],
-            }));
+            newStages = [
+                { bracket_stage: 'round_of_8', bracket_position: 1, home_source: 'pool_A_rank_1', away_source: 'pool_B_rank_2' },
+                { bracket_stage: 'round_of_8', bracket_position: 2, home_source: 'pool_C_rank_1', away_source: 'pool_D_rank_2' },
+                { bracket_stage: 'round_of_8', bracket_position: 3, home_source: 'pool_B_rank_1', away_source: 'pool_A_rank_2' },
+                { bracket_stage: 'round_of_8', bracket_position: 4, home_source: 'pool_D_rank_1', away_source: 'pool_C_rank_2' },
+                { bracket_stage: 'semifinal', bracket_position: 1, home_source: 'winner_qf_1', away_source: 'winner_qf_2' },
+                { bracket_stage: 'semifinal', bracket_position: 2, home_source: 'winner_qf_3', away_source: 'winner_qf_4' },
+                { bracket_stage: 'final', bracket_position: 1, home_source: 'winner_sf_1', away_source: 'winner_sf_2' },
+            ];
         }
+
+        setFormData(prev => ({
+            ...prev,
+            [activeTab]: {
+                ...(prev[activeTab] || {}),
+                [bracketName]: newStages,
+            },
+        }));
+    };
+
+    // Sumber dropdown per braket
+    const getBracketSourceOptions = (bracket) => {
+        const options = [];
+        const pools = bracket.pools || [];
+
+        if (pools.length > 0) {
+            pools.forEach(p => {
+                options.push({ value: `pool_${p.name}_rank_1`, label: `🥇 Juara Pool ${p.name}` });
+                options.push({ value: `pool_${p.name}_rank_2`, label: `🥈 Runner-up Pool ${p.name}` });
+                options.push({ value: `pool_${p.name}_rank_3`, label: `🥉 Peringkat 3 Pool ${p.name}` });
+            });
+        } else {
+            const count = bracket.pool_count || 2;
+            const letters = Array.from({ length: Math.max(1, count) }, (_, i) => String.fromCharCode(65 + i));
+            letters.forEach(p => {
+                options.push({ value: `pool_${p}_rank_1`, label: `🥇 Juara Pool ${p}` });
+                options.push({ value: `pool_${p}_rank_2`, label: `🥈 Runner-up Pool ${p}` });
+                options.push({ value: `pool_${p}_rank_3`, label: `🥉 Peringkat 3 Pool ${p}` });
+            });
+        }
+
+        // Babak Gugur Lanjutan
+        options.push({ value: 'winner_sf_1', label: '🏆 Pemenang Semifinal #1' });
+        options.push({ value: 'winner_sf_2', label: '🏆 Pemenang Semifinal #2' });
+        options.push({ value: 'loser_sf_1', label: '🥉 Kalah Semifinal #1 (Juara 3)' });
+        options.push({ value: 'loser_sf_2', label: '🥉 Kalah Semifinal #2 (Juara 3)' });
+
+        options.push({ value: 'winner_qf_1', label: '🥊 Pemenang QF #1' });
+        options.push({ value: 'winner_qf_2', label: '🥊 Pemenang QF #2' });
+        options.push({ value: 'winner_qf_3', label: '🥊 Pemenang QF #3' });
+        options.push({ value: 'winner_qf_4', label: '🥊 Pemenang QF #4' });
+
+        // Special: BYE & Wildcard
+        options.push({ value: 'bye', label: '⬛ BYE (Langsung Lolos)' });
+        options.push({ value: 'wildcard_1', label: '🃏 Wildcard #1' });
+        options.push({ value: 'wildcard_2', label: '🃏 Wildcard #2' });
+        options.push({ value: 'best_runner_up', label: '🌟 Runner-up Terbaik' });
+
+        return options;
     };
 
     const handleSave = () => {
         setSaving(true);
         const allMatrices = [];
-        Object.entries(formData).forEach(([mode, stages]) => {
-            stages.forEach((s, idx) => {
-                allMatrices.push({
-                    match_mode:       mode,
-                    bracket_stage:    s.bracket_stage,
-                    bracket_position: Number(s.bracket_position || (idx + 1)),
-                    home_source:      s.home_source,
-                    away_source:      s.away_source,
+
+        Object.entries(formData).forEach(([modeKey, bracketMap]) => {
+            Object.entries(bracketMap || {}).forEach(([bracketName, stages]) => {
+                (stages || []).forEach((s, idx) => {
+                    allMatrices.push({
+                        match_mode:       modeKey,
+                        bracket_name:     bracketName,
+                        bracket_stage:    s.bracket_stage,
+                        bracket_position: Number(s.bracket_position || (idx + 1)),
+                        home_source:      s.home_source,
+                        away_source:      s.away_source,
+                    });
                 });
             });
         });
@@ -153,57 +216,13 @@ export default function BracketMatrix({
                     setFlash({ type: 'success', msg: 'Konfigurasi Bracket Matrix berhasil disimpan!' });
                     setSaving(false);
                 },
-                onError: (err) => {
-                    setFlash({ type: 'error', msg: 'Gagal menyimpan Bracket Matrix. Periksa kembali konfigurasi.' });
+                onError: () => {
+                    setFlash({ type: 'error', msg: 'Gagal menyimpan Bracket Matrix. Periksa kembali form.' });
                     setSaving(false);
                 },
             }
         );
     };
-
-    // Daftar opsi sumber tim pool & progres babak gugur
-    const getSourceOptions = () => {
-        const options = [];
-
-        // Kumpulkan semua huruf pool yang ada di mode aktif ini
-        const poolNames = new Set();
-        activeBrackets.forEach(b => {
-            (b.pools || []).forEach(p => poolNames.add(p.name));
-        });
-
-        if (poolNames.size === 0) {
-            ['A', 'B', 'C', 'D'].forEach(p => poolNames.add(p));
-        }
-
-        const sortedPools = Array.from(poolNames).sort();
-
-        // Sumber dari klasemen Pool
-        sortedPools.forEach(p => {
-            options.push({ value: `pool_${p}_rank_1`, label: `🥇 Juara Pool ${p}`, group: 'Babak Pool' });
-            options.push({ value: `pool_${p}_rank_2`, label: `🥈 Runner-up Pool ${p}`, group: 'Babak Pool' });
-            options.push({ value: `pool_${p}_rank_3`, label: `🥉 Peringkat 3 Pool ${p}`, group: 'Babak Pool' });
-        });
-
-        // Sumber dari Pemenang Babak Gugur
-        options.push({ value: 'winner_sf_1', label: '🏆 Pemenang Semifinal #1', group: 'Babak Gugur' });
-        options.push({ value: 'winner_sf_2', label: '🏆 Pemenang Semifinal #2', group: 'Babak Gugur' });
-        options.push({ value: 'loser_sf_1', label: '🥉 Kalah Semifinal #1 (Juara 3)', group: 'Babak Gugur' });
-        options.push({ value: 'loser_sf_2', label: '🥉 Kalah Semifinal #2 (Juara 3)', group: 'Babak Gugur' });
-
-        options.push({ value: 'winner_qf_1', label: '🥊 Pemenang QF #1', group: 'Babak Gugur' });
-        options.push({ value: 'winner_qf_2', label: '🥊 Pemenang QF #2', group: 'Babak Gugur' });
-        options.push({ value: 'winner_qf_3', label: '🥊 Pemenang QF #3', group: 'Babak Gugur' });
-        options.push({ value: 'winner_qf_4', label: '🥊 Pemenang QF #4', group: 'Babak Gugur' });
-
-        // Wildcard & Bye
-        options.push({ value: 'bye', label: '⬛ BYE (Langsung Lolos)', group: 'Khusus' });
-        options.push({ value: 'wildcard_1', label: '🃏 Wildcard #1 (Best Runner-up)', group: 'Khusus' });
-        options.push({ value: 'wildcard_2', label: '🃏 Wildcard #2', group: 'Khusus' });
-
-        return options;
-    };
-
-    const sourceOptions = getSourceOptions();
 
     return (
         <AuthenticatedLayout header={
@@ -218,7 +237,7 @@ export default function BracketMatrix({
                     <span className="text-surface-600">/</span>
                     <h2 className="text-lg font-bold text-surface-100 flex items-center gap-2">
                         <span>⚔️</span>
-                        <span>Bracket Matrix Babak Gugur</span>
+                        <span>Konfigurasi Bracket Matrix Per Braket</span>
                         <span className="text-surface-400 font-normal text-sm">({tournament.name})</span>
                     </h2>
                 </div>
@@ -246,43 +265,17 @@ export default function BracketMatrix({
                     </div>
                 )}
 
-                {/* Banner Informasi Multi-Braket & Aturan 1 Pool */}
+                {/* Banner Panduan */}
                 <div className="rounded-3xl border border-surface-700/60 bg-surface-900/90 backdrop-blur-md p-6 shadow-xl space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                             <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
                                 <span>🧭</span>
-                                <span>Panduan Konfigurasi Babak Gugur (Bracket Matrix)</span>
+                                <span>Alur Pembacaan Sistem: Mode ➔ Braket ➔ Jumlah Pool ➔ Custom Babak Gugur</span>
                             </h3>
                             <p className="text-xs text-surface-400 mt-1 leading-relaxed max-w-3xl">
-                                Halaman ini mengatur alur babak gugur untuk setiap kategori tanding dan braket. Anda dapat menentukan siapa bertemu siapa di Semifinal dan Final.
+                                Setiap mode membaca braket dan pool yang ada. Jika suatu braket <strong>1 Pool</strong>, maka otomatis <strong>tidak ada babak gugur</strong> (juara dari klasemen). Jika <strong>2 Pool</strong> ada Semifinal/Final, dan jika <strong>3 Pool</strong> ada sistem BYE/Wildcard.
                             </p>
-                        </div>
-                        <div className="shrink-0 flex items-center gap-2">
-                            <span className="px-3 py-1.5 rounded-xl bg-surface-950 border border-surface-800 text-[11px] font-bold text-surface-300">
-                                Total {activeModes.length} Mode Aktif
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-surface-800 text-xs">
-                        <div className="p-3 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-emerald-300 flex items-start gap-2.5">
-                            <span className="text-base shrink-0">🏆</span>
-                            <div>
-                                <p className="font-bold">Aturan Braket 1 Pool (Full Round Robin):</p>
-                                <p className="text-[11px] text-surface-300 mt-0.5">
-                                    Jika suatu braket hanya memiliki <strong>1 Pool</strong>, tidak ada pertandingan gugur yang dibuat. Juara langsung ditentukan dari klasemen akhir pool.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="p-3 rounded-2xl bg-primary-500/5 border border-primary-500/20 text-primary-300 flex items-start gap-2.5">
-                            <span className="text-base shrink-0">⚔️</span>
-                            <div>
-                                <p className="font-bold">Aturan Multi-Pool (2+ Pool):</p>
-                                <p className="text-[11px] text-surface-300 mt-0.5">
-                                    Tim terbaik dari masing-masing pool melaju ke babak gugur (Playoff, Semifinal silang, atau Grand Final) sesuai skema di bawah.
-                                </p>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -310,248 +303,267 @@ export default function BracketMatrix({
                                 <span className="text-lg">{cfg.icon}</span>
                                 <span>{cfg.label}</span>
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${cfg.badge}`}>
-                                    {bList.length > 1 ? `${bList.length} Braket (${totalPools} Pool)` : `${totalPools || mode.pool_count || 1} Pool`}
+                                    {bList.length} Braket ({totalPools} Pool)
                                 </span>
                             </button>
                         );
                     })}
                 </div>
 
-                {/* Detail Braket & Matriks untuk Mode Terpilih */}
+                {/* List Braket Cards di dalam Mode Aktif */}
                 <div className="space-y-6">
-                    {/* Ringkasan Struktur Braket pada Mode Aktif */}
-                    <div className="rounded-3xl border border-surface-700/60 bg-surface-900/80 backdrop-blur-md p-6 space-y-4 shadow-xl">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-surface-800">
-                            <div>
-                                <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
-                                    <span>{MODE_LABELS[activeTab]?.icon}</span>
-                                    <span>Struktur Braket: Mode {MODE_LABELS[activeTab]?.label}</span>
-                                </h3>
-                                <p className="text-xs text-surface-400 mt-0.5">
-                                    {activeBrackets.length} Braket terdaftar pada mode ini.
-                                </p>
-                            </div>
+                    {activeBrackets.map((b, bIdx) => {
+                        const bracketRows = formData[activeTab]?.[b.bracket_name] || [];
+                        const sourceOptions = getBracketSourceOptions(b);
 
-                            {/* Preset Buttons for multi pool */}
-                            {!isAllSinglePool && (
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[11px] font-bold text-surface-400 uppercase mr-1">Preset Cepat:</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => applyPreset('2pool_semifinal')}
-                                        className="px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-semibold transition-colors"
-                                    >
-                                        ⚔️ Semifinal Silang + Final
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => applyPreset('2pool_two_finals')}
-                                        className="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold transition-colors"
-                                    >
-                                        🏆 2 Final Terpisah (A1 vs A2, B1 vs B2)
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => applyPreset('2pool_direct_final')}
-                                        className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-colors"
-                                    >
-                                        🥇 Grand Final Langsung (Juara A vs Juara B)
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => applyPreset('empty')}
-                                        className="px-2.5 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-surface-700 text-surface-400 text-xs font-semibold transition-colors"
-                                    >
-                                        Kosongkan
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* List Cards Braket */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {activeBrackets.map((b, bIdx) => (
-                                <div
-                                    key={bIdx}
-                                    className={`p-4 rounded-2xl border text-xs space-y-2 transition-all ${
-                                        b.is_single_pool
-                                            ? 'bg-emerald-950/20 border-emerald-500/30 ring-1 ring-emerald-500/10'
-                                            : 'bg-surface-950/60 border-surface-800'
-                                    }`}
-                                >
-                                    <div className="flex items-center justify-between font-bold">
-                                        <span className="text-surface-100 text-sm truncate">{b.bracket_name}</span>
-                                        <span className={`px-2 py-0.5 rounded-lg text-[10.5px] font-mono ${
-                                            b.is_single_pool ? 'bg-emerald-500/20 text-emerald-300' : 'bg-surface-800 text-primary-300'
-                                        }`}>
-                                            {b.pool_count} Pool
-                                        </span>
-                                    </div>
-
-                                    <div className="flex flex-wrap gap-1 text-[11px]">
-                                        {(b.pools || []).map(p => (
-                                            <span key={p.id} className="px-2 py-0.5 rounded-md bg-surface-900 border border-surface-800 text-surface-300 font-medium">
-                                                Pool {p.name} ({p.teams_count} Tim)
+                        return (
+                            <div
+                                key={b.bracket_name || bIdx}
+                                className="rounded-3xl border border-surface-700/60 bg-surface-900/90 backdrop-blur-md p-6 sm:p-7 space-y-5 shadow-xl transition-all"
+                            >
+                                {/* Header Braket */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-surface-800">
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-2.5">
+                                            <span className="text-lg">🏷️</span>
+                                            <h3 className="text-base font-bold text-surface-100">
+                                                {b.bracket_name}
+                                            </h3>
+                                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-surface-800 text-primary-300 border border-surface-700">
+                                                {b.pool_count} Pool
                                             </span>
-                                        ))}
+                                            {b.is_single_pool ? (
+                                                <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                    🏆 1 Pool (Round Robin Murni)
+                                                </span>
+                                            ) : (
+                                                <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                                    ⚔️ Babak Gugur / Playoff
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5 text-xs text-surface-400">
+                                            <span>Daftar Pool:</span>
+                                            {(b.pools || []).map(p => (
+                                                <span key={p.id} className="px-2 py-0.5 rounded bg-surface-950 text-surface-300 border border-surface-800 font-medium">
+                                                    Pool {p.name} ({p.teams_count} Tim)
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
 
-                                    {b.is_single_pool ? (
-                                        <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5 pt-1">
-                                            <span>🏆</span>
-                                            <span>1 Pool: Round Robin (Juara dari Klasemen)</span>
-                                        </p>
-                                    ) : (
-                                        <p className="text-[11px] text-primary-300 font-medium flex items-center gap-1.5 pt-1">
-                                            <span>⚔️</span>
-                                            <span>Babak Gugur (Playoff & Final)</span>
-                                        </p>
+                                    {/* Preset Cepat Khusus Braket Ini */}
+                                    {!b.is_single_pool && (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-[11px] font-bold text-surface-400 uppercase">Preset:</span>
+                                            {b.pool_count === 2 && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => applyBracketPreset(b.bracket_name, 2, '2pool_semifinal')}
+                                                        className="px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-semibold transition-colors"
+                                                    >
+                                                        ⚔️ Semifinal Silang + Final
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => applyBracketPreset(b.bracket_name, 2, '2pool_direct_final')}
+                                                        className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-colors"
+                                                    >
+                                                        🥇 Grand Final (Juara A vs B)
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => applyBracketPreset(b.bracket_name, 2, '2pool_two_finals')}
+                                                        className="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold transition-colors"
+                                                    >
+                                                        🏆 2 Final Terpisah
+                                                    </button>
+                                                </>
+                                            )}
+
+                                            {b.pool_count === 3 && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => applyBracketPreset(b.bracket_name, 3, '3pool_wildcard')}
+                                                        className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold transition-colors"
+                                                    >
+                                                        🥊 Wildcard / BYE + SF + Final
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => applyBracketPreset(b.bracket_name, 3, '3pool_semifinal')}
+                                                        className="px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-semibold transition-colors"
+                                                    >
+                                                        ⚔️ Semifinal Langsung (A vs B, C vs Wildcard)
+                                                    </button>
+                                                </>
+                                            )}
+
+                                            {b.pool_count >= 4 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => applyBracketPreset(b.bracket_name, b.pool_count, '4pool_qf')}
+                                                    className="px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-semibold transition-colors"
+                                                >
+                                                    🥊 QF (8 Besar) + SF + Final
+                                                </button>
+                                            )}
+
+                                            <button
+                                                type="button"
+                                                onClick={() => applyBracketPreset(b.bracket_name, b.pool_count, 'empty')}
+                                                className="px-2.5 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-surface-700 text-surface-400 text-xs font-semibold transition-colors"
+                                            >
+                                                Kosongkan
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
-                            ))}
-                        </div>
-                    </div>
 
-                    {/* Konfigurasi Matriks Laga Babak Gugur */}
-                    <div className="rounded-3xl border border-surface-700/60 bg-surface-900/80 backdrop-blur-md p-6 space-y-6 shadow-xl">
-                        <div className="flex items-center justify-between pb-4 border-b border-surface-800">
-                            <div>
-                                <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
-                                    <span>🥊</span>
-                                    <span>Daftar Pertandingan Babak Gugur ({MODE_LABELS[activeTab]?.label})</span>
-                                </h3>
-                                <p className="text-xs text-surface-400 mt-0.5">
-                                    Tentukan pasangan laga babak gugur. Pertandingan ini akan di-generate setelah babak pool selesai.
-                                </p>
-                            </div>
+                                {/* Body Braket: 1 Pool vs Multi Pool */}
+                                {b.is_single_pool ? (
+                                    <div className="p-6 text-center bg-emerald-500/5 border border-emerald-500/20 rounded-2xl space-y-2">
+                                        <div className="text-3xl">🏆</div>
+                                        <h4 className="font-bold text-emerald-300 text-sm">
+                                            Format 1 Pool (Full Round Robin — Tanpa Babak Gugur)
+                                        </h4>
+                                        <p className="text-surface-300 text-xs max-w-xl mx-auto leading-relaxed">
+                                            Braket <strong>"{b.bracket_name}"</strong> hanya terdiri dari 1 Pool. Seluruh tim saling bertanding setengah kompetisi di babak pool. <strong>Pemenang dan Juara 1, 2, 3 ditentukan langsung berdasarkan perolehan poin klasemen tertinggi akhir pool</strong> tanpa ada babak gugur lanjutan.
+                                        </p>
+                                        <div className="pt-1">
+                                            <span className="inline-block px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-semibold border border-emerald-500/20">
+                                                ✨ Otomatis Tanpa Pertandingan Gugur
+                                            </span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {bracketRows.length === 0 ? (
+                                            <div className="p-6 text-center bg-surface-950/70 rounded-2xl border border-dashed border-surface-800 space-y-2.5">
+                                                <div className="text-3xl">🥊</div>
+                                                <p className="text-surface-300 text-xs font-semibold">
+                                                    Belum ada jadwal babak gugur untuk braket "{b.bracket_name}".
+                                                </p>
+                                                <p className="text-surface-400 text-xs max-w-md mx-auto">
+                                                    Pilih preset cepat di atas atau klik tombol di bawah untuk menyusun babak gugur.
+                                                </p>
+                                                <div className="pt-1 flex justify-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => addBracketRow(b.bracket_name, 'final')}
+                                                        className="px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold transition-all shadow-md"
+                                                    >
+                                                        ➕ Tambah Laga Babak Gugur
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="overflow-x-auto space-y-3">
+                                                <table className="w-full text-left text-xs border-collapse">
+                                                    <thead>
+                                                        <tr className="border-b border-surface-800 text-surface-400 uppercase tracking-wider text-[10.5px]">
+                                                            <th className="py-2.5 px-3 w-44">Babak</th>
+                                                            <th className="py-2.5 px-2 w-14 text-center">Posisi #</th>
+                                                            <th className="py-2.5 px-3">Tim Home (Sudut Merah)</th>
+                                                            <th className="py-2.5 px-2 w-8 text-center">vs</th>
+                                                            <th className="py-2.5 px-3">Tim Away (Sudut Biru)</th>
+                                                            <th className="py-2.5 px-2 w-14 text-center">Aksi</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-surface-800/60">
+                                                        {bracketRows.map((row, rIdx) => (
+                                                            <tr key={rIdx} className="hover:bg-surface-950/40 transition-colors">
+                                                                {/* Babak */}
+                                                                <td className="py-2.5 px-3">
+                                                                    <select
+                                                                        value={row.bracket_stage}
+                                                                        onChange={e => updateBracketRow(b.bracket_name, rIdx, 'bracket_stage', e.target.value)}
+                                                                        className="w-full rounded-xl bg-surface-950 border border-surface-700 px-3 py-1.5 text-xs font-bold text-surface-100 focus:border-primary-500"
+                                                                    >
+                                                                        {STAGE_OPTIONS.map(opt => (
+                                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
 
-                            {!isAllSinglePool && (
-                                <button
-                                    type="button"
-                                    onClick={() => addRow('final')}
-                                    className="px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-primary-600/20 transition-all"
-                                >
-                                    <span>➕</span>
-                                    <span>Tambah Laga Gugur</span>
-                                </button>
-                            )}
-                        </div>
+                                                                {/* Posisi */}
+                                                                <td className="py-2.5 px-2 text-center">
+                                                                    <input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        max="16"
+                                                                        value={row.bracket_position}
+                                                                        onChange={e => updateBracketRow(b.bracket_name, rIdx, 'bracket_position', +e.target.value)}
+                                                                        className="w-12 text-center rounded-xl bg-surface-950 border border-surface-700 px-1 py-1.5 text-xs font-mono font-bold text-surface-200"
+                                                                    />
+                                                                </td>
 
-                        {activeRows.length === 0 ? (
-                            <div className="p-8 text-center bg-surface-950/70 rounded-2xl border border-dashed border-surface-800 space-y-3">
-                                <div className="text-4xl">🏆</div>
-                                <h4 className="font-bold text-surface-200 text-sm">
-                                    {isAllSinglePool
-                                        ? 'Mode Ini Menggunakan Format 1 Pool (Full Round Robin)'
-                                        : 'Belum Ada Pertandingan Babak Gugur yang Dikonfigurasi'}
-                                </h4>
-                                <p className="text-surface-400 text-xs max-w-md mx-auto leading-relaxed">
-                                    {isAllSinglePool
-                                        ? 'Seluruh tim bertanding di babak pool setengah kompetisi. Pemenang dan Juara 1 langsung ditentukan dari perolehan poin klasemen tertinggi tanpa babak gugur tambahan.'
-                                        : 'Pilih salah satu preset cepat di atas atau klik tombol "Tambah Laga Gugur" untuk menyusun bagan babak gugur.'}
-                                </p>
-                                {!isAllSinglePool && (
-                                    <div className="pt-2 flex justify-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => applyPreset('2pool_semifinal')}
-                                            className="btn-primary text-xs"
-                                        >
-                                            ⚔️ Buat Skema Semifinal & Final Otomatis
-                                        </button>
+                                                                {/* Tim Home */}
+                                                                <td className="py-2.5 px-3">
+                                                                    <select
+                                                                        value={row.home_source}
+                                                                        onChange={e => updateBracketRow(b.bracket_name, rIdx, 'home_source', e.target.value)}
+                                                                        className="w-full rounded-xl bg-surface-950 border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-200 focus:border-primary-500"
+                                                                    >
+                                                                        {sourceOptions.map(opt => (
+                                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
+
+                                                                {/* vs */}
+                                                                <td className="py-2.5 px-2 text-center font-bold text-surface-500 text-xs">
+                                                                    vs
+                                                                </td>
+
+                                                                {/* Tim Away */}
+                                                                <td className="py-2.5 px-3">
+                                                                    <select
+                                                                        value={row.away_source}
+                                                                        onChange={e => updateBracketRow(b.bracket_name, rIdx, 'away_source', e.target.value)}
+                                                                        className="w-full rounded-xl bg-surface-950 border border-surface-700 px-3 py-1.5 text-xs font-semibold text-surface-200 focus:border-primary-500"
+                                                                    >
+                                                                        {sourceOptions.map(opt => (
+                                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
+
+                                                                {/* Hapus Baris */}
+                                                                <td className="py-2.5 px-2 text-center">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => deleteBracketRow(b.bracket_name, rIdx)}
+                                                                        className="p-1.5 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all"
+                                                                        title="Hapus baris ini"
+                                                                    >
+                                                                        🗑️
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+
+                                                <div className="pt-2 flex justify-start">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => addBracketRow(b.bracket_name, 'final')}
+                                                        className="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-surface-700 text-xs font-bold text-primary-300 flex items-center gap-1.5 transition-colors"
+                                                    >
+                                                        <span>➕</span>
+                                                        <span>Tambah Pertandingan di {b.bracket_name}</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-xs border-collapse">
-                                    <thead>
-                                        <tr className="border-b border-surface-800 text-surface-400 uppercase tracking-wider text-[10.5px]">
-                                            <th className="py-3 px-3 w-48">Babak Gugur</th>
-                                            <th className="py-3 px-2 w-16 text-center">Posisi #</th>
-                                            <th className="py-3 px-3">Tim A (Home / Sudut Merah)</th>
-                                            <th className="py-3 px-2 w-10 text-center">vs</th>
-                                            <th className="py-3 px-3">Tim B (Away / Sudut Biru)</th>
-                                            <th className="py-3 px-2 w-16 text-center">Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-surface-800/60">
-                                        {activeRows.map((row, i) => (
-                                            <tr key={i} className="hover:bg-surface-950/40 transition-colors">
-                                                {/* Babak */}
-                                                <td className="py-3 px-3">
-                                                    <select
-                                                        value={row.bracket_stage}
-                                                        onChange={e => updateRow(i, 'bracket_stage', e.target.value)}
-                                                        className="w-full rounded-xl bg-surface-950 border border-surface-700 px-3 py-2 text-xs font-bold text-surface-100 focus:border-primary-500"
-                                                    >
-                                                        {STAGE_OPTIONS.map(opt => (
-                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-
-                                                {/* Posisi */}
-                                                <td className="py-3 px-2 text-center">
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        max="16"
-                                                        value={row.bracket_position}
-                                                        onChange={e => updateRow(i, 'bracket_position', +e.target.value)}
-                                                        className="w-14 text-center rounded-xl bg-surface-950 border border-surface-700 px-2 py-2 text-xs font-mono font-bold text-surface-200"
-                                                    />
-                                                </td>
-
-                                                {/* Tim Home */}
-                                                <td className="py-3 px-3">
-                                                    <select
-                                                        value={row.home_source}
-                                                        onChange={e => updateRow(i, 'home_source', e.target.value)}
-                                                        className="w-full rounded-xl bg-surface-950 border border-surface-700 px-3 py-2 text-xs font-semibold text-surface-200 focus:border-primary-500"
-                                                    >
-                                                        {sourceOptions.map(opt => (
-                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-
-                                                {/* VS */}
-                                                <td className="py-3 px-2 text-center font-bold text-surface-500 text-xs">
-                                                    vs
-                                                </td>
-
-                                                {/* Tim Away */}
-                                                <td className="py-3 px-3">
-                                                    <select
-                                                        value={row.away_source}
-                                                        onChange={e => updateRow(i, 'away_source', e.target.value)}
-                                                        className="w-full rounded-xl bg-surface-950 border border-surface-700 px-3 py-2 text-xs font-semibold text-surface-200 focus:border-primary-500"
-                                                    >
-                                                        {sourceOptions.map(opt => (
-                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-
-                                                {/* Hapus Baris */}
-                                                <td className="py-3 px-2 text-center">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => deleteRow(i)}
-                                                        className="p-2 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
-                                                        title="Hapus baris pertandingan ini"
-                                                    >
-                                                        🗑️
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
+                        );
+                    })}
                 </div>
 
                 {/* Bottom Sticky Action Bar */}

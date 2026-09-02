@@ -378,6 +378,7 @@ class MasterScheduleGeneratorService
                         'match_mode'       => $mode,
                         'stage'            => $matchStage,
                         'bracket_position' => $matrix->bracket_position,
+                        'bracket_group'    => $matrix->bracket_name,
                         'home_placeholder' => $homePlaceholder,
                         'away_placeholder' => $awayPlaceholder,
                         'next_match_id'    => $nextMatchId,

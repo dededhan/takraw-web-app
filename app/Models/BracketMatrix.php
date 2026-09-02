@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'tournament_id', 'match_mode', 'bracket_stage',
+    'tournament_id', 'match_mode', 'bracket_name', 'bracket_stage',
     'bracket_position', 'home_source', 'away_source',
 ])]
 class BracketMatrix extends Model

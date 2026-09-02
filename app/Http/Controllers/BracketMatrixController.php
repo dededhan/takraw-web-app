@@ -22,13 +22,10 @@ class BracketMatrixController extends Controller
             ->where('is_active', true)
             ->get();
 
-        $matrices = BracketMatrix::where('tournament_id', $tournament->id)
-            ->get()
-            ->groupBy('match_mode');
+        $allMatrices = BracketMatrix::where('tournament_id', $tournament->id)->get();
 
-        // Buat structure bracket stages per braket & mode
+        // Buat structure bracket & matriks per braket & mode
         $modeBrackets = [];
-        $stageOptions = [];
 
         foreach ($activeModes as $mode) {
             $poolsForMode = $tournament->pools->where('match_mode', $mode->match_mode);
@@ -39,9 +36,22 @@ class BracketMatrixController extends Controller
                 $bracketIdx = 1;
                 foreach ($bracketsGrouped as $bracketName => $pools) {
                     $bPoolCount = $pools->count();
+                    $bName = $bracketName ?: "Braket {$bracketIdx}";
+
+                    // Filter saved matrices for this bracket
+                    $savedMatrices = $allMatrices
+                        ->where('match_mode', $mode->match_mode)
+                        ->filter(function ($m) use ($bName, $bracketsGrouped) {
+                            if ($bracketsGrouped->count() === 1) return true;
+                            return $m->bracket_name === $bName;
+                        })
+                        ->values();
+
+                    $defaultStages = $this->getBracketStages($bPoolCount);
+
                     $bList[] = [
                         'bracket_number' => $bracketIdx++,
-                        'bracket_name'   => $bracketName ?: "Braket {$bracketIdx}",
+                        'bracket_name'   => $bName,
                         'pool_count'     => $bPoolCount,
                         'pools'          => $pools->values()->map(fn($p) => [
                             'id'           => $p->id,
@@ -52,13 +62,15 @@ class BracketMatrixController extends Controller
                                 : $p->teams->count(),
                         ]),
                         'is_single_pool' => $bPoolCount <= 1,
-                        'stages'         => $this->getBracketStages($bPoolCount),
+                        'stages'         => $savedMatrices->isNotEmpty() ? $savedMatrices->toArray() : $defaultStages,
                     ];
                 }
                 $modeBrackets[$mode->match_mode] = $bList;
-                $stageOptions[$mode->match_mode] = $this->getBracketStages($poolsForMode->count());
             } else {
                 $poolCount = $mode->pool_count ?? 2;
+                $savedMatrices = $allMatrices->where('match_mode', $mode->match_mode)->values();
+                $defaultStages = $this->getBracketStages($poolCount);
+
                 $modeBrackets[$mode->match_mode] = [
                     [
                         'bracket_number' => 1,
@@ -66,10 +78,9 @@ class BracketMatrixController extends Controller
                         'pool_count'     => $poolCount,
                         'pools'          => [],
                         'is_single_pool' => $poolCount <= 1,
-                        'stages'         => $this->getBracketStages($poolCount),
+                        'stages'         => $savedMatrices->isNotEmpty() ? $savedMatrices->toArray() : $defaultStages,
                     ],
                 ];
-                $stageOptions[$mode->match_mode] = $this->getBracketStages($poolCount);
             }
         }
 
@@ -77,8 +88,6 @@ class BracketMatrixController extends Controller
             'tournament'   => $tournament,
             'activeModes'  => $activeModes,
             'modeBrackets' => $modeBrackets,
-            'matrices'     => $matrices,
-            'stageOptions' => $stageOptions,
         ]);
     }
 
@@ -91,6 +100,7 @@ class BracketMatrixController extends Controller
         $validated = $request->validate([
             'matrices'                        => 'nullable|array',
             'matrices.*.match_mode'           => 'required|in:regu,double,quadrant,team_regu,team_double',
+            'matrices.*.bracket_name'         => 'nullable|string|max:50',
             'matrices.*.bracket_stage'        => 'required|in:round_of_16,round_of_8,semifinal,third_place,final',
             'matrices.*.bracket_position'     => 'required|integer|min:1',
             'matrices.*.home_source'          => 'required|string|max:60',
@@ -106,6 +116,7 @@ class BracketMatrixController extends Controller
                 BracketMatrix::create([
                     'tournament_id'    => $tournament->id,
                     'match_mode'       => $matrixData['match_mode'],
+                    'bracket_name'     => $matrixData['bracket_name'] ?? null,
                     'bracket_stage'    => $matrixData['bracket_stage'],
                     'bracket_position' => $matrixData['bracket_position'],
                     'home_source'      => $matrixData['home_source'],
