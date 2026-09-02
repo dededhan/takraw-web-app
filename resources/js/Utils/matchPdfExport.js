@@ -542,78 +542,64 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                 doc.text(`STATISTIK INDIVIDU PEMAIN - ${regu.reguLabel.toUpperCase()} (${regu.memberName})`, 14, currentY);
                 currentY += 2;
 
+                const getPlayerActionRow = (label, inC, aceC, errC) => {
+                    const inVal = Number(inC) || 0;
+                    const aceVal = Number(aceC) || 0;
+                    const errVal = Number(errC) || 0;
+                    const success = inVal + aceVal;
+                    const total = success + errVal;
+                    const pct = total > 0 ? ((success / total) * 100).toFixed(0) : '0';
+                    const perfText = total > 0 ? `${pct}% (${success}/${total})` : '0% (0/0)';
+
+                    return [
+                        label,
+                        String(inVal),
+                        String(aceVal),
+                        String(errVal),
+                        String(success),
+                        perfText,
+                    ];
+                };
+
                 const athleteDetailRows = [];
                 athletesForRegu.forEach(ath => {
                     const aAll = getAthleteStats(ath.id, sNums);
-                    const aS1 = getAthleteStats(ath.id, sNums[0]);
-                    const aS2 = getAthleteStats(ath.id, sNums[1]);
-                    const aS3 = getAthleteStats(ath.id, sNums[2]);
-
-                    const athPerfAll = calculateTotalPerformance(aAll);
-                    const athPerfS1 = calculateTotalPerformance(aS1);
-                    const athPerfS2 = calculateTotalPerformance(aS2);
-                    const athPerfS3 = calculateTotalPerformance(aS3);
-
-                    const athHeader = `#${ath.jersey_number || '-'} ${ath.name} (${ath.position || 'Pemain'})`;
+                    const athPerf = calculateTotalPerformance(aAll);
+                    const athHeader = `#${ath.jersey_number || '-'} ${ath.name.toUpperCase()} (${(ath.position || 'Pemain').toUpperCase()}) - ALL SETS (${regu.reguLabel})`;
 
                     athleteDetailRows.push([
-                        { content: athHeader, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } }
+                        {
+                            content: athHeader,
+                            colSpan: 6,
+                            styles: {
+                                fontStyle: 'bold',
+                                fillColor: isHome ? [240, 253, 244] : [254, 243, 199],
+                                textColor: isHome ? [6, 95, 70] : [146, 64, 14],
+                                fontSize: 6.8,
+                            }
+                        }
                     ]);
 
+                    athleteDetailRows.push(getPlayerActionRow('  - Servis', aAll.service_in, aAll.service_ace, aAll.service_error));
+                    athleteDetailRows.push(getPlayerActionRow('  - Strike / Smash', aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail));
+                    athleteDetailRows.push(getPlayerActionRow('  - Freeball', aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error));
+                    athleteDetailRows.push(getPlayerActionRow('  - Firstball / Receive', aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail));
+                    athleteDetailRows.push(getPlayerActionRow('  - Feeding', aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail));
+                    athleteDetailRows.push(getPlayerActionRow('  - Blocking', aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail));
+
                     athleteDetailRows.push([
-                        '  - Servis (In/Ace/Err %)',
-                        formatActionPerformance(aAll.service_in, aAll.service_ace, aAll.service_error),
-                        formatActionPerformance(aS1.service_in, aS1.service_ace, aS1.service_error),
-                        formatActionPerformance(aS2.service_in, aS2.service_ace, aS2.service_error),
-                        formatActionPerformance(aS3.service_in, aS3.service_ace, aS3.service_error),
-                    ]);
-                    athleteDetailRows.push([
-                        '  - Strike (In/Ace/Err %)',
-                        formatActionPerformance(aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail),
-                        formatActionPerformance(aS1.strike_in || aS1.strike_success, aS1.strike_ace, aS1.strike_error || aS1.strike_fail),
-                        formatActionPerformance(aS2.strike_in || aS2.strike_success, aS2.strike_ace, aS2.strike_error || aS2.strike_fail),
-                        formatActionPerformance(aS3.strike_in || aS3.strike_success, aS3.strike_ace, aS3.strike_error || aS3.strike_fail),
-                    ]);
-                    athleteDetailRows.push([
-                        '  - Freeball (In/Ace/Err %)',
-                        formatActionPerformance(aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error),
-                        formatActionPerformance(aS1.freeball_in, aS1.freeball_ace, aS1.freeball_error),
-                        formatActionPerformance(aS2.freeball_in, aS2.freeball_ace, aS2.freeball_error),
-                        formatActionPerformance(aS3.freeball_in, aS3.freeball_ace, aS3.freeball_error),
-                    ]);
-                    athleteDetailRows.push([
-                        '  - Firstball (In/Ace/Err %)',
-                        formatActionPerformance(aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail),
-                        formatActionPerformance(aS1.firstball_in || aS1.receive_success, aS1.firstball_ace, aS1.firstball_error || aS1.receive_fail),
-                        formatActionPerformance(aS2.firstball_in || aS2.receive_success, aS2.firstball_ace, aS2.firstball_error || aS2.receive_fail),
-                        formatActionPerformance(aS3.firstball_in || aS3.receive_success, aS3.firstball_ace, aS3.firstball_error || aS3.receive_fail),
-                    ]);
-                    athleteDetailRows.push([
-                        '  - Feeding (In/Ace/Err %)',
-                        formatActionPerformance(aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail),
-                        formatActionPerformance(aS1.feeding_in || aS1.feeding_success, aS1.feeding_ace, aS1.feeding_error || aS1.feeding_fail),
-                        formatActionPerformance(aS2.feeding_in || aS2.feeding_success, aS2.feeding_ace, aS2.feeding_error || aS2.feeding_fail),
-                        formatActionPerformance(aS3.feeding_in || aS3.feeding_success, aS3.feeding_ace, aS3.feeding_error || aS3.feeding_fail),
-                    ]);
-                    athleteDetailRows.push([
-                        '  - Blocking (In/Ace/Err %)',
-                        formatActionPerformance(aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail),
-                        formatActionPerformance(aS1.blocking_in || aS1.block_success, aS1.blocking_ace, aS1.blocking_error || aS1.block_fail),
-                        formatActionPerformance(aS2.blocking_in || aS2.block_success, aS2.blocking_ace, aS2.blocking_error || aS2.block_fail),
-                        formatActionPerformance(aS3.blocking_in || aS3.block_success, aS3.blocking_ace, aS3.blocking_error || aS3.block_fail),
-                    ]);
-                    athleteDetailRows.push([
-                        { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } },
-                        { content: athPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', textColor: [16, 185, 129] } },
-                        { content: athPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
-                        { content: athPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
-                        { content: athPerfS3.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
+                        { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
+                        { content: String(athPerf.totalIn), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                        { content: String(athPerf.totalAce), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                        { content: String(athPerf.totalErr), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                        { content: String(athPerf.totalSuccess), styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
+                        { content: `${athPerf.pct}% (${athPerf.totalSuccess}/${athPerf.totalAttempts})`, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
                     ]);
                 });
 
                 autoTable(doc, {
                     startY: currentY,
-                    head: [['Nama Pemain / Parameter Aksi', `All Sets (${regu.reguLabel})`, `Set ${sNums[0]}`, `Set ${sNums[1]}`, `Set ${sNums[2]}`]],
+                    head: [['Parameter Aksi', 'In', 'Ace', 'Error', 'Total Sukses', 'Performa (%)']],
                     body: athleteDetailRows,
                     theme: 'grid',
                     headStyles: {
@@ -625,10 +611,11 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                     },
                     columnStyles: {
                         0: { halign: 'left', fontStyle: 'bold', width: 54 },
-                        1: { halign: 'center', fontStyle: 'bold', width: 33 },
-                        2: { halign: 'center', width: 31 },
-                        3: { halign: 'center', width: 31 },
-                        4: { halign: 'center', width: 33 },
+                        1: { halign: 'center', width: 22 },
+                        2: { halign: 'center', width: 22 },
+                        3: { halign: 'center', width: 22 },
+                        4: { halign: 'center', fontStyle: 'bold', width: 26 },
+                        5: { halign: 'center', fontStyle: 'bold', textColor: isHome ? [16, 185, 129] : [217, 119, 6], width: 36 },
                     },
                     styles: { fontSize: 5.8, cellPadding: 0.8 },
                     margin: { left: 14, right: 14 },
@@ -734,78 +721,64 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             doc.text(`STATISTIK PERFORMA INDIVIDU PEMAIN (${focusedTeamName})`, 14, currentY);
             currentY += 2;
 
+            const getPlayerActionRow = (label, inC, aceC, errC) => {
+                const inVal = Number(inC) || 0;
+                const aceVal = Number(aceC) || 0;
+                const errVal = Number(errC) || 0;
+                const success = inVal + aceVal;
+                const total = success + errVal;
+                const pct = total > 0 ? ((success / total) * 100).toFixed(0) : '0';
+                const perfText = total > 0 ? `${pct}% (${success}/${total})` : '0% (0/0)';
+
+                return [
+                    label,
+                    String(inVal),
+                    String(aceVal),
+                    String(errVal),
+                    String(success),
+                    perfText,
+                ];
+            };
+
             const athleteDetailRows = [];
             athletes.forEach(ath => {
                 const aAll = getAthleteStats(ath.id, null);
-                const aS1 = getAthleteStats(ath.id, 1);
-                const aS2 = getAthleteStats(ath.id, 2);
-                const aS3 = getAthleteStats(ath.id, 3);
-
-                const athPerfAll = calculateTotalPerformance(aAll);
-                const athPerfS1 = calculateTotalPerformance(aS1);
-                const athPerfS2 = calculateTotalPerformance(aS2);
-                const athPerfS3 = calculateTotalPerformance(aS3);
-
-                const athHeader = `#${ath.jersey_number || '-'} ${ath.name} (${ath.position || 'Pemain'})`;
+                const athPerf = calculateTotalPerformance(aAll);
+                const athHeader = `#${ath.jersey_number || '-'} ${ath.name.toUpperCase()} (${(ath.position || 'Pemain').toUpperCase()}) - ALL SETS`;
 
                 athleteDetailRows.push([
-                    { content: athHeader, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } }
+                    {
+                        content: athHeader,
+                        colSpan: 6,
+                        styles: {
+                            fontStyle: 'bold',
+                            fillColor: isHome ? [240, 253, 244] : [254, 243, 199],
+                            textColor: isHome ? [6, 95, 70] : [146, 64, 14],
+                            fontSize: 7,
+                        }
+                    }
                 ]);
 
+                athleteDetailRows.push(getPlayerActionRow('  - Servis', aAll.service_in, aAll.service_ace, aAll.service_error));
+                athleteDetailRows.push(getPlayerActionRow('  - Strike / Smash', aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail));
+                athleteDetailRows.push(getPlayerActionRow('  - Freeball', aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error));
+                athleteDetailRows.push(getPlayerActionRow('  - Firstball / Receive', aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail));
+                athleteDetailRows.push(getPlayerActionRow('  - Feeding', aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail));
+                athleteDetailRows.push(getPlayerActionRow('  - Blocking', aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail));
+
                 athleteDetailRows.push([
-                    '  - Servis (In/Ace/Err %)',
-                    formatActionPerformance(aAll.service_in, aAll.service_ace, aAll.service_error),
-                    formatActionPerformance(aS1.service_in, aS1.service_ace, aS1.service_error),
-                    formatActionPerformance(aS2.service_in, aS2.service_ace, aS2.service_error),
-                    formatActionPerformance(aS3.service_in, aS3.service_ace, aS3.service_error),
-                ]);
-                athleteDetailRows.push([
-                    '  - Strike (In/Ace/Err %)',
-                    formatActionPerformance(aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail),
-                    formatActionPerformance(aS1.strike_in || aS1.strike_success, aS1.strike_ace, aS1.strike_error || aS1.strike_fail),
-                    formatActionPerformance(aS2.strike_in || aS2.strike_success, aS2.strike_ace, aS2.strike_error || aS2.strike_fail),
-                    formatActionPerformance(aS3.strike_in || aS3.strike_success, aS3.strike_ace, aS3.strike_error || aS3.strike_fail),
-                ]);
-                athleteDetailRows.push([
-                    '  - Freeball (In/Ace/Err %)',
-                    formatActionPerformance(aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error),
-                    formatActionPerformance(aS1.freeball_in, aS1.freeball_ace, aS1.freeball_error),
-                    formatActionPerformance(aS2.freeball_in, aS2.freeball_ace, aS2.freeball_error),
-                    formatActionPerformance(aS3.freeball_in, aS3.freeball_ace, aS3.freeball_error),
-                ]);
-                athleteDetailRows.push([
-                    '  - Firstball (In/Ace/Err %)',
-                    formatActionPerformance(aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail),
-                    formatActionPerformance(aS1.firstball_in || aS1.receive_success, aS1.firstball_ace, aS1.firstball_error || aS1.receive_fail),
-                    formatActionPerformance(aS2.firstball_in || aS2.receive_success, aS2.firstball_ace, aS2.firstball_error || aS2.receive_fail),
-                    formatActionPerformance(aS3.firstball_in || aS3.receive_success, aS3.firstball_ace, aS3.firstball_error || aS3.receive_fail),
-                ]);
-                athleteDetailRows.push([
-                    '  - Feeding (In/Ace/Err %)',
-                    formatActionPerformance(aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail),
-                    formatActionPerformance(aS1.feeding_in || aS1.feeding_success, aS1.feeding_ace, aS1.feeding_error || aS1.feeding_fail),
-                    formatActionPerformance(aS2.feeding_in || aS2.feeding_success, aS2.feeding_ace, aS2.feeding_error || aS2.feeding_fail),
-                    formatActionPerformance(aS3.feeding_in || aS3.feeding_success, aS3.feeding_ace, aS3.feeding_error || aS3.feeding_fail),
-                ]);
-                athleteDetailRows.push([
-                    '  - Blocking (In/Ace/Err %)',
-                    formatActionPerformance(aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail),
-                    formatActionPerformance(aS1.blocking_in || aS1.block_success, aS1.blocking_ace, aS1.blocking_error || aS1.block_fail),
-                    formatActionPerformance(aS2.blocking_in || aS2.block_success, aS2.blocking_ace, aS2.blocking_error || aS2.block_fail),
-                    formatActionPerformance(aS3.blocking_in || aS3.block_success, aS3.blocking_ace, aS3.blocking_error || aS3.block_fail),
-                ]);
-                athleteDetailRows.push([
-                    { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [15, 23, 42] } },
-                    { content: athPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', textColor: [16, 185, 129] } },
-                    { content: athPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
-                    { content: athPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
-                    { content: athPerfS3.shortFormatted, styles: { fontStyle: 'bold', halign: 'center' } },
+                    { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
+                    { content: String(athPerf.totalIn), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                    { content: String(athPerf.totalAce), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                    { content: String(athPerf.totalErr), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                    { content: String(athPerf.totalSuccess), styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
+                    { content: `${athPerf.pct}% (${athPerf.totalSuccess}/${athPerf.totalAttempts})`, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
                 ]);
             });
 
             autoTable(doc, {
                 startY: currentY,
-                head: [['Nama Pemain / Parameter Aksi', 'All Sets (Total)', 'Set 1', 'Set 2', 'Set 3']],
+                head: [['Parameter Aksi', 'In', 'Ace', 'Error', 'Total Sukses', 'Performa (%)']],
                 body: athleteDetailRows,
                 theme: 'grid',
                 headStyles: {
@@ -817,12 +790,13 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                 },
                 columnStyles: {
                     0: { halign: 'left', fontStyle: 'bold', width: 54 },
-                    1: { halign: 'center', fontStyle: 'bold', width: 33 },
-                    2: { halign: 'center', width: 31 },
-                    3: { halign: 'center', width: 31 },
-                    4: { halign: 'center', width: 33 },
+                    1: { halign: 'center', width: 22 },
+                    2: { halign: 'center', width: 22 },
+                    3: { halign: 'center', width: 22 },
+                    4: { halign: 'center', fontStyle: 'bold', width: 26 },
+                    5: { halign: 'center', fontStyle: 'bold', textColor: isHome ? [16, 185, 129] : [217, 119, 6], width: 36 },
                 },
-                styles: { fontSize: 6.5, cellPadding: 0.8 },
+                styles: { fontSize: 6, cellPadding: 0.8 },
                 margin: { left: 14, right: 14 },
             });
 
