@@ -534,7 +534,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
 
             currentY = doc.lastAutoTable.finalY + 5;
 
-            // ─── TABEL 2: PERFORMA INDIVIDUAL PEMAIN DI REGU INI ───
+            // ─── TABEL 2: PERFORMA INDIVIDUAL PEMAIN DI REGU INI (All Sets + Set 1, 2, 3) ───
             if (athletesForRegu.length > 0) {
                 doc.setFontSize(8.5);
                 doc.setFont('helvetica', 'bold');
@@ -542,35 +542,24 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                 doc.text(`STATISTIK INDIVIDU PEMAIN - ${regu.reguLabel.toUpperCase()} (${regu.memberName})`, 14, currentY);
                 currentY += 2;
 
-                const getPlayerActionRow = (label, inC, aceC, errC) => {
-                    const inVal = Number(inC) || 0;
-                    const aceVal = Number(aceC) || 0;
-                    const errVal = Number(errC) || 0;
-                    const success = inVal + aceVal;
-                    const total = success + errVal;
-                    const pct = total > 0 ? ((success / total) * 100).toFixed(0) : '0';
-                    const perfText = total > 0 ? `${pct}% (${success}/${total})` : '0% (0/0)';
-
-                    return [
-                        label,
-                        String(inVal),
-                        String(aceVal),
-                        String(errVal),
-                        String(success),
-                        perfText,
-                    ];
-                };
-
                 const athleteDetailRows = [];
                 athletesForRegu.forEach(ath => {
                     const aAll = getAthleteStats(ath.id, sNums);
-                    const athPerf = calculateTotalPerformance(aAll);
-                    const athHeader = `#${ath.jersey_number || '-'} ${ath.name.toUpperCase()} (${(ath.position || 'Pemain').toUpperCase()}) - ALL SETS (${regu.reguLabel})`;
+                    const aSet1 = getAthleteStats(ath.id, sNums[0]);
+                    const aSet2 = getAthleteStats(ath.id, sNums[1]);
+                    const aSet3 = getAthleteStats(ath.id, sNums[2]);
+
+                    const athPerfAll = calculateTotalPerformance(aAll);
+                    const athPerfS1 = calculateTotalPerformance(aSet1);
+                    const athPerfS2 = calculateTotalPerformance(aSet2);
+                    const athPerfS3 = calculateTotalPerformance(aSet3);
+
+                    const athHeader = `#${ath.jersey_number || '-'} ${ath.name.toUpperCase()} (${(ath.position || 'Pemain').toUpperCase()})`;
 
                     athleteDetailRows.push([
                         {
                             content: athHeader,
-                            colSpan: 6,
+                            colSpan: 5,
                             styles: {
                                 fontStyle: 'bold',
                                 fillColor: isHome ? [240, 253, 244] : [254, 243, 199],
@@ -580,26 +569,43 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                         }
                     ]);
 
-                    athleteDetailRows.push(getPlayerActionRow('  - Servis', aAll.service_in, aAll.service_ace, aAll.service_error));
-                    athleteDetailRows.push(getPlayerActionRow('  - Strike / Smash', aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail));
-                    athleteDetailRows.push(getPlayerActionRow('  - Freeball', aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error));
-                    athleteDetailRows.push(getPlayerActionRow('  - Firstball / Receive', aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail));
-                    athleteDetailRows.push(getPlayerActionRow('  - Feeding', aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail));
-                    athleteDetailRows.push(getPlayerActionRow('  - Blocking', aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail));
+                    const athMetricsList = [
+                        { label: '  - Servis', fn: (t) => formatActionPerformance(t.service_in, t.service_ace, t.service_error) },
+                        { label: '  - Strike / Smash', fn: (t) => formatActionPerformance(t.strike_in || t.strike_success, t.strike_ace, t.strike_error || t.strike_fail) },
+                        { label: '  - Freeball', fn: (t) => formatActionPerformance(t.freeball_in, t.freeball_ace, t.freeball_error) },
+                        { label: '  - Firstball / Receive', fn: (t) => formatActionPerformance(t.firstball_in || t.receive_success, t.firstball_ace, t.firstball_error || t.receive_fail) },
+                        { label: '  - Feeding', fn: (t) => formatActionPerformance(t.feeding_in || t.feeding_success, t.feeding_ace, t.feeding_error || t.feeding_fail) },
+                        { label: '  - Blocking', fn: (t) => formatActionPerformance(t.blocking_in || t.block_success, t.blocking_ace, t.blocking_error || t.block_fail) },
+                    ];
+
+                    athMetricsList.forEach(m => {
+                        athleteDetailRows.push([
+                            m.label,
+                            m.fn(aAll),
+                            m.fn(aSet1),
+                            m.fn(aSet2),
+                            m.fn(aSet3),
+                        ]);
+                    });
 
                     athleteDetailRows.push([
                         { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
-                        { content: String(athPerf.totalIn), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
-                        { content: String(athPerf.totalAce), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
-                        { content: String(athPerf.totalErr), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
-                        { content: String(athPerf.totalSuccess), styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
-                        { content: `${athPerf.pct}% (${athPerf.totalSuccess}/${athPerf.totalAttempts})`, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
+                        { content: athPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
+                        { content: athPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                        { content: athPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                        { content: athPerfS3.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
                     ]);
                 });
 
                 autoTable(doc, {
                     startY: currentY,
-                    head: [['Parameter Aksi', 'In', 'Ace', 'Error', 'Total Sukses', 'Performa (%)']],
+                    head: [[
+                        'Parameter Aksi Pemain (Format: In/Ace/Err [Perf %])',
+                        `All Sets (${regu.reguLabel})`,
+                        `Set ${sNums[0]}`,
+                        `Set ${sNums[1]}`,
+                        `Set ${sNums[2]}`,
+                    ]],
                     body: athleteDetailRows,
                     theme: 'grid',
                     headStyles: {
@@ -611,11 +617,10 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                     },
                     columnStyles: {
                         0: { halign: 'left', fontStyle: 'bold', width: 54 },
-                        1: { halign: 'center', width: 22 },
-                        2: { halign: 'center', width: 22 },
-                        3: { halign: 'center', width: 22 },
-                        4: { halign: 'center', fontStyle: 'bold', width: 26 },
-                        5: { halign: 'center', fontStyle: 'bold', textColor: isHome ? [16, 185, 129] : [217, 119, 6], width: 36 },
+                        1: { halign: 'center', fontStyle: 'bold', textColor: isHome ? [16, 185, 129] : [217, 119, 6], width: 33 },
+                        2: { halign: 'center', width: 31 },
+                        3: { halign: 'center', width: 31 },
+                        4: { halign: 'center', width: 33 },
                     },
                     styles: { fontSize: 5.8, cellPadding: 0.8 },
                     margin: { left: 14, right: 14 },
@@ -712,7 +717,7 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
 
         currentY = doc.lastAutoTable.finalY + 6;
 
-        // Individual athletes table
+        // Individual athletes table (All Sets + Set 1, 2, 3)
         const athletes = focusedAthletes;
         if (athletes.length > 0) {
             doc.setFontSize(9);
@@ -721,35 +726,24 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
             doc.text(`STATISTIK PERFORMA INDIVIDU PEMAIN (${focusedTeamName})`, 14, currentY);
             currentY += 2;
 
-            const getPlayerActionRow = (label, inC, aceC, errC) => {
-                const inVal = Number(inC) || 0;
-                const aceVal = Number(aceC) || 0;
-                const errVal = Number(errC) || 0;
-                const success = inVal + aceVal;
-                const total = success + errVal;
-                const pct = total > 0 ? ((success / total) * 100).toFixed(0) : '0';
-                const perfText = total > 0 ? `${pct}% (${success}/${total})` : '0% (0/0)';
-
-                return [
-                    label,
-                    String(inVal),
-                    String(aceVal),
-                    String(errVal),
-                    String(success),
-                    perfText,
-                ];
-            };
-
             const athleteDetailRows = [];
             athletes.forEach(ath => {
                 const aAll = getAthleteStats(ath.id, null);
-                const athPerf = calculateTotalPerformance(aAll);
-                const athHeader = `#${ath.jersey_number || '-'} ${ath.name.toUpperCase()} (${(ath.position || 'Pemain').toUpperCase()}) - ALL SETS`;
+                const aSet1 = getAthleteStats(ath.id, 1);
+                const aSet2 = getAthleteStats(ath.id, 2);
+                const aSet3 = getAthleteStats(ath.id, 3);
+
+                const athPerfAll = calculateTotalPerformance(aAll);
+                const athPerfS1 = calculateTotalPerformance(aSet1);
+                const athPerfS2 = calculateTotalPerformance(aSet2);
+                const athPerfS3 = calculateTotalPerformance(aSet3);
+
+                const athHeader = `#${ath.jersey_number || '-'} ${ath.name.toUpperCase()} (${(ath.position || 'Pemain').toUpperCase()})`;
 
                 athleteDetailRows.push([
                     {
                         content: athHeader,
-                        colSpan: 6,
+                        colSpan: 5,
                         styles: {
                             fontStyle: 'bold',
                             fillColor: isHome ? [240, 253, 244] : [254, 243, 199],
@@ -759,26 +753,43 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                     }
                 ]);
 
-                athleteDetailRows.push(getPlayerActionRow('  - Servis', aAll.service_in, aAll.service_ace, aAll.service_error));
-                athleteDetailRows.push(getPlayerActionRow('  - Strike / Smash', aAll.strike_in || aAll.strike_success, aAll.strike_ace, aAll.strike_error || aAll.strike_fail));
-                athleteDetailRows.push(getPlayerActionRow('  - Freeball', aAll.freeball_in, aAll.freeball_ace, aAll.freeball_error));
-                athleteDetailRows.push(getPlayerActionRow('  - Firstball / Receive', aAll.firstball_in || aAll.receive_success, aAll.firstball_ace, aAll.firstball_error || aAll.receive_fail));
-                athleteDetailRows.push(getPlayerActionRow('  - Feeding', aAll.feeding_in || aAll.feeding_success, aAll.feeding_ace, aAll.feeding_error || aAll.feeding_fail));
-                athleteDetailRows.push(getPlayerActionRow('  - Blocking', aAll.blocking_in || aAll.block_success, aAll.blocking_ace, aAll.blocking_error || aAll.block_fail));
+                const athMetricsList = [
+                    { label: '  - Servis', fn: (t) => formatActionPerformance(t.service_in, t.service_ace, t.service_error) },
+                    { label: '  - Strike / Smash', fn: (t) => formatActionPerformance(t.strike_in || t.strike_success, t.strike_ace, t.strike_error || t.strike_fail) },
+                    { label: '  - Freeball', fn: (t) => formatActionPerformance(t.freeball_in, t.freeball_ace, t.freeball_error) },
+                    { label: '  - Firstball / Receive', fn: (t) => formatActionPerformance(t.firstball_in || t.receive_success, t.firstball_ace, t.firstball_error || t.receive_fail) },
+                    { label: '  - Feeding', fn: (t) => formatActionPerformance(t.feeding_in || t.feeding_success, t.feeding_ace, t.feeding_error || t.feeding_fail) },
+                    { label: '  - Blocking', fn: (t) => formatActionPerformance(t.blocking_in || t.block_success, t.blocking_ace, t.blocking_error || t.block_fail) },
+                ];
+
+                athMetricsList.forEach(m => {
+                    athleteDetailRows.push([
+                        m.label,
+                        m.fn(aAll),
+                        m.fn(aSet1),
+                        m.fn(aSet2),
+                        m.fn(aSet3),
+                    ]);
+                });
 
                 athleteDetailRows.push([
                     { content: '  TOTAL PERFORMA PEMAIN', styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
-                    { content: String(athPerf.totalIn), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
-                    { content: String(athPerf.totalAce), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
-                    { content: String(athPerf.totalErr), styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
-                    { content: String(athPerf.totalSuccess), styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
-                    { content: `${athPerf.pct}% (${athPerf.totalSuccess}/${athPerf.totalAttempts})`, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
+                    { content: athPerfAll.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 252, 231], textColor: [22, 101, 52] } },
+                    { content: athPerfS1.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                    { content: athPerfS2.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
+                    { content: athPerfS3.shortFormatted, styles: { fontStyle: 'bold', halign: 'center', fillColor: [241, 245, 249] } },
                 ]);
             });
 
             autoTable(doc, {
                 startY: currentY,
-                head: [['Parameter Aksi', 'In', 'Ace', 'Error', 'Total Sukses', 'Performa (%)']],
+                head: [[
+                    'Parameter Aksi Pemain (Format: In/Ace/Err [Perf %])',
+                    'All Sets (Total)',
+                    'Set 1',
+                    'Set 2',
+                    'Set 3',
+                ]],
                 body: athleteDetailRows,
                 theme: 'grid',
                 headStyles: {
@@ -790,11 +801,10 @@ export function exportMatchReportPdf(match, targetTeam = 'home') {
                 },
                 columnStyles: {
                     0: { halign: 'left', fontStyle: 'bold', width: 54 },
-                    1: { halign: 'center', width: 22 },
-                    2: { halign: 'center', width: 22 },
-                    3: { halign: 'center', width: 22 },
-                    4: { halign: 'center', fontStyle: 'bold', width: 26 },
-                    5: { halign: 'center', fontStyle: 'bold', textColor: isHome ? [16, 185, 129] : [217, 119, 6], width: 36 },
+                    1: { halign: 'center', fontStyle: 'bold', textColor: isHome ? [16, 185, 129] : [217, 119, 6], width: 33 },
+                    2: { halign: 'center', width: 31 },
+                    3: { halign: 'center', width: 31 },
+                    4: { halign: 'center', width: 33 },
                 },
                 styles: { fontSize: 6, cellPadding: 0.8 },
                 margin: { left: 14, right: 14 },
