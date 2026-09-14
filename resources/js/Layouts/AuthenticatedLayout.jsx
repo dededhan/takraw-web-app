@@ -23,9 +23,13 @@ const NAV_ITEMS = {
 
 export default function AuthenticatedLayout({ header, children }) {
     const { auth, flash } = usePage().props;
-    const user = auth.user;
+    const user = auth?.user;
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const navItems = NAV_ITEMS[user.role] || [];
+    const navItems = user ? (NAV_ITEMS[user.role] || []) : [
+        { label: 'Dashboard', route: 'dashboard', icon: '📊' },
+        { label: 'Turnamen', route: 'tournaments.index', icon: '🏆' },
+        { label: 'Pertandingan', route: 'matches.index', icon: '⚔️' },
+    ];
 
     const roleBadge = {
         admin: { label: 'Admin', color: 'bg-red-500/20 text-red-300' },
@@ -88,17 +92,34 @@ export default function AuthenticatedLayout({ header, children }) {
 
                 {/* User info at bottom */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-surface-700/50">
-                    <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-sm font-bold">
-                            {user.name.charAt(0).toUpperCase()}
+                    {user ? (
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white text-sm font-bold">
+                                {user.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-surface-200 truncate">{user.name}</p>
+                                <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${roleBadge[user.role]?.color || 'bg-surface-800 text-surface-300'}`}>
+                                    {roleBadge[user.role]?.label || user.role}
+                                </span>
+                            </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-surface-200 truncate">{user.name}</p>
-                            <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${roleBadge[user.role]?.color}`}>
-                                {roleBadge[user.role]?.label}
-                            </span>
+                    ) : (
+                        <div className="flex flex-col gap-2">
+                            <Link
+                                href={route('login')}
+                                className="w-full text-center py-2 px-3 rounded-lg bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold transition-colors shadow-sm"
+                            >
+                                Masuk (Login)
+                            </Link>
+                            <Link
+                                href={route('register')}
+                                className="w-full text-center py-2 px-3 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-300 text-xs font-medium transition-colors border border-surface-700"
+                            >
+                                Registrasi Tim
+                            </Link>
                         </div>
-                    </div>
+                    )}
                 </div>
             </aside>
 
@@ -123,26 +144,43 @@ export default function AuthenticatedLayout({ header, children }) {
                         )}
                     </div>
 
-                    {/* Right: User dropdown */}
+                    {/* Right: User dropdown / Login */}
                     <div className="flex items-center gap-3">
-                        <Dropdown>
-                            <Dropdown.Trigger>
-                                <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-surface-300 hover:text-surface-100 hover:bg-surface-800 transition-colors">
-                                    {user.name}
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </button>
-                            </Dropdown.Trigger>
-                            <Dropdown.Content>
-                                <Dropdown.Link href={route('profile.edit')}>
-                                    Profil
-                                </Dropdown.Link>
-                                <Dropdown.Link href={route('logout')} method="post" as="button">
-                                    Keluar
-                                </Dropdown.Link>
-                            </Dropdown.Content>
-                        </Dropdown>
+                        {user ? (
+                            <Dropdown>
+                                <Dropdown.Trigger>
+                                    <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-surface-300 hover:text-surface-100 hover:bg-surface-800 transition-colors">
+                                        {user.name}
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                </Dropdown.Trigger>
+                                <Dropdown.Content>
+                                    <Dropdown.Link href={route('profile.edit')}>
+                                        Profil
+                                    </Dropdown.Link>
+                                    <Dropdown.Link href={route('logout')} method="post" as="button">
+                                        Keluar
+                                    </Dropdown.Link>
+                                </Dropdown.Content>
+                            </Dropdown>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    href={route('login')}
+                                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-surface-300 hover:text-white bg-surface-800 hover:bg-surface-700 transition-colors border border-surface-700"
+                                >
+                                    Masuk
+                                </Link>
+                                <Link
+                                    href={route('register')}
+                                    className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-primary-600 hover:bg-primary-500 transition-colors shadow-glow-primary"
+                                >
+                                    Daftar Tim
+                                </Link>
+                            </div>
+                        )}
                     </div>
                 </header>
 

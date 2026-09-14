@@ -17,6 +17,10 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
+        if (!$user) {
+            return $this->adminDashboard(isGuest: true);
+        }
+
         return match ($user->role) {
             'admin' => $this->adminDashboard(),
             'coach' => $this->coachDashboard($user, $performanceService),
@@ -24,7 +28,7 @@ class DashboardController extends Controller
         };
     }
 
-    private function adminDashboard(): Response
+    private function adminDashboard(bool $isGuest = false): Response
     {
         return Inertia::render('Dashboard/Admin', [
             'stats' => [
@@ -41,6 +45,7 @@ class DashboardController extends Controller
             'liveMatches' => Match_::with(['homeTeam', 'awayTeam', 'referee', 'tournament'])
                 ->where('status', 'live')
                 ->get(),
+            'isGuest' => $isGuest,
         ]);
     }
 

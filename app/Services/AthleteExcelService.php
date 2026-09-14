@@ -212,15 +212,34 @@ class AthleteExcelService
                 }
 
                 $name = trim((string)($row[$nameCol] ?? ''));
-                if (empty($name) || str_starts_with($name, '📌') || str_starts_with($name, '1.') || str_starts_with($name, '2.')) {
+                if (empty($name)) {
+                    continue;
+                }
+
+                // Filter out instruction banners, numbered guides, and notes
+                if (
+                    str_starts_with($name, '📌') ||
+                    preg_match('/^\d+\./', $name) ||
+                    str_contains(strtolower($name), 'petunjuk') ||
+                    str_contains(strtolower($name), 'kolom') ||
+                    str_contains(strtolower($name), 'catatan')
+                ) {
                     continue;
                 }
 
                 $jersey = (int)trim((string)($row[$jerseyCol] ?? 0));
+                // Only valid jersey numbers between 1 and 999 are accepted
+                if ($jersey <= 0 || $jersey > 999) {
+                    continue;
+                }
+
                 $rawPos = trim((string)($row[$posCol] ?? ''));
-                $position = !empty($rawPos) ? $rawPos : 'Tekong';
+                $position = !empty($rawPos) ? ucfirst(strtolower($rawPos)) : 'Tekong';
                 if (strcasecmp($position, 'killer') === 0) {
                     $position = 'Smash';
+                }
+                if (!in_array($position, ['Tekong', 'Feeder', 'Smash', 'Cadangan'])) {
+                    $position = 'Tekong';
                 }
 
                 $athletes[] = [
@@ -239,11 +258,28 @@ class AthleteExcelService
                     $name = trim($row[0] ?? '');
                     if (empty($name)) continue;
 
+                    if (
+                        str_starts_with($name, '📌') ||
+                        preg_match('/^\d+\./', $name) ||
+                        str_contains(strtolower($name), 'petunjuk') ||
+                        str_contains(strtolower($name), 'kolom') ||
+                        str_contains(strtolower($name), 'nama lengkap')
+                    ) {
+                        continue;
+                    }
+
                     $jersey = (int)trim($row[1] ?? 0);
+                    if ($jersey <= 0 || $jersey > 999) {
+                        continue;
+                    }
+
                     $rawPos = trim($row[2] ?? '');
-                    $position = !empty($rawPos) ? $rawPos : 'Tekong';
+                    $position = !empty($rawPos) ? ucfirst(strtolower($rawPos)) : 'Tekong';
                     if (strcasecmp($position, 'killer') === 0) {
                         $position = 'Smash';
+                    }
+                    if (!in_array($position, ['Tekong', 'Feeder', 'Smash', 'Cadangan'])) {
+                        $position = 'Tekong';
                     }
 
                     $athletes[] = [

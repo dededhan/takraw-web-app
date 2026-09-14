@@ -1,8 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function TeamShow({ team }) {
+    const { auth } = usePage().props;
+    const isCoach = auth?.user?.role === 'coach';
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -62,12 +64,14 @@ export default function TeamShow({ team }) {
                         </div>
                     </div>
 
-                    <Link
-                        href={route('teams.edit', team.id)}
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-surface-200 bg-surface-800 border border-surface-700 hover:bg-surface-700 transition-colors self-start flex items-center gap-1.5 shadow-sm"
-                    >
-                        <span>✏️ Edit Tim</span>
-                    </Link>
+                    {(!isCoach || !team.has_match_scores) && (
+                        <Link
+                            href={route('teams.edit', team.id)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-surface-200 bg-surface-800 border border-surface-700 hover:bg-surface-700 transition-colors self-start flex items-center gap-1.5 shadow-sm"
+                        >
+                            <span>✏️ Edit Tim</span>
+                        </Link>
+                    )}
                 </div>
             </div>
 
@@ -205,24 +209,15 @@ export default function TeamShow({ team }) {
                                     <a
                                         href={route('templates.athletes')}
                                         download="template_import_atlet.xlsx"
-                                        className="text-primary-400 hover:underline font-bold text-[11px]"
+                                        className="text-primary-400 hover:underline font-bold text-xs flex items-center gap-1"
                                     >
-                                        📥 Template .xlsx
-                                    </a>
-                                    <span className="text-surface-600">•</span>
-                                    <a
-                                        href={route('templates.athletes-csv')}
-                                        download="template_import_atlet.csv"
-                                        className="text-primary-400 hover:underline font-bold text-[11px]"
-                                    >
-                                        📥 Template .csv
+                                        📥 Unduh Template Excel (.xlsx)
                                     </a>
                                 </div>
                                 <ul className="list-disc list-inside space-y-1 text-[11px] text-surface-400">
-                                    <li>Mendukung file Excel <strong>.xlsx, .xls</strong> dan file <strong>.csv</strong></li>
+                                    <li>Format resmi: <strong>.xlsx</strong> (Excel) atau <strong>.xls</strong></li>
                                     <li>Kolom wajib: <strong>Nama Lengkap</strong> dan <strong>Nomor Punggung</strong></li>
                                     <li>Posisi valid: <strong>Tekong, Feeder, Smash, Cadangan</strong></li>
-                                    <li>Untuk CSV, gunakan template CSV di atas — jangan simpan template .xlsx sebagai .csv karena akan merusak format.</li>
                                 </ul>
                             </div>
 

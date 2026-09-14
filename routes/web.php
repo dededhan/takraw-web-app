@@ -17,20 +17,25 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-Route::middleware(['auth', 'verified'])->get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
+// ─── Public Routes (Langsung ke dashboard tanpa auto-redirect ke login) ───
+Route::get('/', function () {
+    return redirect()->route('dashboard');
 });
+
+// Dashboard (Bisa diakses publik / guest dan role-based untuk yang login)
+Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+// Public Tournament & Match View (Bisa dilihat siapa saja tanpa login)
+Route::get('/tournaments', [TournamentController::class, 'index'])->name('tournaments.index');
+Route::get('/tournaments/{tournament}', [TournamentController::class, 'show'])->name('tournaments.show');
+Route::get('/matches', [MatchController::class, 'index'])->name('matches.index');
+Route::get('/matches/{match}', [MatchController::class, 'show'])->name('matches.show');
+
+// Public Athlete Excel Template Download (.xlsx)
+Route::get('/templates/athletes', [TeamController::class, 'downloadTemplate'])->name('templates.athletes');
 
 // ─── Authenticated Routes ───────────────────────────────
 Route::middleware(['auth', 'verified'])->group(function () {
-
-    // Dashboard (role-based)
-    Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
     // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -39,8 +44,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // ─── Admin Routes ───────────────────────────────
     Route::middleware('role:admin')->group(function () {
-        // Tournaments
-        Route::resource('tournaments', TournamentController::class);
+        // Tournaments CRUD (Kecuali index & show yang sudah publik)
+        Route::resource('tournaments', TournamentController::class)->except(['index', 'show']);
         Route::post('/tournaments/{tournament}/generate-bracket', [BracketController::class, 'generateFromPools'])->name('tournaments.generate-bracket');
         Route::post('/tournaments/{tournament}/add-team', [TournamentController::class, 'addTeam'])->name('tournaments.add-team');
         Route::delete('/tournaments/{tournament}/teams/{team}', [TournamentController::class, 'removeTeam'])->name('tournaments.remove-team');
@@ -112,7 +117,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->name('matches.reschedule');
 
         // Match Management
-        Route::get('/matches', [MatchController::class, 'index'])->name('matches.index');
         Route::post('/matches/{match}/assign-referee', [MatchController::class, 'assignReferee'])->name('matches.assign-referee');
         Route::post('/matches/{match}/schedule', [MatchController::class, 'schedule'])->name('matches.schedule');
         Route::put('/matches/{match}', [MatchController::class, 'update'])->name('matches.update');
@@ -142,8 +146,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('role:admin,coach')->group(function () {
         // Teams
         Route::resource('teams', TeamController::class);
-        Route::get('/templates/athletes', [TeamController::class, 'downloadTemplate'])->name('templates.athletes');
-        Route::get('/templates/athletes-csv', [TeamController::class, 'downloadCsvTemplate'])->name('templates.athletes-csv');
+        Route::post('/teams/parse-athletes-file', [TeamController::class, 'parseAthletesFile'])->name('teams.parse-athletes-file');
         Route::post('/teams/{team}/import-athletes', [TeamController::class, 'importAthletes'])->name('teams.import-athletes');
 
         // Super Teams (Unified Creation, Update & Deletion)
@@ -163,9 +166,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/scoring/{match}/finish-set', [ScoringController::class, 'finishSet'])->name('scoring.finish-set');
         Route::post('/scoring/{match}/quick-athlete', [ScoringController::class, 'quickAthlete'])->name('scoring.quick-athlete');
     });
-
-    // ─── Shared Read Routes ─────────────────────────
-    Route::get('/matches/{match}', [MatchController::class, 'show'])->name('matches.show');
 });
 
 require __DIR__.'/auth.php';

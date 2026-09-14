@@ -126,8 +126,14 @@ class TeamController extends Controller
         ]);
     }
 
-    public function edit(Team $team): Response
+    public function edit(Request $request, Team $team)
     {
+        // Khusus role pelatih: tidak bisa edit jika tim sudah memiliki nilai pertandingan
+        if ($request->user()->isCoach() && $team->hasMatchScores()) {
+            return redirect()->route('teams.show', $team)
+                ->with('error', 'Tim ini tidak dapat diedit karena sudah memiliki nilai pertandingan yang berjalan.');
+        }
+
         $team->load('athletes');
 
         return Inertia::render('Team/Edit', [
@@ -138,6 +144,11 @@ class TeamController extends Controller
 
     public function update(Request $request, Team $team)
     {
+        // Khusus role pelatih: tidak bisa edit jika tim sudah memiliki nilai pertandingan
+        if ($request->user()->isCoach() && $team->hasMatchScores()) {
+            return redirect()->route('teams.show', $team)
+                ->with('error', 'Tim ini tidak dapat diedit karena sudah memiliki nilai pertandingan yang berjalan.');
+        }
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'region' => 'required|string|max:100',
@@ -243,20 +254,6 @@ class TeamController extends Controller
     }
 
     /**
-     * Download a clean CSV athlete template (header + sample rows only).
-     */
-    public function downloadCsvTemplate(\App\Services\AthleteExcelService $excelService)
-    {
-        $fileContent = $excelService->generateCsvTemplate();
-
-        return response($fileContent, 200, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="template_import_atlet.csv"',
-            'Cache-Control' => 'max-age=0',
-        ]);
-    }
-
-    /**
      * Import athletes from an XLSX, XLS, or CSV file.
      */
     public function importAthletes(Request $request, Team $team, \App\Services\AthleteExcelService $excelService)
@@ -342,5 +339,62 @@ class TeamController extends Controller
         }
 
         return back()->with('success', $msg);
+    }
+
+    /**
+     * Parse an uploaded athletes Excel (XLSX, XLS) or CSV file and return JSON athletes array.
+     */
+    public function parseAthletesFile(Request $request, \App\Services\AthleteExcelService $excelService)
+    {
+        $request->validate([
+            'file' => 'required|file|max:5120',
+        ]);
+
+        $file = $request->file('file');
+        $path = $file->getRealPath();
+        $ext = strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
+
+        if (!in_array($ext, ['xlsx', 'xls', 'csv', 'txt'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format file tidak didukung. Harap unggah file .xlsx, .xls, atau .csv',
+            ], 422);
+        }
+
+        try {
+            $athletes = $excelService->parseAthletesFile($path, $ext);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membaca file: ' . $e->getMessage(),
+            ], 422);
+        }
+
+        if (empty($athletes)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tidak ditemukan data atlet valid di dalam file. Pastikan kolom Nama dan Nomor Punggung terisi dengan benar.',
+            ], 422);
+        }
+
+        // Check for duplicates in the file
+        $seenJerseys = [];
+        $duplicates = [];
+        foreach ($athletes as $athlete) {
+            $j = (int)$athlete['jersey_number'];
+            if (in_array($j, $seenJerseys)) {
+                $duplicates[] = $j;
+            } else {
+                $seenJerseys[] = $j;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'athletes' => $athletes,
+            'count' => count($athletes),
+            'duplicate_jerseys' => array_values(array_unique($duplicates)),
+            'message' => "Berhasil membaca " . count($athletes) . " atlet dari file Excel.",
+        ]);
     }
 }

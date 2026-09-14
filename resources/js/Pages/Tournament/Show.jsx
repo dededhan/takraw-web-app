@@ -13,6 +13,8 @@ const TABS = [
 ];
 
 export default function TournamentShow({ tournament, availableTeams = [], bestPlayersData = null }) {
+    const { auth } = usePage().props;
+    const isCoach = auth?.user?.role === 'coach';
     const [activeTab, setActiveTab] = useState('overview');
     const [copiedKey, setCopiedKey] = useState(false);
     const modeLabels = {
@@ -394,7 +396,7 @@ function OverviewTab({ tournament }) {
                                     <div key={pool.id} className="rounded-xl border border-surface-700/50 bg-surface-900/50 overflow-hidden shadow-md">
                                         <div className="px-5 py-3 border-b border-surface-700/50 bg-surface-800/40 flex items-center justify-between">
                                             <h4 className="text-sm font-bold text-surface-100 flex items-center gap-2">
-                                                <span>🏊 Pool {pool.name}</span>
+                                                <span>🏊 {pool.display_name || (pool.bracket_name ? `${pool.bracket_name} - Pool ${pool.name}` : `Pool ${pool.name}`)}</span>
                                             </h4>
                                             <span className="text-[10px] text-surface-400 font-mono uppercase bg-surface-950 px-2 py-0.5 rounded border border-surface-800">
                                                 {cfg.label}
@@ -776,7 +778,7 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
                                                             <span className="text-[10px] text-emerald-400 font-bold">
                                                                 {sub.athletes?.length || 0} Atlet
                                                             </span>
-                                                            {sub.id && (
+                                                            {sub.id && (!isCoach || !sub.has_match_scores) && (
                                                                 <Link
                                                                     href={route('teams.edit', sub.id)}
                                                                     className="p-1 rounded-md text-surface-400 hover:text-white hover:bg-surface-800 transition-colors text-[11px]"
@@ -874,13 +876,15 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                            <Link
-                                                href={route('teams.edit', team.id)}
-                                                className="px-2.5 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white text-xs font-bold transition-all border border-surface-700/50 flex items-center gap-1"
-                                                title="Edit Tim & Atlet"
-                                            >
-                                                ✏️ Edit
-                                            </Link>
+                                            {(!isCoach || !team.has_match_scores) && (
+                                                <Link
+                                                    href={route('teams.edit', team.id)}
+                                                    className="px-2.5 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white text-xs font-bold transition-all border border-surface-700/50 flex items-center gap-1"
+                                                    title="Edit Tim & Atlet"
+                                                >
+                                                    ✏️ Edit
+                                                </Link>
+                                            )}
 
                                             <Link
                                                 href={route('teams.show', team.id)}

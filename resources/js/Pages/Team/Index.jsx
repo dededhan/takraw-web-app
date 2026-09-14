@@ -83,41 +83,57 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
         setStData('athletes', updated);
     };
 
-    const parseCsvForAthletes = (text) => {
-        const lines = text.split(/\r?\n/);
-        if (lines.length <= 1) return [];
-        const out = [];
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const cols = line.split(',').map((c) => c.replace(/^["']|["']$/g, '').trim());
-            if (cols.length < 2) continue;
-            const name = cols[0];
-            const jersey = parseInt(cols[1], 10);
-            let position = (cols[2] || '').trim();
-            if (!position) position = 'Tekong';
-            if (position.toLowerCase() === 'killer') position = 'Smash';
-            if (name && !isNaN(jersey)) {
-                out.push({ name, jersey_number: jersey, position, photo: null });
-            }
-        }
-        return out;
-    };
+    const [isParsingSuperTeamFile, setIsParsingSuperTeamFile] = useState(false);
 
-    const handleCsvUpload = (file) => {
+    const handleExcelUpload = async (file) => {
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const imported = parseCsvForAthletes(event.target.result);
-            if (imported.length === 0) {
-                alert('File CSV kosong atau format tidak valid. Pastikan format CSV: name,jersey_number,position');
+
+        setIsParsingSuperTeamFile(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            const response = await fetch(route('teams.parse-athletes-file'), {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken || '',
+                    'Accept': 'application/json',
+                },
+                body: formData,
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                alert(result.message || 'Gagal membaca file Excel/CSV.');
                 return;
             }
 
-            setStData('athletes', imported);
-            alert(`✅ Berhasil membaca ${imported.length} atlet dari CSV!`);
-        };
-        reader.readAsText(file);
+            if (result.athletes && result.athletes.length > 0) {
+                const mappedAthletes = result.athletes.map((ath) => ({
+                    name: ath.name,
+                    jersey_number: String(ath.jersey_number),
+                    position: ath.position || 'Tekong',
+                    photo: null,
+                }));
+
+                setStData('athletes', mappedAthletes);
+
+                if (result.duplicate_jerseys && result.duplicate_jerseys.length > 0) {
+                    alert(`✅ Berhasil membaca ${result.count} atlet dari Excel.\n⚠️ Perhatian: Terdapat nomor punggung kembar (#${result.duplicate_jerseys.join(', #')}). Harap pastikan setiap nomor punggung unik.`);
+                } else {
+                    alert(`✅ Berhasil membaca ${result.count} atlet dari file Excel! Data terisi otomatis.`);
+                }
+            } else {
+                alert('Tidak ada data atlet valid yang ditemukan di file tersebut.');
+            }
+        } catch (error) {
+            console.error('Error parsing super team excel:', error);
+            alert('Terjadi kesalahan saat memproses file Excel.');
+        } finally {
+            setIsParsingSuperTeamFile(false);
+        }
     };
 
     const handleDeleteTeam = () => {
@@ -278,13 +294,15 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
 
                                             {/* Action Buttons */}
                                             <div className="flex items-center gap-1 shrink-0">
-                                                <Link
-                                                    href={route('teams.edit', team.id)}
-                                                    className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors"
-                                                    title="Edit Tim"
-                                                >
-                                                    ✏️
-                                                </Link>
+                                                {(!isCoach || !team.has_match_scores) && (
+                                                    <Link
+                                                        href={route('teams.edit', team.id)}
+                                                        className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors"
+                                                        title="Edit Tim"
+                                                    >
+                                                        ✏️
+                                                    </Link>
+                                                )}
                                                 <button
                                                     onClick={() => setDeletingTeamId(team.id)}
                                                     className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer"
@@ -401,13 +419,15 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                                 <div className="flex items-center gap-1 shrink-0">
                                                     {canManageSuperTeams && (
                                                         <>
-                                                            <button
-                                                                onClick={() => handleOpenEditModal(st)}
-                                                                className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors cursor-pointer"
-                                                                title="Edit Super Team"
-                                                            >
-                                                                ✏️
-                                                            </button>
+                                                            {(!isCoach || !st.has_match_scores) && (
+                                                                <button
+                                                                    onClick={() => handleOpenEditModal(st)}
+                                                                    className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors cursor-pointer"
+                                                                    title="Edit Super Team"
+                                                                >
+                                                                    ✏️
+                                                                </button>
+                                                            )}
                                                             <button
                                                                 onClick={() => setDeletingSuperTeamId(st.id)}
                                                                 className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer"
@@ -607,21 +627,40 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                     </p>
                                 </div>
 
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <a
+                                        href={route('templates.athletes')}
+                                        download="template_import_atlet.xlsx"
+                                        className="text-xs px-3 py-1.5 rounded-xl bg-surface-800 text-surface-300 border border-surface-700 hover:bg-surface-700 hover:text-white transition-all flex items-center gap-1.5 font-medium cursor-pointer"
+                                        title="Unduh template Excel resmi (.xlsx)"
+                                    >
+                                        <span>📄 Unduh Template (.xlsx)</span>
+                                    </a>
+
                                     <button
                                         type="button"
-                                        onClick={() => document.getElementById('unified-csv-upload').click()}
-                                        className="text-xs px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all font-semibold flex items-center gap-1.5 cursor-pointer"
-                                        title="Import daftar atlet dari file CSV"
+                                        onClick={() => document.getElementById('unified-excel-upload').click()}
+                                        disabled={isParsingSuperTeamFile}
+                                        className="text-xs px-3.5 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                        title="Import daftar atlet dari file Excel (.xlsx / .xls) atau CSV"
                                     >
-                                        <span>📥 Import CSV</span>
+                                        {isParsingSuperTeamFile ? (
+                                            <>
+                                                <span className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                                                <span>Membaca File...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span>📥 Import XLSX / Excel</span>
+                                            </>
+                                        )}
                                     </button>
                                     <input
                                         type="file"
-                                        id="unified-csv-upload"
-                                        accept=".csv,text/csv"
+                                        id="unified-excel-upload"
+                                        accept=".xlsx,.xls,.csv"
                                         onChange={(e) => {
-                                            handleCsvUpload(e.target.files[0]);
+                                            handleExcelUpload(e.target.files[0]);
                                             e.target.value = '';
                                         }}
                                         className="hidden"

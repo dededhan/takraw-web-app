@@ -15,7 +15,7 @@ class Team extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $appends = ['is_locked', 'tournaments_count'];
+    protected $appends = ['is_locked', 'tournaments_count', 'has_match_scores'];
 
     protected $casts = [
         'is_super_sub' => 'boolean',
@@ -36,6 +36,47 @@ class Team extends Model
     public function getTournamentsCountAttribute(): int
     {
         return $this->tournaments()->count();
+    }
+
+    /**
+     * Cek apakah tim sudah memiliki nilai pertandingan (skor set, match selesai/live, atau poin pool).
+     */
+    public function hasMatchScores(): bool
+    {
+        // 1. Cek apakah ada set dengan skor > 0 di pertandingan tim ini
+        $hasScoresInSets = MatchSet::whereHas('match', function ($q) {
+            $q->where('home_team_id', $this->id)
+              ->orWhere('away_team_id', $this->id);
+        })->where(function ($q) {
+            $q->where('home_score', '>', 0)
+              ->orWhere('away_score', '>', 0);
+        })->exists();
+
+        if ($hasScoresInSets) {
+            return true;
+        }
+
+        // 2. Cek apakah ada pertandingan tim ini yang sudah berjalan atau selesai
+        $hasActiveMatches = Match_::where(function ($q) {
+            $q->where('home_team_id', $this->id)
+              ->orWhere('away_team_id', $this->id);
+        })->whereIn('status', ['live', 'completed'])->exists();
+
+        if ($hasActiveMatches) {
+            return true;
+        }
+
+        // 3. Cek di klasemen pool jika played > 0 atau points_for > 0
+        return PoolStanding::where('team_id', $this->id)
+            ->where(function ($q) {
+                $q->where('played', '>', 0)
+                  ->orWhere('points_for', '>', 0);
+            })->exists();
+    }
+
+    public function getHasMatchScoresAttribute(): bool
+    {
+        return $this->hasMatchScores();
     }
 
     /**

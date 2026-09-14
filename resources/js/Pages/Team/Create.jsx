@@ -83,61 +83,68 @@ export default function TeamCreate({ coaches, tournaments }) {
         .filter(n => n !== null && !isNaN(n));
     const duplicateJerseys = jerseyNumbers.filter((num, idx) => jerseyNumbers.indexOf(num) !== idx);
 
-    const handleCsvUpload = (e) => {
+    const [isParsingFile, setIsParsingFile] = useState(false);
+    const [importNotification, setImportNotification] = useState(null);
+
+    const handleExcelUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const text = event.target.result;
-            const lines = text.split(/\r?\n/);
-            if (lines.length <= 1) return;
+        setIsParsingFile(true);
+        setImportNotification(null);
 
-            const importedAthletes = [];
-            const seenJerseys = new Set();
-            const duplicateInCsv = [];
+        const formData = new FormData();
+        formData.append('file', file);
 
-            // Skip header
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            const response = await fetch(route('teams.parse-athletes-file'), {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken || '',
+                    'Accept': 'application/json',
+                },
+                body: formData,
+            });
 
-                const columns = line.split(',').map(col => col.replace(/^["']|["']$/g, '').trim());
-                if (columns.length < 2) continue;
+            const result = await response.json();
 
-                const name = columns[0];
-                const jerseyNumber = parseInt(columns[1], 10);
-                let position = columns[2] || '';
+            if (!response.ok || !result.success) {
+                alert(result.message || 'Gagal memproses file Excel/CSV.');
+                return;
+            }
 
-                if (name && !isNaN(jerseyNumber)) {
-                    if (seenJerseys.has(jerseyNumber)) {
-                        duplicateInCsv.push(jerseyNumber);
-                    }
-                    seenJerseys.add(jerseyNumber);
+            if (result.athletes && result.athletes.length > 0) {
+                const mappedAthletes = result.athletes.map((ath) => ({
+                    name: ath.name,
+                    jersey_number: ath.jersey_number,
+                    position: ath.position || 'Tekong',
+                    photo: null,
+                }));
 
-                    // Standardize position to match options
-                    if (position) {
-                        position = position.charAt(0).toUpperCase() + position.slice(1).toLowerCase();
-                        if (position === 'Killer') position = 'Smash';
-                    }
-                    importedAthletes.push({
-                        name,
-                        jersey_number: jerseyNumber,
-                        position: position
+                setData('athletes', mappedAthletes);
+
+                if (result.duplicate_jerseys && result.duplicate_jerseys.length > 0) {
+                    setImportNotification({
+                        type: 'warning',
+                        message: `Berhasil mengimpor ${result.count} atlet. Perhatian: File Excel berisi nomor punggung kembar (#${result.duplicate_jerseys.join(', #')}). Harap perbaiki nomor punggung agar unik sebelum menyimpan.`,
+                    });
+                } else {
+                    setImportNotification({
+                        type: 'success',
+                        message: `✅ Berhasil membaca ${result.count} atlet dari file Excel! Kolom nama, nomor punggung, dan posisi telah terisi otomatis.`,
                     });
                 }
+            } else {
+                alert('Tidak ada data atlet yang ditemukan di dalam file.');
             }
-
-            if (duplicateInCsv.length > 0) {
-                alert(`Perhatian: File CSV berisi nomor punggung duplikat (#${duplicateInCsv.join(', #')}). Harap pastikan setiap pemain memiliki nomor punggung unik.`);
-            }
-
-            if (importedAthletes.length > 0) {
-                setData('athletes', importedAthletes);
-            }
-        };
-        reader.readAsText(file);
-        e.target.value = null; // reset input
+        } catch (error) {
+            console.error('Error parsing file:', error);
+            alert('Terjadi kesalahan saat membaca file. Pastikan format file .xlsx, .xls, atau .csv');
+        } finally {
+            setIsParsingFile(false);
+            e.target.value = null; // reset input
+        }
     };
 
     const handleSubmit = (e) => {
@@ -236,31 +243,69 @@ export default function TeamCreate({ coaches, tournaments }) {
                                     <label className="text-sm font-medium text-surface-300">Daftar Atlet <span className="text-red-400">*</span></label>
                                     <p className="text-xs text-surface-500">Minimal 1 atlet. Nomor punggung harus unik dalam satu tim.</p>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <a
+                                        href={route('templates.athletes')}
+                                        download="template_import_atlet.xlsx"
+                                        className="text-xs px-3 py-1.5 rounded-xl bg-surface-800 text-surface-300 border border-surface-700 hover:bg-surface-700 hover:text-white transition-all flex items-center gap-1.5 font-medium cursor-pointer"
+                                        title="Unduh template Excel resmi (.xlsx)"
+                                    >
+                                        <span>📄 Unduh Template (.xlsx)</span>
+                                    </a>
                                     <button
                                         type="button"
-                                        onClick={() => document.getElementById('csv-file-input').click()}
-                                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all flex items-center gap-1 font-semibold"
-                                        title="Import daftar atlet dari file CSV"
+                                        onClick={() => document.getElementById('excel-file-input').click()}
+                                        disabled={isParsingFile}
+                                        className="text-xs px-3.5 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition-all flex items-center gap-1.5 font-bold disabled:opacity-50 cursor-pointer shadow-sm"
+                                        title="Import daftar atlet dari file Excel (.xlsx / .xls) atau CSV"
                                     >
-                                        📥 Import CSV
+                                        {isParsingFile ? (
+                                            <>
+                                                <span className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                                                <span>Membaca File...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span>📥 Import XLSX / Excel</span>
+                                            </>
+                                        )}
                                     </button>
                                     <input
                                         type="file"
-                                        id="csv-file-input"
-                                        accept=".csv"
-                                        onChange={handleCsvUpload}
+                                        id="excel-file-input"
+                                        accept=".xlsx,.xls,.csv"
+                                        onChange={handleExcelUpload}
                                         className="hidden"
                                     />
                                     <button
                                         type="button"
                                         onClick={addAthlete}
-                                        className="text-xs px-3 py-1.5 rounded-lg bg-primary-600/20 text-primary-300 border border-primary-500/30 hover:bg-primary-600/30 transition-colors"
+                                        className="text-xs px-3 py-1.5 rounded-xl bg-primary-600/20 text-primary-300 border border-primary-500/30 hover:bg-primary-600/30 transition-colors font-semibold"
                                     >
                                         + Tambah Atlet
                                     </button>
                                 </div>
                             </div>
+
+                            {importNotification && (
+                                <div className={`mb-3 p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                                    importNotification.type === 'warning'
+                                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                                        : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                }`}>
+                                    <div className="flex items-center gap-2">
+                                        <span>{importNotification.type === 'warning' ? '⚠️' : '✅'}</span>
+                                        <span>{importNotification.message}</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setImportNotification(null)}
+                                        className="text-surface-400 hover:text-surface-200 text-xs px-1"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            )}
 
                             {duplicateJerseys.length > 0 && (
                                 <div className="mb-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">

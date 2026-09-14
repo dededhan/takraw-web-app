@@ -212,6 +212,11 @@ class SuperTeamController extends Controller
             return back()->with('error', 'Anda tidak memiliki wewenang untuk mengubah Super Team ini.');
         }
 
+        // Khusus role pelatih: tidak bisa edit jika super team sudah memiliki nilai pertandingan
+        if ($user->isCoach() && $superTeam->hasMatchScores()) {
+            return back()->with('error', 'Super Team ini tidak dapat diedit karena sudah memiliki nilai pertandingan yang berjalan.');
+        }
+
         $validated = $request->validate([
             'name'                     => 'required|string|max:100',
             'region'                   => 'required|string|max:100',

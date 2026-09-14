@@ -20,7 +20,7 @@ class SuperTeam extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $appends = ['is_locked'];
+    protected $appends = ['is_locked', 'has_match_scores'];
 
     protected static function booted(): void
     {
@@ -68,6 +68,41 @@ class SuperTeam extends Model
     public function getIsLockedAttribute(): bool
     {
         return false;
+    }
+
+    /**
+     * Cek apakah super team sudah memiliki nilai pertandingan (skor set, match berjalan, atau poin pool).
+     */
+    public function hasMatchScores(): bool
+    {
+        // 1. Cek apakah ada anggota super team (tim regu) yang memiliki skor
+        foreach ($this->members as $member) {
+            if ($member->hasMatchScores()) {
+                return true;
+            }
+        }
+
+        // 2. Cek apakah super team terdaftar di pool standings dengan played > 0 atau points_for > 0
+        $hasStanding = PoolStanding::where('super_team_id', $this->id)
+            ->where(function ($q) {
+                $q->where('played', '>', 0)
+                  ->orWhere('points_for', '>', 0);
+            })->exists();
+
+        if ($hasStanding) {
+            return true;
+        }
+
+        // 3. Cek apakah super team ada di matches live atau completed
+        return Match_::where(function ($q) {
+            $q->where('home_super_team_id', $this->id)
+              ->orWhere('away_super_team_id', $this->id);
+        })->whereIn('status', ['live', 'completed'])->exists();
+    }
+
+    public function getHasMatchScoresAttribute(): bool
+    {
+        return $this->hasMatchScores();
     }
 
     /**
