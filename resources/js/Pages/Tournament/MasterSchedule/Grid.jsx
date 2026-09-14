@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import {
     DndContext, DragOverlay, PointerSensor,
     useSensor, useSensors, closestCenter,
@@ -32,12 +32,18 @@ export default function Grid({
     totalDays,
     superTeamMemberIds = [],
 }) {
+    const { auth } = usePage().props;
+    const isAdmin = auth?.user?.role === 'admin';
+    const isPublished = tournament.schedule_status === 'published';
+
     const [draggingItem,       setDraggingItem]       = useState(null);
     const [isLoading,          setIsLoading]          = useState(false);
     const [localMatches,       setLocalMatches]       = useState(matches);
     const [showRefereeModal,   setShowRefereeModal]   = useState(false);
     const [showReEditModal,    setShowReEditModal]    = useState(false);
-    const [isEditUnlocked,     setIsEditUnlocked]     = useState(tournament.schedule_status !== 'published');
+    const [isEditUnlocked,     setIsEditUnlocked]     = useState(!isPublished);
+
+    const canEdit = isAdmin && (isPublished ? isEditUnlocked : true);
 
     // Filter Mode Kategori untuk Pencarian Tim
     const [selectedSearchMode, setSelectedSearchMode] = useState('all');
@@ -222,6 +228,7 @@ export default function Grid({
 
     // Drag & Drop handlers
     const handleDragStart = ({ active }) => {
+        if (!canEdit) return;
         if (tournament.schedule_status === 'published' && !isEditUnlocked) {
             setShowReEditModal(true);
             return;
@@ -232,6 +239,7 @@ export default function Grid({
 
     const handleDragEnd = useCallback(({ active, over }) => {
         setDraggingItem(null);
+        if (!canEdit) return;
         if (!over || !active) return;
 
         if (tournament.schedule_status === 'published' && !isEditUnlocked) {
@@ -254,7 +262,7 @@ export default function Grid({
                 onError: () => setIsLoading(false),
             }
         );
-    }, [localMatches, tournament.schedule_status, isEditUnlocked]);
+    }, [localMatches, tournament.schedule_status, isEditUnlocked, canEdit]);
 
     // Group matches & timeSlots per day
     const timeSlotsByDay = useMemo(() => {
@@ -309,7 +317,6 @@ export default function Grid({
     }, [localMatches, timeSlotsByDay]);
 
     const daysList = Array.from({ length: totalDays || 1 }, (_, i) => i + 1);
-    const isPublished = tournament.schedule_status === 'published';
 
     return (
         <AuthenticatedLayout header={
@@ -322,9 +329,14 @@ export default function Grid({
                     <span className="text-gray-300">/</span>
                     <h2 className="text-xl font-bold text-gray-900">Master Schedule Terpadu</h2>
                     <StatusBadge status={tournament.schedule_status} />
-                    {isPublished && isEditUnlocked && (
+                    {isAdmin && isPublished && isEditUnlocked && (
                         <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
                             ✏️ Mode Edit Aktif
+                        </span>
+                    )}
+                    {!isAdmin && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                            👁️ Mode Tinjau Jadwal (Hanya Lihat)
                         </span>
                     )}
                 </div>
@@ -340,59 +352,64 @@ export default function Grid({
                         <span>🖨️</span> Cetak Jadwal Resmi
                     </a>
 
-                    {/* Tombol Modal Penugasan Wasit */}
-                    <button
-                        onClick={() => setShowRefereeModal(true)}
-                        className="bg-purple-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-purple-700 transition-colors shadow-xs flex items-center gap-1.5"
-                    >
-                        <span>🧑‍⚖️</span> Penugasan Wasit
-                    </button>
-
-                    {/* Tombol Buka Kunci Edit jika Published */}
-                    {isPublished && !isEditUnlocked && (
-                        <button
-                            onClick={() => setShowReEditModal(true)}
-                            className="bg-amber-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-amber-700 transition-colors shadow-sm flex items-center gap-1.5"
-                            title="Edit ulang jadwal yang sudah dipublikasi"
-                        >
-                            <span>🔓</span> Edit Ulang Jadwal
-                        </button>
-                    )}
-
-                    {/* Tombol Kunci Kembali atau Publish */}
-                    {isPublished && isEditUnlocked && (
+                    {/* Admin Action Buttons */}
+                    {isAdmin && (
                         <>
+                            {/* Tombol Modal Penugasan Wasit */}
                             <button
-                                onClick={() => setIsEditUnlocked(false)}
-                                className="bg-surface-700 text-surface-200 px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-surface-600 transition-colors shadow-sm"
+                                onClick={() => setShowRefereeModal(true)}
+                                className="bg-purple-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-purple-700 transition-colors shadow-xs flex items-center gap-1.5"
                             >
-                                🔒 Kunci Jadwal
+                                <span>🧑‍⚖️</span> Penugasan Wasit
                             </button>
-                            <button
-                                onClick={() => {
-                                    router.post(route('tournaments.master-schedule.publish', tournament.id), {}, {
-                                        preserveScroll: true,
-                                        onSuccess: () => setIsEditUnlocked(false),
-                                    });
-                                }}
-                                className="bg-emerald-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5"
-                            >
-                                <span>🚀</span> Simpan & Publikasikan Ulang
-                            </button>
-                        </>
-                    )}
 
-                    {!isPublished && (
-                        <button
-                            onClick={() => {
-                                router.post(route('tournaments.master-schedule.publish', tournament.id), {}, {
-                                    preserveScroll: true,
-                                });
-                            }}
-                            className="bg-emerald-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5"
-                        >
-                            <span>🚀</span> Publikasikan Jadwal
-                        </button>
+                            {/* Tombol Buka Kunci Edit jika Published */}
+                            {isPublished && !isEditUnlocked && (
+                                <button
+                                    onClick={() => setShowReEditModal(true)}
+                                    className="bg-amber-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-amber-700 transition-colors shadow-sm flex items-center gap-1.5"
+                                    title="Edit ulang jadwal yang sudah dipublikasi"
+                                >
+                                    <span>🔓</span> Edit Ulang Jadwal
+                                </button>
+                            )}
+
+                            {/* Tombol Kunci Kembali atau Publish */}
+                            {isPublished && isEditUnlocked && (
+                                <>
+                                    <button
+                                        onClick={() => setIsEditUnlocked(false)}
+                                        className="bg-surface-700 text-surface-200 px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-surface-600 transition-colors shadow-sm"
+                                    >
+                                        🔒 Kunci Jadwal
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            router.post(route('tournaments.master-schedule.publish', tournament.id), {}, {
+                                                preserveScroll: true,
+                                                onSuccess: () => setIsEditUnlocked(false),
+                                            });
+                                        }}
+                                        className="bg-emerald-600 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5"
+                                    >
+                                        <span>🚀</span> Simpan & Publikasikan Ulang
+                                    </button>
+                                </>
+                            )}
+
+                            {!isPublished && (
+                                <button
+                                    onClick={() => {
+                                        router.post(route('tournaments.master-schedule.publish', tournament.id), {}, {
+                                            preserveScroll: true,
+                                        });
+                                    }}
+                                    className="bg-emerald-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center gap-1.5"
+                                >
+                                    <span>🚀</span> Publikasikan Jadwal
+                                </button>
+                            )}
+                        </>
                     )}
                 </div>
             </div>
@@ -589,7 +606,10 @@ export default function Grid({
                                                 {unscheduledMatches.length} Pertandingan Belum Masuk Slot Waktu
                                             </h4>
                                             <p className="text-xs text-amber-200/70">
-                                                Kapasitas slot waktu/lapangan turnamen penuh. Anda dapat melakukan drag & drop ke slot lapangan kosong di bawah, atau menambah durasi hari/lapangan di menu Konfigurasi.
+                                                {isAdmin
+                                                    ? 'Kapasitas slot waktu/lapangan turnamen penuh. Anda dapat melakukan drag & drop ke slot lapangan kosong di bawah, atau menambah durasi hari/lapangan di menu Konfigurasi.'
+                                                    : 'Pertandingan belum dialokasikan ke slot waktu/lapangan resmi oleh panitia pelaksana turnamen.'
+                                                }
                                             </p>
                                         </div>
                                     </div>
@@ -606,7 +626,7 @@ export default function Grid({
                                                 searchedTeam1={searchedTeam1}
                                                 searchedTeam2={searchedTeam2}
                                                 isFocused={focusedMatchId === m.id}
-                                                isDraggable={isPublished ? isEditUnlocked : true}
+                                                isDraggable={canEdit}
                                             />
                                         </div>
                                     ))}
@@ -667,7 +687,7 @@ export default function Grid({
                                                     searchedTeam1={searchedTeam1}
                                                     searchedTeam2={searchedTeam2}
                                                     focusedMatchId={focusedMatchId}
-                                                    isDraggable={isPublished ? isEditUnlocked : true}
+                                                    isDraggable={canEdit}
                                                 />
                                             ))}
                                         </div>
@@ -693,7 +713,7 @@ export default function Grid({
             </div>
 
             {/* ─── Modal Alert Konfirmasi Edit Ulang Published ─── */}
-            {showReEditModal && (
+            {isAdmin && showReEditModal && (
                 <ReEditScheduleModal
                     tournament={tournament}
                     onClose={() => setShowReEditModal(false)}
@@ -714,7 +734,7 @@ export default function Grid({
             )}
 
             {/* ─── Modal Penugasan Wasit Massal ─── */}
-            {showRefereeModal && (
+            {isAdmin && showRefereeModal && (
                 <RefereeAssignModal
                     tournament={tournament}
                     matches={localMatches}

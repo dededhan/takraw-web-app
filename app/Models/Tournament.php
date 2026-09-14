@@ -25,7 +25,7 @@ class Tournament extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $appends = ['has_registration_code'];
+    protected $appends = ['has_registration_code', 'is_schedule_published'];
 
     /**
      * Get the attributes that should be cast.
@@ -142,6 +142,11 @@ class Tournament extends Model
     public function getHasRegistrationCodeAttribute(): bool
     {
         return !empty($this->registration_code);
+    }
+
+    public function getIsSchedulePublishedAttribute(): bool
+    {
+        return $this->isSchedulePublished();
     }
 
     public function hasRegistrationCode(): bool

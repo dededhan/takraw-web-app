@@ -17,13 +17,15 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// ─── Public Routes (Langsung ke dashboard tanpa auto-redirect ke login) ───
+// ─── Public Routes ───────────────────────────────
 Route::get('/', function () {
-    return redirect()->route('dashboard');
+    return Inertia::render('Welcome', [
+        'canLogin' => Route::has('login'),
+        'canRegister' => Route::has('register'),
+        'laravelVersion' => Application::VERSION,
+        'phpVersion' => PHP_VERSION,
+    ]);
 });
-
-// Dashboard (Bisa diakses publik / guest dan role-based untuk yang login)
-Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
 // Public Tournament & Match View (Bisa dilihat siapa saja tanpa login)
 Route::get('/tournaments', [TournamentController::class, 'index'])->name('tournaments.index');
@@ -37,10 +39,21 @@ Route::get('/templates/athletes', [TeamController::class, 'downloadTemplate'])->
 // ─── Authenticated Routes ───────────────────────────────
 Route::middleware(['auth', 'verified'])->group(function () {
 
+    // Dashboard (role-based, hanya bisa diakses setelah login)
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
     // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Master Schedule View & Print (Bisa diakses Admin & Coach; Coach hanya view-only)
+    Route::middleware('role:admin,coach')->prefix('tournaments/{tournament}')->name('tournaments.')->group(function () {
+        Route::get('master-schedule', [MasterScheduleController::class, 'index'])
+            ->name('master-schedule.index');
+        Route::get('master-schedule/print', [MasterScheduleController::class, 'printSchedule'])
+            ->name('master-schedule.print');
+    });
 
     // ─── Admin Routes ───────────────────────────────
     Route::middleware('role:admin')->group(function () {
@@ -83,11 +96,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('master-schedule/generate', [MasterScheduleController::class, 'generate'])
                 ->name('master-schedule.generate');
 
-            // Step 4: Grid (Interactive)
-            Route::get('master-schedule', [MasterScheduleController::class, 'index'])
-                ->name('master-schedule.index');
-            Route::get('master-schedule/print', [MasterScheduleController::class, 'printSchedule'])
-                ->name('master-schedule.print');
+            // Action: Publish & Management (Admin Only)
             Route::post('master-schedule/publish', [MasterScheduleController::class, 'publish'])
                 ->name('master-schedule.publish');
             Route::post('master-schedule/unpublish', [MasterScheduleController::class, 'unpublish'])

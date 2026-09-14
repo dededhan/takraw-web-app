@@ -232,8 +232,18 @@ class MasterScheduleController extends Controller
     /**
      * Tampilkan Grid Calendar Master Schedule.
      */
-    public function index(Tournament $tournament): Response
+    public function index(Tournament $tournament): Response|\Illuminate\Http\RedirectResponse
     {
+        $user = request()->user();
+        if ($user && $user->role === 'coach') {
+            $isPublished = $tournament->is_schedule_published || $tournament->schedule_status === 'published';
+            if (!$isPublished) {
+                return redirect()
+                    ->route('coach.tournaments.history')
+                    ->with('error', 'Jadwal pertandingan resmi turnamen ini belum dipublikasikan oleh panitia pelaksana.');
+            }
+        }
+
         $tournament->load([
             'modes',
             'courts',
@@ -297,8 +307,18 @@ class MasterScheduleController extends Controller
     /**
      * Tampilkan halaman cetak jadwal formal / resmi turnamen (Formal Document Table).
      */
-    public function printSchedule(Tournament $tournament): Response
+    public function printSchedule(Tournament $tournament): Response|\Illuminate\Http\RedirectResponse
     {
+        $user = request()->user();
+        if ($user && $user->role === 'coach') {
+            $isPublished = $tournament->is_schedule_published || $tournament->schedule_status === 'published';
+            if (!$isPublished) {
+                return redirect()
+                    ->route('coach.tournaments.history')
+                    ->with('error', 'Jadwal pertandingan resmi turnamen ini belum dipublikasikan oleh panitia pelaksana.');
+            }
+        }
+
         $tournament->load([
             'modes',
             'courts',

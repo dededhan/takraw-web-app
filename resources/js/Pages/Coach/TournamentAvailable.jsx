@@ -95,23 +95,6 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
         }
     };
 
-    const handleUnregisterTeam = (tournamentId, teamId, teamName, matchMode) => {
-        if (confirm(`Apakah Anda yakin ingin membatalkan pendaftaran tim "${teamName}" dari turnamen ini?`)) {
-            router.delete(route('coach.tournaments.unregister', [tournamentId, teamId]), {
-                data: { match_mode: matchMode },
-                preserveScroll: true,
-            });
-        }
-    };
-
-    const handleUnregisterSuperTeam = (tournamentId, superTeamId, superTeamName) => {
-        if (confirm(`Apakah Anda yakin ingin membatalkan pendaftaran Super Team "${superTeamName}" dari turnamen ini?`)) {
-            router.delete(route('coach.tournaments.unregister-super-team', [tournamentId, superTeamId]), {
-                preserveScroll: true,
-            });
-        }
-    };
-
     const formatTournamentMode = (mode) => {
         switch (mode) {
             case 'regu': return 'Regu (3 vs 3)';
@@ -252,12 +235,9 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                                                 {modeRegisteredSuperTeams.map((st) => (
                                                                     <div key={st.id} className="flex items-center justify-between p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs">
                                                                         <span className="font-bold text-purple-200 truncate">{st.name}</span>
-                                                                        <button
-                                                                            onClick={() => handleUnregisterSuperTeam(tournament.id, st.id, st.name)}
-                                                                            className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
-                                                                        >
-                                                                            ✕ Batal
-                                                                        </button>
+                                                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold flex items-center gap-1 shrink-0">
+                                                                            <span>✓</span> Terdaftar
+                                                                        </span>
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -270,12 +250,9 @@ export default function TournamentAvailable({ tournaments = [], myTeams = [], my
                                                                 {modeRegisteredTeams.map((team) => (
                                                                     <div key={team.id} className="flex items-center justify-between p-2 rounded-xl bg-surface-950/40 border border-surface-800 text-xs">
                                                                         <span className="font-semibold text-surface-200 truncate">{team.name}</span>
-                                                                        <button
-                                                                            onClick={() => handleUnregisterTeam(tournament.id, team.id, team.name, mode)}
-                                                                            className="text-[10px] px-2 py-0.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 cursor-pointer"
-                                                                        >
-                                                                            ✕ Batal
-                                                                        </button>
+                                                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold flex items-center gap-1 shrink-0">
+                                                                            <span>✓</span> Terdaftar
+                                                                        </span>
                                                                     </div>
                                                                 ))}
                                                             </div>

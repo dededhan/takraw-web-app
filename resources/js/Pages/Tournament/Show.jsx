@@ -15,7 +15,11 @@ const TABS = [
 export default function TournamentShow({ tournament, availableTeams = [], bestPlayersData = null }) {
     const { auth } = usePage().props;
     const isCoach = auth?.user?.role === 'coach';
-    const [activeTab, setActiveTab] = useState('overview');
+    const isAdmin = auth?.user?.role === 'admin';
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const paramTab = urlParams?.get('tab');
+    const validTabs = ['overview', 'teams', 'pools', 'matches', 'bracket', 'best_players'];
+    const [activeTab, setActiveTab] = useState(validTabs.includes(paramTab) ? paramTab : 'overview');
     const [copiedKey, setCopiedKey] = useState(false);
     const modeLabels = {
         regu:        'Regu (3v3)',
@@ -78,33 +82,41 @@ export default function TournamentShow({ tournament, availableTeams = [], bestPl
                         </div>
                     </div>
                     <div className="flex items-center flex-wrap gap-2">
-                        <Link
-                            href={route('tournaments.master-schedule.index', tournament.id)}
-                            className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-md transition-colors flex items-center gap-1.5"
-                        >
-                            🗓️ Master Schedule
-                        </Link>
-                        <a
-                            href={route('tournaments.master-schedule.print', tournament.id)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-4 py-2 rounded-xl text-sm font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors flex items-center gap-1.5"
-                            title="Cetak format tabel formal untuk panitia dan wasit"
-                        >
-                            🖨️ Cetak Jadwal Resmi
-                        </a>
-                        <Link
-                            href={route('pools.index', tournament.id)}
-                            className="px-4 py-2 rounded-xl text-sm font-medium text-accent-300 bg-accent-500/10 border border-accent-500/30 hover:bg-accent-500/20 transition-colors"
-                        >
-                            🏊 Kelola Pool
-                        </Link>
-                        <Link
-                            href={route('tournaments.edit', tournament.id)}
-                            className="px-4 py-2 rounded-xl text-sm font-medium text-surface-300 bg-surface-800 border border-surface-700 hover:bg-surface-700 transition-colors"
-                        >
-                            ✏️ Edit
-                        </Link>
+                        {isAdmin && (
+                            <Link
+                                href={route('tournaments.master-schedule.index', tournament.id)}
+                                className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-md transition-colors flex items-center gap-1.5"
+                            >
+                                🗓️ Master Schedule
+                            </Link>
+                        )}
+                        {(isAdmin || tournament.is_schedule_published || tournament.schedule_status === 'published') && (
+                            <a
+                                href={route('tournaments.master-schedule.print', tournament.id)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-4 py-2 rounded-xl text-sm font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors flex items-center gap-1.5"
+                                title="Cetak format tabel formal untuk panitia dan wasit"
+                            >
+                                🖨️ Cetak Jadwal Resmi
+                            </a>
+                        )}
+                        {isAdmin && (
+                            <>
+                                <Link
+                                    href={route('pools.index', tournament.id)}
+                                    className="px-4 py-2 rounded-xl text-sm font-medium text-accent-300 bg-accent-500/10 border border-accent-500/30 hover:bg-accent-500/20 transition-colors"
+                                >
+                                    🏊 Kelola Pool
+                                </Link>
+                                <Link
+                                    href={route('tournaments.edit', tournament.id)}
+                                    className="px-4 py-2 rounded-xl text-sm font-medium text-surface-300 bg-surface-800 border border-surface-700 hover:bg-surface-700 transition-colors"
+                                >
+                                    ✏️ Edit
+                                </Link>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -137,27 +149,35 @@ export default function TournamentShow({ tournament, availableTeams = [], bestPl
 
             {/* Tabs */}
             <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
-                {TABS.map((tab) => (
-                    <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        className={`
-                            flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200
-                            ${activeTab === tab.key
-                                ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30'
-                                : 'text-surface-400 hover:text-surface-200 hover:bg-surface-800 border border-transparent'
-                            }
-                        `}
-                    >
-                        <span>{tab.icon}</span>
-                        {tab.label}
-                    </button>
-                ))}
+                {TABS.map((tab) => {
+                    const isMatchesLocked = tab.key === 'matches' && isCoach && !tournament.is_schedule_published && tournament.schedule_status !== 'published';
+                    return (
+                        <button
+                            key={tab.key}
+                            onClick={() => setActiveTab(tab.key)}
+                            className={`
+                                flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 cursor-pointer
+                                ${activeTab === tab.key
+                                    ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30 font-bold'
+                                    : 'text-surface-400 hover:text-surface-200 hover:bg-surface-800 border border-transparent'
+                                }
+                            `}
+                        >
+                            <span>{isMatchesLocked ? '🔒' : tab.icon}</span>
+                            <span>{tab.label}</span>
+                            {isMatchesLocked && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-normal">
+                                    Belum Publish
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Tab Content */}
             <div className="animate-fade-in">
-                {activeTab === 'overview' && <OverviewTab tournament={tournament} />}
+                {activeTab === 'overview' && <OverviewTab tournament={tournament} isAdmin={isAdmin} />}
                 {activeTab === 'teams' && (
                     <TeamsTab
                         teams={tournament.teams || []}
@@ -168,8 +188,8 @@ export default function TournamentShow({ tournament, availableTeams = [], bestPl
                         tournament={tournament}
                     />
                 )}
-                {activeTab === 'pools' && <PoolsTab pools={tournament.pools} tournamentId={tournament.id} />}
-                {activeTab === 'matches' && <MatchesTab matches={tournament.matches} />}
+                {activeTab === 'pools' && <PoolsTab pools={tournament.pools} tournamentId={tournament.id} isAdmin={isAdmin} />}
+                {activeTab === 'matches' && <MatchesTab matches={tournament.matches} tournament={tournament} isCoach={isCoach} />}
                 {activeTab === 'bracket' && <BracketTab tournament={tournament} />}
                 {activeTab === 'best_players' && <BestPlayersTab bestPlayersData={bestPlayersData} tournament={tournament} />}
             </div>
@@ -346,7 +366,7 @@ function computePoolStandings(pool, tournamentMatches = []) {
     return standingsList;
 }
 
-function OverviewTab({ tournament }) {
+function OverviewTab({ tournament, isAdmin = false }) {
     const poolsByMode = (tournament.pools || []).reduce((acc, pool) => {
         const mode = pool.match_mode || tournament.mode || 'regu';
         if (!acc[mode]) acc[mode] = [];
@@ -366,9 +386,11 @@ function OverviewTab({ tournament }) {
         return (
             <div className="text-center py-12 rounded-xl border border-dashed border-surface-700/50">
                 <p className="text-surface-500 text-sm">Belum ada pool dibuat</p>
-                <Link href={route('pools.index', tournament.id)} className="text-primary-400 text-sm hover:text-primary-300 mt-2 inline-block">
-                    Buat Pool →
-                </Link>
+                {isAdmin && (
+                    <Link href={route('pools.index', tournament.id)} className="text-primary-400 text-sm hover:text-primary-300 mt-2 inline-block">
+                        Buat Pool →
+                    </Link>
+                )}
             </div>
         );
     }
@@ -1132,7 +1154,7 @@ function TeamsTab({ teams = [], superTeams = [], availableTeams = [], tournament
     );
 }
 
-function PoolsTab({ pools, tournamentId }) {
+function PoolsTab({ pools, tournamentId, isAdmin = false }) {
     const poolsByMode = (pools || []).reduce((acc, pool) => {
         const mode = pool.match_mode || 'regu';
         if (!acc[mode]) acc[mode] = [];
@@ -1150,14 +1172,16 @@ function PoolsTab({ pools, tournamentId }) {
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-end mb-4">
-                <Link
-                    href={route('pools.index', tournamentId)}
-                    className="px-4 py-2 rounded-xl text-sm font-medium text-primary-300 bg-primary-500/10 border border-primary-500/30 hover:bg-primary-500/20 transition-colors"
-                >
-                    ⚙️ Kelola Pool
-                </Link>
-            </div>
+            {isAdmin && (
+                <div className="flex justify-end mb-4">
+                    <Link
+                        href={route('pools.index', tournamentId)}
+                        className="px-4 py-2 rounded-xl text-sm font-medium text-primary-300 bg-primary-500/10 border border-primary-500/30 hover:bg-primary-500/20 transition-colors"
+                    >
+                        ⚙️ Kelola Pool
+                    </Link>
+                </div>
+            )}
 
             {Object.keys(poolsByMode).length === 0 ? (
                 <div className="text-center py-12 rounded-xl border border-dashed border-surface-700/50">
@@ -1207,7 +1231,21 @@ function PoolsTab({ pools, tournamentId }) {
     );
 }
 
-function MatchesTab({ matches }) {
+function MatchesTab({ matches, tournament, isCoach }) {
+    if (isCoach && !tournament?.is_schedule_published && tournament?.schedule_status !== 'published') {
+        return (
+            <div className="rounded-2xl border border-surface-700/60 bg-surface-900/40 p-12 text-center space-y-3">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-3xl mx-auto shadow-inner">
+                    🔒
+                </div>
+                <h3 className="text-base font-bold text-surface-200">Jadwal Pertandingan Belum Dipublikasikan</h3>
+                <p className="text-xs text-surface-400 max-w-md mx-auto leading-relaxed">
+                    Panitia pelaksana turnamen belum mempublikasikan jadwal resmi pertandingan untuk turnamen ini. Jadwal dan hasil laga akan otomatis dapat dilihat setelah panitia mempublikasikannya.
+                </p>
+            </div>
+        );
+    }
+
     const [selectedMode, setSelectedMode] = useState('all');
 
     const availableModes = Array.from(new Set((matches || []).map(m => m.match_mode).filter(Boolean)));

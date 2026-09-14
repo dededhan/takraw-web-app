@@ -207,27 +207,7 @@ class CoachTournamentController extends Controller
      */
     public function unregister(Request $request, Tournament $tournament, Team $team)
     {
-        $request->validate([
-            'match_mode' => 'required|in:regu,double,quadrant',
-        ]);
-
-        // Check if the team is coached by this user
-        if ($team->coach_id !== $request->user()->id) {
-            return back()->with('error', 'Anda tidak memiliki wewenang untuk membatalkan pendaftaran tim ini.');
-        }
-
-        // Check if tournament is in registration phase
-        if ($tournament->status !== 'registration') {
-            return back()->with('error', 'Tidak dapat membatalkan pendaftaran karena pendaftaran turnamen sudah ditutup.');
-        }
-
-        \DB::table('tournament_teams')
-            ->where('tournament_id', $tournament->id)
-            ->where('team_id', $team->id)
-            ->where('match_mode', $request->input('match_mode'))
-            ->delete();
-
-        return back()->with('success', 'Pendaftaran tim berhasil dibatalkan.');
+        return back()->with('error', 'Pendaftaran tim yang sudah terdaftar tidak dapat dibatalkan atau diganti.');
     }
 
     /**
@@ -316,31 +296,7 @@ class CoachTournamentController extends Controller
      */
     public function unregisterSuperTeam(Request $request, Tournament $tournament, SuperTeam $superTeam)
     {
-        if ($superTeam->coach_id !== $request->user()->id && $superTeam->created_by !== $request->user()->id) {
-            return back()->with('error', 'Anda tidak memiliki wewenang untuk Super Team ini.');
-        }
-
-        if ($tournament->status !== 'registration') {
-            return back()->with('error', 'Tidak dapat membatalkan karena turnamen sudah berjalan.');
-        }
-
-        $tournament->superTeams()->detach($superTeam->id);
-
-        // Hapus juga standing di turnamen ini jika ada
-        $poolIds = Pool::where('tournament_id', $tournament->id)->pluck('id');
-        if ($poolIds->isNotEmpty()) {
-            PoolStanding::whereIn('pool_id', $poolIds)->where('super_team_id', $superTeam->id)->delete();
-        }
-
-        if ($superTeam->tournament_id === $tournament->id) {
-            $nextTourn = $superTeam->tournaments()->first();
-            $superTeam->update([
-                'tournament_id' => $nextTourn ? $nextTourn->id : null,
-                'pool_id'       => null,
-            ]);
-        }
-
-        return back()->with('success', "Pendaftaran Super Team \"{$superTeam->name}\" berhasil dibatalkan.");
+        return back()->with('error', 'Pendaftaran Super Team yang sudah terdaftar tidak dapat dibatalkan atau diganti.');
     }
 
     /**
