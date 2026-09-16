@@ -79,7 +79,7 @@ class TeamController extends Controller
         ]);
 
         // Auto-assign coach if user is a coach
-        if ($request->user()->isCoach() && !isset($validated['coach_id'])) {
+        if ($request->user()->isCoach()) {
             $validated['coach_id'] = $request->user()->id;
         }
 

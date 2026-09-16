@@ -219,13 +219,19 @@ class CoachTournamentController extends Controller
             'super_team_id'     => 'nullable|exists:super_teams,id',
             'super_team_ids'    => 'nullable|array',
             'super_team_ids.*'  => 'exists:super_teams,id',
+            'match_mode'        => 'required|in:team_regu,team_double',
             'registration_code' => 'nullable|string',
         ]);
 
+        $matchMode = $request->input('match_mode');
         $user = $request->user();
 
         if ($tournament->status !== 'registration') {
             return back()->with('error', 'Pendaftaran untuk turnamen ini sudah ditutup.');
+        }
+
+        if (!$tournament->hasActiveMode($matchMode)) {
+            return back()->with('error', 'Mode pertandingan ini tidak tersedia untuk turnamen ini.');
         }
 
         // Validasi Kunci Pertandingan jika turnamen diproteksi
@@ -267,12 +273,13 @@ class CoachTournamentController extends Controller
             $exists = DB::table('tournament_super_teams')
                 ->where('tournament_id', $tournament->id)
                 ->where('super_team_id', $stId)
+                ->where('match_mode', $matchMode)
                 ->exists();
 
             if (!$exists) {
                 $tournament->superTeams()->syncWithoutDetaching([
                     $stId => [
-                        'match_mode'    => $superTeam->match_mode ?? 'team_regu',
+                        'match_mode'    => $matchMode,
                         'registered_at' => now(),
                     ]
                 ]);
@@ -285,7 +292,7 @@ class CoachTournamentController extends Controller
         }
 
         if ($addedCount === 0) {
-            return back()->with('error', 'Semua Super Team yang dipilih sudah terdaftar di turnamen ini atau belum memiliki tepat 3 Sub-Tim.');
+            return back()->with('error', 'Semua Super Team yang dipilih sudah terdaftar di kategori ini atau belum memiliki tepat 3 Sub-Tim.');
         }
 
         return back()->with('success', "{$addedCount} Super Team berhasil didaftarkan ke turnamen!");

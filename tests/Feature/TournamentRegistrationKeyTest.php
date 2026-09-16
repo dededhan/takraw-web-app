@@ -13,6 +13,22 @@ class TournamentRegistrationKeyTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_admin_can_access_tournament_create_page(): void
+    {
+        $admin = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin_create_page@test.com',
+            'password' => bcrypt('password'),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('tournaments.create'));
+
+        $response->assertStatus(200);
+        $response->assertInertia(fn ($page) => $page->component('Tournament/Create'));
+    }
+
     public function test_tournament_creation_sets_default_status_draft_and_stores_registration_code(): void
     {
         $admin = User::create([

@@ -53,13 +53,13 @@ function AthleteAvatarUpload({ index, photoFile, existingUrl, onChange }) {
 
 export default function TeamCreate({ coaches, tournaments }) {
     const { auth } = usePage().props;
-    const isCoach = auth.user.role === 'coach';
+    const isCoach = auth.user?.role === 'coach';
+    const isAdmin = auth.user?.role === 'admin';
 
     const { data, setData, post, processing, errors } = useForm({
         name: '',
         region: '',
         coach_id: isCoach ? auth.user.id : '',
-        tournament_id: '',
         athletes: [{ name: '', jersey_number: '', position: 'Tekong', photo: null }],
     });
 
@@ -159,8 +159,8 @@ export default function TeamCreate({ coaches, tournaments }) {
     };
 
     return (
-        <AuthenticatedLayout header="Daftarkan Tim">
-            <Head title="Daftarkan Tim" />
+        <AuthenticatedLayout header="Daftarkan Team Unit">
+            <Head title="Daftarkan Team Unit" />
 
             <div className="max-w-3xl mx-auto">
                 <div className="mb-6">
@@ -174,7 +174,7 @@ export default function TeamCreate({ coaches, tournaments }) {
 
                 <div className="rounded-2xl border border-surface-700/50 bg-surface-900/60 backdrop-blur-sm p-6 shadow-xl">
                     <h2 className="text-xl font-bold text-surface-100 mb-6 flex items-center gap-2">
-                        <span>➕ Daftarkan Tim Baru</span>
+                        <span>➕ Daftarkan Team Unit Baru</span>
                     </h2>
 
                     <form onSubmit={handleSubmit} className="space-y-6">
@@ -204,37 +204,28 @@ export default function TeamCreate({ coaches, tournaments }) {
                             </div>
                         </div>
 
-                        {/* Tournament & Coach */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Coach Info */}
+                        {isAdmin ? (
                             <div>
-                                <label className="block text-sm font-medium text-surface-300 mb-2">Daftarkan ke Turnamen (Opsional)</label>
-                                <select
-                                    value={data.tournament_id}
-                                    onChange={(e) => setData('tournament_id', e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl bg-surface-800 border border-surface-700 text-surface-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors"
-                                >
-                                    <option value="">— Tidak didaftarkan sekarang —</option>
-                                    {tournaments?.map((t) => (
-                                        <option key={t.id} value={t.id}>{t.name}</option>
-                                    ))}
-                                </select>
-                                {errors.tournament_id && <p className="text-red-400 text-xs mt-1">{errors.tournament_id}</p>}
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-surface-300 mb-2">Pelatih</label>
+                                <label className="block text-sm font-medium text-surface-300 mb-2">Pelatih Penanggung Jawab</label>
                                 <select
                                     value={data.coach_id}
                                     onChange={(e) => setData('coach_id', e.target.value)}
                                     className="w-full px-4 py-3 rounded-xl bg-surface-800 border border-surface-700 text-surface-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors"
                                 >
-                                    <option value="">— Pilih Pelatih —</option>
+                                    <option value="">— Pilih Pelatih (Opsional) —</option>
                                     {coaches?.map((c) => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                        <option key={c.id} value={c.id}>🧑‍🏫 {c.name}</option>
                                     ))}
                                 </select>
                                 {errors.coach_id && <p className="text-red-400 text-xs mt-1">{errors.coach_id}</p>}
                             </div>
-                        </div>
+                        ) : (
+                            <div className="flex items-center gap-2.5 p-3.5 rounded-xl bg-primary-950/20 border border-primary-900/30 text-surface-300 text-sm">
+                                <span className="text-base">🧑‍🏫</span>
+                                <span>Pelatih: <strong className="text-surface-100">{auth.user?.name}</strong> <span className="text-xs text-primary-400 ml-1">(Terdeteksi otomatis)</span></span>
+                            </div>
+                        )}
 
                         {/* Athletes */}
                         <div>
@@ -402,7 +393,7 @@ export default function TeamCreate({ coaches, tournaments }) {
                                 disabled={processing || duplicateJerseys.length > 0}
                                 className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 transition-colors shadow-glow-primary"
                             >
-                                {processing ? 'Mendaftarkan...' : '✓ Daftarkan Tim'}
+                                {processing ? 'Mendaftarkan...' : '✓ Daftarkan Team Unit'}
                             </button>
                         </div>
                     </form>

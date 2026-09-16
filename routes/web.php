@@ -29,9 +29,9 @@ Route::get('/', function () {
 
 // Public Tournament & Match View (Bisa dilihat siapa saja tanpa login)
 Route::get('/tournaments', [TournamentController::class, 'index'])->name('tournaments.index');
-Route::get('/tournaments/{tournament}', [TournamentController::class, 'show'])->name('tournaments.show');
+Route::get('/tournaments/{tournament}', [TournamentController::class, 'show'])->name('tournaments.show')->whereNumber('tournament');
 Route::get('/matches', [MatchController::class, 'index'])->name('matches.index');
-Route::get('/matches/{match}', [MatchController::class, 'show'])->name('matches.show');
+Route::get('/matches/{match}', [MatchController::class, 'show'])->name('matches.show')->whereNumber('match');
 
 // Public Athlete Excel Template Download (.xlsx)
 Route::get('/templates/athletes', [TeamController::class, 'downloadTemplate'])->name('templates.athletes');

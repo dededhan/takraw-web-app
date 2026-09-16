@@ -8,7 +8,6 @@ export default function Register() {
         email: '',
         password: '',
         password_confirmation: '',
-        role: 'coach', // Default to coach (Pelatih)
         phone: '',
     });
 
@@ -26,11 +25,11 @@ export default function Register() {
 
     return (
         <GuestLayout>
-            <Head title="Registrasi Akun Baru" />
+            <Head title="Registrasi Akun Pelatih" />
 
             <div className="mb-6 text-center">
-                <h2 className="text-xl font-bold text-white">Daftar Akun Baru</h2>
-                <p className="text-xs text-slate-500 mt-1">Isi data di bawah ini untuk mengajukan pendaftaran akun</p>
+                <h2 className="text-xl font-bold text-white">Daftar Akun Pelatih</h2>
+                <p className="text-xs text-slate-500 mt-1">Isi data di bawah ini untuk mengajukan pendaftaran akun pelatih (coach)</p>
             </div>
 
             <form onSubmit={submit} className="space-y-4">
@@ -115,36 +114,6 @@ export default function Register() {
                     )}
                 </div>
 
-                {/* Role select */}
-                <div>
-                    <label htmlFor="role" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                        Daftar Sebagai (Role)
-                    </label>
-                    <div className="relative">
-                        <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 text-sm">
-                            🎭
-                        </span>
-                        <select
-                            id="role"
-                            name="role"
-                            value={data.role}
-                            className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-800 bg-slate-950/60 text-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all text-sm appearance-none cursor-pointer"
-                            onChange={(e) => setData('role', e.target.value)}
-                            required
-                        >
-                            <option value="coach" className="bg-slate-900 text-slate-200">Pelatih (Coach)</option>
-                            <option value="referee" className="bg-slate-900 text-slate-200">Wasit (Referee)</option>
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
-                            ▼
-                        </div>
-                    </div>
-                    {errors.role && (
-                        <div className="text-red-400 text-xs mt-1.5 flex items-center gap-1">
-                            <span>⚠️</span> {errors.role}
-                        </div>
-                    )}
-                </div>
 
                 {/* Password */}
                 <div>
@@ -224,7 +193,7 @@ export default function Register() {
                             </>
                         ) : (
                             <>
-                                Ajukan Pendaftaran Akun ➔
+                                Ajukan Pendaftaran Pelatih ➔
                             </>
                         )}
                     </button>

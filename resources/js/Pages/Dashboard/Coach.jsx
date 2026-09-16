@@ -53,7 +53,7 @@ export default function CoachDashboard({
             <Head title="Dashboard Pelatih" />
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 {/* 1. Tim Binaan */}
                 <Link
                     href={route('teams.index')}
@@ -66,7 +66,7 @@ export default function CoachDashboard({
                                 {stats.totalTeams ?? teams.length}
                             </p>
                             <p className="text-[11px] text-surface-400 mt-1">
-                                {superTeams.length > 0 ? `+ ${superTeams.length} Super Team` : 'Tim Reguler'}
+                                {superTeams.length > 0 ? `+ ${superTeams.length} Super Team` : 'TEAM UNIT'}
                             </p>
                         </div>
                         <div className="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center text-2xl border border-blue-500/30 shadow-inner">
@@ -112,24 +112,6 @@ export default function CoachDashboard({
                         </div>
                     </div>
                 </Link>
-
-                {/* 4. Win Rate / Performa */}
-                <div className="relative overflow-hidden rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/15 via-surface-900/60 to-surface-900/90 p-5">
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-purple-300">Win Rate Tim</p>
-                            <p className="text-3xl font-black text-surface-100 mt-1.5">
-                                {stats.winRate ?? 0}%
-                            </p>
-                            <p className="text-[11px] text-surface-400 mt-1">
-                                {stats.winsCount ?? 0} Menang / {stats.lossCount ?? 0} Kalah
-                            </p>
-                        </div>
-                        <div className="w-12 h-12 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center text-2xl border border-purple-500/30 shadow-inner">
-                            🎯
-                        </div>
-                    </div>
-                </div>
             </div>
 
             {/* Main Content Grid */}
@@ -140,7 +122,7 @@ export default function CoachDashboard({
                     <div className="rounded-2xl border border-surface-700/50 bg-surface-900/60 backdrop-blur-sm overflow-hidden flex flex-col shadow-lg">
                         <div className="px-5 py-4 border-b border-surface-700/50 flex items-center justify-between bg-surface-950/20">
                             <h2 className="text-sm font-bold text-surface-100 flex items-center gap-2">
-                                <span>👥 Tim & Super Team Saya</span>
+                                <span>👥 TEAM UNIT & TEAM SQUAD </span>
                             </h2>
                             <Link
                                 href={route('teams.index')}

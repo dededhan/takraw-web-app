@@ -183,16 +183,16 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
 
     return (
         <AuthenticatedLayout header="Manajemen Tim">
-            <Head title="Manajemen Tim & Super Team" />
+            <Head title="Manajemen Team Unit & Team Squad" />
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
                 <div>
                     <h2 className="text-2xl font-bold text-surface-100 flex items-center gap-2">
-                        <span>👥 Tim & Super Team</span>
+                        <span>👥 Team Unit & Team Squad</span>
                     </h2>
                     <p className="text-sm text-surface-400 mt-1">
-                        Kelola tim reguler serta Super Team untuk turnamen.
+                        Kelola Team Unit serta Team Squad untuk turnamen.
                     </p>
                 </div>
 
@@ -201,7 +201,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                         href={route('teams.create')}
                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-500 transition-colors shadow-glow-primary cursor-pointer"
                     >
-                        <span>+ Daftarkan Tim Reguler</span>
+                        <span>+ Daftarkan Team Unit</span>
                     </Link>
 
                     {canManageSuperTeams && (
@@ -209,7 +209,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                             onClick={handleOpenCreateModal}
                             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 cursor-pointer"
                         >
-                            <span>🏆 + Buat Super Team</span>
+                            <span>🏆 + Buat Team Squad</span>
                         </button>
                     )}
                 </div>
@@ -225,7 +225,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                             : 'bg-surface-900 text-surface-400 hover:text-surface-200 border border-surface-800'
                     }`}
                 >
-                    <span>👥 Tim Reguler (Regu / Double / Quadrant)</span>
+                    <span>👥 Team Unit (Regu / Double / Quadrant)</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
                         activeTab === 'single' ? 'bg-black/30 text-white' : 'bg-surface-800 text-surface-400'
                     }`}>
@@ -241,7 +241,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                             : 'bg-surface-900 text-surface-400 hover:text-surface-200 border border-surface-800'
                     }`}
                 >
-                    <span>🏆 Super Team</span>
+                    <span>🏆 Team Squad</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
                         activeTab === 'super' ? 'bg-black/30 text-white' : 'bg-surface-800 text-surface-400'
                     }`}>
@@ -360,15 +360,15 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                 </div>
             )}
 
-            {/* TAB 2: SUPER TEAMS */}
+            {/* TAB 2: TEAM SQUADS */}
             {activeTab === 'super' && (
                 <div>
                     <div className="mb-4 p-4 rounded-2xl border border-purple-500/20 bg-purple-500/10 text-xs text-purple-200 flex items-start gap-2.5">
                         <span className="text-base shrink-0">💡</span>
                         <div>
-                            <p className="font-bold text-purple-100">Super Team:</p>
+                            <p className="font-bold text-purple-100">Team Squad:</p>
                             <p className="text-purple-300/80 mt-0.5">
-                                Super Team diinput sebagai <strong>1 kesatuan tim</strong> persis seperti tim reguler. Pada jadwal turnamen (Master Schedule), setiap pertandingan Super Team otomatis dialokasikan <strong>3 kotak waktu (3 sesi)</strong>.
+                                Team Squad diinput sebagai <strong>1 kesatuan tim</strong> persis seperti team unit. Pada jadwal turnamen (Master Schedule), setiap pertandingan Team Squad otomatis dialokasikan <strong>3 kotak waktu (3 sesi)</strong>.
                             </p>
                         </div>
                     </div>
@@ -376,16 +376,16 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                     {superTeams.length === 0 ? (
                         <div className="text-center py-16 rounded-2xl border border-dashed border-surface-700/50 bg-surface-900/30">
                             <div className="text-5xl mb-4">🏆</div>
-                            <h3 className="text-base font-bold text-surface-200">Belum Ada Super Team</h3>
+                            <h3 className="text-base font-bold text-surface-200">Belum Ada Team Squad</h3>
                             <p className="text-surface-400 text-xs mt-1 max-w-md mx-auto">
-                                Daftarkan Super Team untuk turnamen kategori Super Team (3 sesi pertandingan).
+                                Daftarkan Team Squad untuk turnamen kategori Team Squad (3 sesi pertandingan).
                             </p>
                             {canManageSuperTeams && (
                                 <button
                                     onClick={handleOpenCreateModal}
                                     className="inline-block mt-4 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
                                 >
-                                    + Buat Super Team Pertama
+                                    + Buat Team Squad Pertama
                                 </button>
                             )}
                         </div>
@@ -423,7 +423,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                                                 <button
                                                                     onClick={() => handleOpenEditModal(st)}
                                                                     className="p-1.5 rounded-lg text-surface-400 hover:text-accent-300 hover:bg-surface-800 transition-colors cursor-pointer"
-                                                                    title="Edit Super Team"
+                                                                    title="Edit Team Squad"
                                                                 >
                                                                     ✏️
                                                                 </button>
@@ -431,7 +431,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                                             <button
                                                                 onClick={() => setDeletingSuperTeamId(st.id)}
                                                                 className="p-1.5 rounded-lg text-surface-400 hover:text-red-400 hover:bg-surface-800 transition-colors cursor-pointer"
-                                                                title="Hapus Super Team"
+                                                                title="Hapus Team Squad"
                                                             >
                                                                 🗑️
                                                             </button>
@@ -443,7 +443,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                             {/* Badge & Coach */}
                                             <div className="mt-3.5 flex items-center gap-2 flex-wrap">
                                                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold uppercase">
-                                                    🏆 Super Team
+                                                    🏆 Team Squad
                                                 </span>
 
                                                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-semibold">
@@ -520,7 +520,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                         <div className="px-6 py-4 border-b border-surface-800 flex items-center justify-between bg-surface-950/40">
                             <div>
                                 <h3 className="text-base font-bold text-surface-100 flex items-center gap-2">
-                                    <span>{editingSuperTeam ? '✏️ Edit Super Team' : '🏆 Buat Super Team Baru'}</span>
+                                    <span>{editingSuperTeam ? '✏️ Edit Team Squad' : '🏆 Buat Team Squad Baru'}</span>
                                 </h3>
                                 <p className="text-xs text-surface-400 mt-0.5">
                                     {editingSuperTeam
@@ -544,7 +544,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
-                                        Nama Super Team <span className="text-red-400">*</span>
+                                        Nama Team Squad <span className="text-red-400">*</span>
                                     </label>
                                     <input
                                         type="text"
@@ -572,27 +572,8 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                     {stErrors.region && <p className="text-red-400 text-xs mt-1">{stErrors.region}</p>}
                                 </div>
 
-                                <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
-                                        Daftarkan ke Turnamen (Opsional)
-                                    </label>
-                                    <select
-                                        value={stData.tournament_id}
-                                        onChange={(e) => setStData('tournament_id', e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl bg-surface-950/60 border border-surface-700 text-surface-100 text-xs focus:border-purple-500 transition-colors"
-                                    >
-                                        <option value="">— Tidak didaftarkan sekarang —</option>
-                                        {tournaments.map((t) => (
-                                            <option key={t.id} value={t.id}>
-                                                🏆 {t.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {stErrors.tournament_id && <p className="text-red-400 text-xs mt-1">{stErrors.tournament_id}</p>}
-                                </div>
-
                                 {isAdmin ? (
-                                    <div>
+                                    <div className="sm:col-span-2">
                                         <label className="block text-xs font-bold uppercase tracking-wider text-surface-300 mb-1.5">
                                             Pelatih Penanggung Jawab
                                         </label>
@@ -610,8 +591,8 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                         </select>
                                     </div>
                                 ) : (
-                                    <div className="flex items-center text-xs text-purple-300/80 p-2.5 rounded-xl bg-purple-950/20 border border-purple-900/30 self-end">
-                                        <span>🧑‍🏫 Pelatih: <strong>{auth.user?.name}</strong></span>
+                                    <div className="sm:col-span-2 flex items-center text-xs text-purple-300/80 p-2.5 rounded-xl bg-purple-950/20 border border-purple-900/30">
+                                        <span>🧑‍🏫 Pelatih: <strong>{auth.user?.name}</strong> <span className="text-xs text-purple-400 ml-1">(Terdeteksi otomatis)</span></span>
                                     </div>
                                 )}
                             </div>
@@ -791,7 +772,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                                         disabled={stProcessing}
                                         className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/20 disabled:opacity-50 cursor-pointer"
                                     >
-                                        {stProcessing ? 'Menyimpan...' : (editingSuperTeam ? '✓ Simpan Perubahan' : '✓ Daftarkan Super Team')}
+                                        {stProcessing ? 'Menyimpan...' : (editingSuperTeam ? '✓ Simpan Perubahan' : '✓ Daftarkan Team Squad')}
                                     </button>
                                 </div>
                             </div>
@@ -805,16 +786,16 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                 isOpen={deletingTeamId !== null}
                 onClose={() => setDeletingTeamId(null)}
                 onConfirm={handleDeleteTeam}
-                title="Hapus Tim Reguler"
-                message="Tim beserta seluruh data atletnya akan dihapus permanen. Aksi ini hanya dapat dilakukan jika tim belum pernah mengikuti turnamen."
+                title="Hapus Team Unit"
+                message="Team Unit beserta seluruh data atletnya akan dihapus permanen. Aksi ini hanya dapat dilakukan jika tim belum pernah mengikuti turnamen."
             />
 
             <ConfirmDialog
                 isOpen={deletingSuperTeamId !== null}
                 onClose={() => setDeletingSuperTeamId(null)}
                 onConfirm={handleDeleteSuperTeam}
-                title="Hapus Super Team"
-                message="Super Team beserta seluruh data atletnya akan dihapus permanen. Aksi ini hanya dapat dilakukan jika Super Team belum pernah mengikuti turnamen."
+                title="Hapus Team Squad"
+                message="Team Squad beserta seluruh data atletnya akan dihapus permanen. Aksi ini hanya dapat dilakukan jika Team Squad belum pernah mengikuti turnamen."
             />
         </AuthenticatedLayout>
     );

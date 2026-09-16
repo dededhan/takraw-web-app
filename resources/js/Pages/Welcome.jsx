@@ -77,7 +77,7 @@ export default function Welcome({ auth }) {
                                         href={route('register')}
                                         className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-bold hover:from-amber-400 hover:to-amber-500 transition duration-300 shadow-lg shadow-amber-500/20 text-sm"
                                     >
-                                        Daftar Tim
+                                        Daftar 
                                     </Link>
                                 </>
                             )}
@@ -151,7 +151,7 @@ export default function Welcome({ auth }) {
                                         href={route('register')}
                                         className="w-full sm:w-auto px-8 py-4 rounded-xl border border-slate-700 bg-slate-900/60 text-slate-200 font-bold hover:bg-slate-800 hover:text-white transition duration-300 flex items-center justify-center gap-2 text-base"
                                     >
-                                        Registrasi Tim
+                                        Registrasi Akun
                                     </Link>
                                 </>
                             )}
