@@ -141,6 +141,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('role:coach')->group(function () {
         Route::get('/coach/tournaments', [CoachTournamentController::class, 'index'])->name('coach.tournaments.index');
         Route::get('/coach/tournaments/history', [CoachTournamentController::class, 'history'])->name('coach.tournaments.history');
+        Route::get('/coach/tournaments/{tournament}/team-assessment/{type}/{id}', [CoachTournamentController::class, 'teamAssessment'])->name('coach.tournaments.team-assessment');
         Route::post('/coach/tournaments/{tournament}/register', [CoachTournamentController::class, 'register'])->name('coach.tournaments.register');
         Route::delete('/coach/tournaments/{tournament}/teams/{team}', [CoachTournamentController::class, 'unregister'])->name('coach.tournaments.unregister');
         

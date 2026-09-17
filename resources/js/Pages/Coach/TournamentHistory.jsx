@@ -748,13 +748,23 @@ function TeamAssessmentCard({ team, tournament, stageLabels }) {
                     )}
 
                     {team.isScored && (
-                        <button
-                            onClick={handleDownloadPdf}
-                            className="px-2.5 py-1 rounded-lg bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
-                            title="Unduh Laporan Performa Tim (Semua Laga) dalam format PDF"
-                        >
-                            <span>📥 Download PDF</span>
-                        </button>
+                        <>
+                            <button
+                                onClick={handleDownloadPdf}
+                                className="px-2.5 py-1 rounded-lg bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+                                title="Unduh Laporan Performa Tim (Semua Laga) dalam format PDF"
+                            >
+                                <span>📥 PDF</span>
+                            </button>
+                            <Link
+                                href={route('coach.tournaments.team-assessment', [tournament.id, team.is_super ? 'super-team' : 'team', team.id])}
+                                className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-surface-950 font-black text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-95"
+                                title="Buka Halaman Khusus Hasil Penilaian Skor Tim (Semua Laga) seperti lembar skor wasit"
+                            >
+                                <span>📊 Halaman Khusus Skor</span>
+                                <span>→</span>
+                            </Link>
+                        </>
                     )}
                 </div>
             </div>
@@ -942,16 +952,24 @@ function TeamAssessmentCard({ team, tournament, stageLabels }) {
                         </table>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-surface-850">
                         <span className="text-[10px] text-surface-400">
                             * Data statistik diakumulasi dari seluruh ({team.finishedMatches.length}) laga resmi yang telah dinilai wasit.
                         </span>
-                        <button
-                            onClick={handleDownloadPdf}
-                            className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                            <span>📥 Unduh Laporan PDF</span>
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={handleDownloadPdf}
+                                className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                                <span>📥 Unduh Laporan PDF</span>
+                            </button>
+                            <Link
+                                href={route('coach.tournaments.team-assessment', [tournament.id, team.is_super ? 'super-team' : 'team', team.id])}
+                                className="text-[11px] font-bold text-primary-400 hover:text-primary-300 transition-colors flex items-center gap-0.5 underline cursor-pointer"
+                            >
+                                <span>Buka Halaman Khusus Skor →</span>
+                            </Link>
+                        </div>
                     </div>
                 </div>
             )}

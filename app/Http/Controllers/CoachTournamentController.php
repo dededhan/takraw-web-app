@@ -137,6 +137,62 @@ class CoachTournamentController extends Controller
     }
 
     /**
+     * Display the dedicated score assessment and performance page for 1 team across all matches in a tournament.
+     */
+    public function teamAssessment(Request $request, Tournament $tournament, string $type, int $id): Response
+    {
+        $user = $request->user();
+        $isSuperTeam = ($type === 'super-team' || $type === 'super_team');
+
+        if ($isSuperTeam) {
+            $team = SuperTeam::with(['members.athletes', 'coach'])->findOrFail($id);
+            if ($user->role === 'coach' && $team->coach_id !== $user->id && $team->created_by !== $user->id) {
+                abort(403, 'Anda tidak memiliki akses ke tim ini.');
+            }
+        } else {
+            $team = Team::with(['athletes', 'coach'])->findOrFail($id);
+            if ($user->role === 'coach' && $team->coach_id !== $user->id) {
+                abort(403, 'Anda tidak memiliki akses ke tim ini.');
+            }
+        }
+
+        $tournament->load('modes');
+
+        $matchesQuery = Match_::where('tournament_id', $tournament->id)
+            ->with([
+                'homeTeam.athletes',
+                'awayTeam.athletes',
+                'homeSuperTeam.members.athletes',
+                'awaySuperTeam.members.athletes',
+                'court',
+                'timeSlot',
+                'referee',
+                'sets.stats.athlete',
+            ]);
+
+        if ($isSuperTeam) {
+            $matchesQuery->where(function ($q) use ($id) {
+                $q->where('home_super_team_id', $id)
+                  ->orWhere('away_super_team_id', $id);
+            });
+        } else {
+            $matchesQuery->where(function ($q) use ($id) {
+                $q->where('home_team_id', $id)
+                  ->orWhere('away_team_id', $id);
+            });
+        }
+
+        $matches = $matchesQuery->orderBy('scheduled_at', 'asc')->get();
+
+        return Inertia::render('Coach/TeamAssessment', [
+            'tournament'  => $tournament,
+            'team'        => $team,
+            'isSuperTeam' => $isSuperTeam,
+            'matches'     => $matches,
+        ]);
+    }
+
+    /**
      * Register multiple teams (or a single team) to a tournament.
      */
     public function register(Request $request, Tournament $tournament)
