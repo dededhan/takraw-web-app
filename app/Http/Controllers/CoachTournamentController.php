@@ -98,7 +98,14 @@ class CoachTournamentController extends Controller
                     $q->where('coach_id', $user->id)->with('members.athletes');
                 },
                 'matches' => function ($q) use ($teamIds, $superTeamIds) {
-                    $q->with(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'sets', 'court'])
+                    $q->with([
+                        'homeTeam.athletes',
+                        'awayTeam.athletes',
+                        'homeSuperTeam.members.athletes',
+                        'awaySuperTeam.members.athletes',
+                        'sets.stats.athlete',
+                        'court'
+                    ])
                       ->where(function ($sub) use ($teamIds, $superTeamIds) {
                           $sub->whereIn('home_team_id', $teamIds)
                               ->orWhereIn('away_team_id', $teamIds)
@@ -110,6 +117,16 @@ class CoachTournamentController extends Controller
             ])
             ->latest('start_date')
             ->get();
+
+        // De-duplicate teams per tournament in case of multiple mode registrations
+        $tournaments->each(function ($t) {
+            if ($t->relationLoaded('teams')) {
+                $t->setRelation('teams', $t->teams->unique('id')->values());
+            }
+            if ($t->relationLoaded('superTeams')) {
+                $t->setRelation('superTeams', $t->superTeams->unique('id')->values());
+            }
+        });
 
         $athleteAwards = $performanceService->getCoachAthleteAwards($user->id);
 
