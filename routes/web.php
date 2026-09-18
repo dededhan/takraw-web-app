@@ -72,6 +72,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/pools/{pool}/assign-team', [PoolController::class, 'assignTeam'])->name('pools.assign-team');
         Route::delete('/pools/{pool}/teams/{team}', [PoolController::class, 'removeTeam'])->name('pools.remove-team');
         Route::delete('/pools/{pool}', [PoolController::class, 'destroy'])->name('pools.destroy');
+        Route::post('/tournaments/{tournament}/pools/rename-bracket', [PoolController::class, 'renameBracket'])->name('pools.rename-bracket');
 
         // ─── Master Schedule ──────────────────────────────
         Route::prefix('tournaments/{tournament}')->name('tournaments.')->group(function () {

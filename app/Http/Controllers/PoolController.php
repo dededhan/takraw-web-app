@@ -264,6 +264,55 @@ class PoolController extends Controller
     }
 
     /**
+     * Rename an existing bracket across pools, bracket matrices, and matches.
+     */
+    public function renameBracket(Request $request, Tournament $tournament)
+    {
+        $validated = $request->validate([
+            'match_mode'        => 'required|in:regu,double,quadrant,team_regu,team_double',
+            'old_bracket_name'  => 'required|string|max:50',
+            'new_bracket_name'  => 'required|string|max:50',
+        ]);
+
+        $oldName = trim($validated['old_bracket_name']);
+        $newName = trim($validated['new_bracket_name']);
+
+        if ($oldName === $newName) {
+            return back()->with('info', 'Nama braket tidak mengalami perubahan.');
+        }
+
+        // Cek apakah newName sudah dipakai di mode yang sama untuk tournament ini
+        $exists = Pool::where('tournament_id', $tournament->id)
+            ->where('match_mode', $validated['match_mode'])
+            ->where('bracket_name', $newName)
+            ->exists();
+
+        if ($exists) {
+            return back()->withErrors(['new_bracket_name' => "Braket dengan nama \"{$newName}\" sudah ada di mode ini!"]);
+        }
+
+        // 1. Update Pools
+        Pool::where('tournament_id', $tournament->id)
+            ->where('match_mode', $validated['match_mode'])
+            ->where('bracket_name', $oldName)
+            ->update(['bracket_name' => $newName]);
+
+        // 2. Update BracketMatrix
+        \App\Models\BracketMatrix::where('tournament_id', $tournament->id)
+            ->where('match_mode', $validated['match_mode'])
+            ->where('bracket_name', $oldName)
+            ->update(['bracket_name' => $newName]);
+
+        // 3. Update Match_ (bracket_group)
+        \App\Models\Match_::where('tournament_id', $tournament->id)
+            ->where('match_mode', $validated['match_mode'])
+            ->where('bracket_group', $oldName)
+            ->update(['bracket_group' => $newName]);
+
+        return back()->with('success', "Nama braket berhasil diubah dari \"{$oldName}\" menjadi \"{$newName}\"!");
+    }
+
+    /**
      * Auto-sync Bracket Matrix untuk struktur multi-bracket.
      */
     public function syncMultiBracketMatrix(Tournament $tournament, string $matchMode, array $bracketsConfig): void

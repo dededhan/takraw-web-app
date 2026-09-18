@@ -27,6 +27,32 @@ export default function BracketMatrix({
     const [saving, setSaving] = useState(false);
     const [flash, setFlash] = useState(null);
 
+    const [editingBracket, setEditingBracket] = useState(null);
+    const [editBracketName, setEditBracketName] = useState('');
+    const [isRenaming, setIsRenaming] = useState(false);
+
+    const handleRenameSubmit = (e) => {
+        e.preventDefault();
+        if (!editingBracket || !editBracketName.trim()) return;
+
+        setIsRenaming(true);
+        router.post(
+            route('pools.rename-bracket', tournament.id),
+            {
+                match_mode: activeTab,
+                old_bracket_name: editingBracket,
+                new_bracket_name: editBracketName.trim(),
+            },
+            {
+                onSuccess: () => {
+                    setEditingBracket(null);
+                    setEditBracketName('');
+                },
+                onFinish: () => setIsRenaming(false),
+            }
+        );
+    };
+
     // Inisialisasi formData: keyed by [mode][bracketName] => Array of stages
     const [formData, setFormData] = useState(() => {
         const initial = {};
@@ -329,11 +355,50 @@ export default function BracketMatrix({
                                 {/* Header Braket */}
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-surface-800">
                                     <div className="space-y-1">
-                                        <div className="flex items-center gap-2.5">
+                                        <div className="flex items-center gap-2.5 flex-wrap">
                                             <span className="text-lg">🏷️</span>
-                                            <h3 className="text-base font-bold text-surface-100">
-                                                {b.bracket_name}
-                                            </h3>
+                                            {editingBracket === b.bracket_name ? (
+                                                <form onSubmit={handleRenameSubmit} className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={editBracketName}
+                                                        onChange={(e) => setEditBracketName(e.target.value)}
+                                                        className="px-2.5 py-1 rounded-lg bg-surface-950 border border-primary-500 text-surface-100 text-xs font-bold focus:ring-1 focus:ring-primary-400"
+                                                        placeholder="Nama braket baru..."
+                                                        autoFocus
+                                                        required
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        disabled={isRenaming || !editBracketName.trim()}
+                                                        className="px-2.5 py-1 rounded-lg bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer"
+                                                    >
+                                                        {isRenaming ? '...' : 'Simpan'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setEditingBracket(null)}
+                                                        className="px-2 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-300 text-xs transition-colors cursor-pointer"
+                                                    >
+                                                        Batal
+                                                    </button>
+                                                </form>
+                                            ) : (
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="text-base font-bold text-surface-100">
+                                                        {b.bracket_name}
+                                                    </h3>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setEditingBracket(b.bracket_name); setEditBracketName(b.bracket_name); }}
+                                                        className="px-2 py-0.5 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-700 text-surface-300 hover:text-surface-100 text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                                        title="Ubah Nama Braket"
+                                                    >
+                                                        <span>✏️</span>
+                                                        <span>Ubah Nama</span>
+                                                    </button>
+                                                </div>
+                                            )}
                                             <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-surface-800 text-primary-300 border border-surface-700">
                                                 {b.pool_count} Pool
                                             </span>

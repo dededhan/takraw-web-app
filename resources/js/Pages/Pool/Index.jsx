@@ -80,10 +80,43 @@ export default function PoolIndex({ tournament }) {
 
     const lockedSubTeamCount = isTeamMode ? 0 : (tournament.teams || []).filter(t => superTeamMemberIds.has(t.id)).length;
 
+    const [editingBracket, setEditingBracket] = useState(null);
+    const [editBracketName, setEditBracketName] = useState('');
+    const [isRenaming, setIsRenaming] = useState(false);
+
     const handleModeChange = (mode) => {
         setSelectedMode(mode);
-        multiBracketForm.setData('match_mode', mode);
+        multiBracketForm.setData({
+            match_mode: mode,
+            brackets: [
+                { name: 'Bracket 1', pool_count: 2, keyword: '' },
+                { name: 'Bracket 2', pool_count: 2, keyword: '' },
+            ],
+        });
         assignForm.reset();
+        setEditingBracket(null);
+    };
+
+    const handleRenameSubmit = (e) => {
+        e.preventDefault();
+        if (!editingBracket || !editBracketName.trim()) return;
+
+        setIsRenaming(true);
+        router.post(
+            route('pools.rename-bracket', tournament.id),
+            {
+                match_mode: selectedMode,
+                old_bracket_name: editingBracket,
+                new_bracket_name: editBracketName.trim(),
+            },
+            {
+                onSuccess: () => {
+                    setEditingBracket(null);
+                    setEditBracketName('');
+                },
+                onFinish: () => setIsRenaming(false),
+            }
+        );
     };
 
     const addBracket = () => {
@@ -317,6 +350,19 @@ export default function PoolIndex({ tournament }) {
                                                         className="w-full px-3 py-2 rounded-xl bg-surface-900 border border-surface-700 text-surface-100 text-xs font-bold focus:border-purple-500 transition-colors"
                                                         required
                                                     />
+                                                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                                        <span className="text-[10px] text-surface-500">Pilihan cepat:</span>
+                                                        {['Putra', 'Putri', `${currentCfg.label.replace('Mode ', '')} Putra`, `${currentCfg.label.replace('Mode ', '')} Putri`, `Bracket ${idx + 1}`].map((preset) => (
+                                                            <button
+                                                                key={preset}
+                                                                type="button"
+                                                                onClick={() => updateBracket(idx, 'name', preset)}
+                                                                className="text-[10px] px-1.5 py-0.5 rounded bg-surface-900 hover:bg-purple-600/30 hover:text-purple-200 text-surface-400 transition-colors cursor-pointer border border-surface-800"
+                                                            >
+                                                                {preset}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
 
                                                 {/* Keyword Filter */}
@@ -441,10 +487,50 @@ export default function PoolIndex({ tournament }) {
                         /* Grouped by Bracket Name */
                         Object.entries(poolsByBracket).map(([bName, bPools]) => (
                             <div key={bName} className="rounded-2xl border border-purple-500/20 bg-surface-900/40 p-5 space-y-4 shadow-sm">
-                                <div className="flex items-center justify-between pb-2 border-b border-surface-800">
-                                    <h3 className="text-sm font-extrabold text-purple-300 flex items-center gap-2 uppercase tracking-wide">
-                                        <span>🏆</span> {bName}
-                                    </h3>
+                                <div className="flex items-center justify-between pb-2 border-b border-surface-800 flex-wrap gap-2">
+                                    {editingBracket === bName ? (
+                                        <form onSubmit={handleRenameSubmit} className="flex items-center gap-2 flex-1 max-w-md">
+                                            <span className="text-base">🏆</span>
+                                            <input
+                                                type="text"
+                                                value={editBracketName}
+                                                onChange={(e) => setEditBracketName(e.target.value)}
+                                                className="px-2.5 py-1 rounded-lg bg-surface-950 border border-purple-500 text-purple-100 text-xs font-bold focus:ring-1 focus:ring-purple-400 flex-1"
+                                                placeholder="Nama braket baru..."
+                                                autoFocus
+                                                required
+                                            />
+                                            <button
+                                                type="submit"
+                                                disabled={isRenaming || !editBracketName.trim()}
+                                                className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer"
+                                            >
+                                                {isRenaming ? '...' : 'Simpan'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingBracket(null)}
+                                                className="px-2 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-300 text-xs transition-colors cursor-pointer"
+                                            >
+                                                Batal
+                                            </button>
+                                        </form>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-sm font-extrabold text-purple-300 flex items-center gap-2 uppercase tracking-wide">
+                                                <span>🏆</span> {bName}
+                                            </h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setEditingBracket(bName); setEditBracketName(bName); }}
+                                                className="px-2 py-0.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 hover:text-purple-100 text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                                title="Ubah Nama Braket"
+                                            >
+                                                <span>✏️</span>
+                                                <span>Ubah Nama</span>
+                                            </button>
+                                        </div>
+                                    )}
                                     <span className="text-xs font-medium text-surface-400 bg-surface-800 px-2.5 py-1 rounded-full">
                                         {bPools.length} Pool
                                     </span>
