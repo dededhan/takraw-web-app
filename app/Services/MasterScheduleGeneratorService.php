@@ -109,21 +109,36 @@ class MasterScheduleGeneratorService
             $stageMap = [];
             foreach ($allMatches as $idx => $m) {
                 $matchNum = $idx + 1;
-                $stageMap[$m->match_mode][$m->stage][$m->bracket_position] = $matchNum;
+                $bGroup = $m->bracket_group ?: 'default';
+                $stageMap[$m->match_mode][$bGroup][$m->stage][$m->bracket_position] = $matchNum;
+                $stageMap[$m->match_mode]['default'][$m->stage][$m->bracket_position] = $matchNum;
+                if ($m->stage === 'quarterfinal') {
+                    $stageMap[$m->match_mode][$bGroup]['round_of_8'][$m->bracket_position] = $matchNum;
+                    $stageMap[$m->match_mode]['default']['round_of_8'][$m->bracket_position] = $matchNum;
+                }
             }
+
+            $allMatrices = BracketMatrix::where('tournament_id', $tournament->id)->get();
+            $matricesByGroup = $allMatrices->groupBy(fn($item) => $item->match_mode . '___' . ($item->bracket_name ?: 'default'));
 
             foreach ($allMatches as $m) {
                 if ($m->stage === 'pool') continue;
 
-                $matrix = BracketMatrix::where('tournament_id', $tournament->id)
-                    ->where('match_mode', $m->match_mode)
+                $bGroup = $m->bracket_group ?: 'default';
+                $groupKey = $m->match_mode . '___' . $bGroup;
+                $groupMatrices = $matricesByGroup->get($groupKey, collect());
+
+                $matrix = $groupMatrices
                     ->where('bracket_stage', $m->stage === 'quarterfinal' ? 'round_of_8' : $m->stage)
                     ->where('bracket_position', $m->bracket_position)
                     ->first();
 
                 if ($matrix) {
-                    $homePlaceholder = $this->formatSourceToLabel($matrix->home_source, $m->match_mode, $stageMap);
-                    $awayPlaceholder = $this->formatSourceToLabel($matrix->away_source, $m->match_mode, $stageMap);
+                    $effHome = $this->resolveEffectiveSource($matrix->home_source, $groupMatrices);
+                    $effAway = $this->resolveEffectiveSource($matrix->away_source, $groupMatrices);
+
+                    $homePlaceholder = $this->formatSourceToLabel($effHome, $m->match_mode, $stageMap, $bGroup);
+                    $awayPlaceholder = $this->formatSourceToLabel($effAway, $m->match_mode, $stageMap, $bGroup);
                     $m->update([
                         'home_placeholder' => $homePlaceholder,
                         'away_placeholder' => $awayPlaceholder,
@@ -345,10 +360,14 @@ class MasterScheduleGeneratorService
             ->orderBy('bracket_position')
             ->get();
 
-        // Kelompokkan per mode
-        $matrixByMode = $matrices->groupBy('match_mode');
+        // Kelompokkan per grup braket (mode + nama braket) agar multi-braket tidak saling menimpa
+        $matrixByGroup = $matrices->groupBy(fn($item) => $item->match_mode . '___' . ($item->bracket_name ?: 'default'));
 
-        foreach ($matrixByMode as $mode => $modeMatrices) {
+        foreach ($matrixByGroup as $groupKey => $groupMatrices) {
+            $firstMatrix = $groupMatrices->first();
+            $mode        = $firstMatrix->match_mode;
+            $bracketName = $firstMatrix->bracket_name;
+
             // Cari slot pool terakhir untuk mode ini (dependency chain)
             $lastPoolSlot = $this->getLastPoolSlotForMode($tournament, $mode);
             $afterSlotId  = $lastPoolSlot?->id;
@@ -357,7 +376,7 @@ class MasterScheduleGeneratorService
             $previousStageMatches = [];
 
             $stageOrder = ['round_of_32', 'round_of_16', 'round_of_8', 'semifinal', 'third_place', 'final'];
-            $stageGroups = $modeMatrices->groupBy('bracket_stage');
+            $stageGroups = $groupMatrices->groupBy('bracket_stage');
 
             // LANGKAH 1: Buat Record Matches dari Final ke Belakang (agar next_match_id terisi)
             $createdMatches = [];
@@ -367,11 +386,23 @@ class MasterScheduleGeneratorService
                 }
 
                 foreach ($stageGroups[$stage] as $matrix) {
-                    $nextMatchId = $this->resolveNextMatchId($stage, $matrix->bracket_position, $previousStageMatches);
-                    $homePlaceholder = $this->sourceToBracketLabel($matrix->home_source);
-                    $awayPlaceholder = $this->sourceToBracketLabel($matrix->away_source);
-                    $isTeamMode = in_array($mode, ['team_regu', 'team_double']);
-                    $matchStage = ($stage === 'round_of_8') ? 'quarterfinal' : $stage;
+                    // JIKA SALAH SATU ATAU KEDUA SISI BYE: JANGAN BUAT MATCH DI DATABASE!
+                    // Tim yang mendapat BYE lolos otomatis ke babak berikutnya tanpa tanding di jadwal.
+                    $homeIsBye = strtolower(trim($matrix->home_source)) === 'bye';
+                    $awayIsBye = strtolower(trim($matrix->away_source)) === 'bye';
+                    if ($homeIsBye || $awayIsBye) {
+                        continue;
+                    }
+
+                    // Resolusi sumber efektif (jika babak sebelumnya adalah BYE, ambil tim yang lolos otomatis)
+                    $effHome = $this->resolveEffectiveSource($matrix->home_source, $groupMatrices);
+                    $effAway = $this->resolveEffectiveSource($matrix->away_source, $groupMatrices);
+
+                    $nextMatchId     = $this->resolveNextMatchId($stage, $matrix->bracket_position, $previousStageMatches);
+                    $homePlaceholder = $this->sourceToBracketLabel($effHome);
+                    $awayPlaceholder = $this->sourceToBracketLabel($effAway);
+                    $isTeamMode      = in_array($mode, ['team_regu', 'team_double']);
+                    $matchStage      = ($stage === 'round_of_8') ? 'quarterfinal' : $stage;
 
                     $match = Match_::create([
                         'tournament_id'    => $tournament->id,
@@ -399,6 +430,7 @@ class MasterScheduleGeneratorService
             foreach ($forwardStages as $stage) {
                 $stageMatches = Match_::where('tournament_id', $tournament->id)
                     ->where('match_mode', $mode)
+                    ->when($bracketName, fn($q) => $q->where('bracket_group', $bracketName))
                     ->where('stage', $stage)
                     ->orderBy('bracket_position')
                     ->get();
@@ -781,6 +813,53 @@ class MasterScheduleGeneratorService
             ?? $lastMatch->timeSlot;
     }
 
+    /**
+     * Resolve effective source string through any BYE matches.
+     * If source points to winner of a match that was a BYE (e.g. winner_r16_1 where R16 #1 had Juara Pool A vs BYE),
+     * resolve directly to that advancing team (e.g. 'pool_A_rank_1').
+     */
+    protected function resolveEffectiveSource(string $source, Collection $bracketMatrices): string
+    {
+        $parsed = BracketMatrix::parseSource($source);
+        if ($parsed['type'] !== 'winner') {
+            return $source;
+        }
+
+        $stage = match ($parsed['stage'] ?? null) {
+            'round_of_32', 'r32' => 'round_of_32',
+            'round_of_16', 'r16' => 'round_of_16',
+            'quarterfinal', 'qf', 'round_of_8' => 'round_of_8',
+            'semifinal', 'sf' => 'semifinal',
+            default => null,
+        };
+
+        if (!$stage) {
+            return $source;
+        }
+
+        $pos = (int) ($parsed['position'] ?? 0);
+        $targetMatrix = $bracketMatrices->first(function ($m) use ($stage, $pos) {
+            return $m->bracket_stage === $stage && (int) $m->bracket_position === $pos;
+        });
+
+        if (!$targetMatrix) {
+            return $source;
+        }
+
+        $homeIsBye = strtolower(trim($targetMatrix->home_source)) === 'bye';
+        $awayIsBye = strtolower(trim($targetMatrix->away_source)) === 'bye';
+
+        if ($awayIsBye && !$homeIsBye) {
+            return $this->resolveEffectiveSource($targetMatrix->home_source, $bracketMatrices);
+        }
+
+        if ($homeIsBye && !$awayIsBye) {
+            return $this->resolveEffectiveSource($targetMatrix->away_source, $bracketMatrices);
+        }
+
+        return $source;
+    }
+
     protected function resolveNextMatchId(string $stage, int $position, array $previousStageMatches): ?int
     {
         $nextStageMap = [
@@ -797,7 +876,11 @@ class MasterScheduleGeneratorService
         $nextStage  = $nextStageMap[$stage];
         $nextPos    = (int) ceil($position / 2); // QF1,QF2 → SF1; QF3,QF4 → SF2
 
-        return $previousStageMatches[$nextStage][$nextPos] ?? null;
+        if (isset($previousStageMatches[$nextStage][$nextPos])) {
+            return $previousStageMatches[$nextStage][$nextPos];
+        }
+
+        return $this->resolveNextMatchId($nextStage, $nextPos, $previousStageMatches);
     }
 
     /**
@@ -834,9 +917,17 @@ class MasterScheduleGeneratorService
         };
     }
 
-    protected function formatSourceToLabel(string $source, string $mode, array $stageMap): string
+    protected function formatSourceToLabel(string $source, string $mode, array $stageMap, ?string $bracketGroup = null): string
     {
         $parsed = BracketMatrix::parseSource($source);
+        $bGroup = $bracketGroup ?: 'default';
+
+        $getMatchNum = function (string $stageKey, int $pos) use ($stageMap, $mode, $bGroup) {
+            return $stageMap[$mode][$bGroup][$stageKey][$pos]
+                ?? $stageMap[$mode]['default'][$stageKey][$pos]
+                ?? ($stageMap[$mode][$stageKey][$pos] ?? null);
+        };
+
         return match ($parsed['type']) {
             'pool'     => match ((int) ($parsed['rank'] ?? 1)) {
                 1 => "Juara Pool {$parsed['pool']}",
@@ -849,25 +940,25 @@ class MasterScheduleGeneratorService
                 : "Runner-up Terbaik",
             'wildcard' => "Wildcard #{$parsed['position']}",
             'winner'   => match ($parsed['stage'] ?? null) {
-                'round_of_32', 'r32' => isset($stageMap[$mode]['round_of_32'][$parsed['position']])
-                    ? "Pemenang Match #" . $stageMap[$mode]['round_of_32'][$parsed['position']]
+                'round_of_32', 'r32' => ($num = $getMatchNum('round_of_32', $parsed['position']))
+                    ? "Pemenang Match #{$num}"
                     : "Pemenang R32 #{$parsed['position']}",
-                'round_of_16', 'r16' => isset($stageMap[$mode]['round_of_16'][$parsed['position']])
-                    ? "Pemenang Match #" . $stageMap[$mode]['round_of_16'][$parsed['position']]
+                'round_of_16', 'r16' => ($num = $getMatchNum('round_of_16', $parsed['position']))
+                    ? "Pemenang Match #{$num}"
                     : "Pemenang R16 #{$parsed['position']}",
-                'quarterfinal', 'qf', 'round_of_8' => isset($stageMap[$mode]['quarterfinal'][$parsed['position']])
-                    ? "Pemenang Match #" . $stageMap[$mode]['quarterfinal'][$parsed['position']]
+                'quarterfinal', 'qf', 'round_of_8' => ($num = ($getMatchNum('quarterfinal', $parsed['position']) ?? $getMatchNum('round_of_8', $parsed['position'])))
+                    ? "Pemenang Match #{$num}"
                     : "Pemenang QF #{$parsed['position']}",
-                'semifinal', 'sf'  => isset($stageMap[$mode]['semifinal'][$parsed['position']])
-                    ? "Pemenang Match #" . $stageMap[$mode]['semifinal'][$parsed['position']]
+                'semifinal', 'sf'  => ($num = $getMatchNum('semifinal', $parsed['position']))
+                    ? "Pemenang Match #{$num}"
                     : "Pemenang SF #{$parsed['position']}",
-                default => isset($parsed['position']) && isset($stageMap[$mode][$parsed['position']])
-                    ? "Pemenang Match #" . $stageMap[$mode][$parsed['position']]
+                default => isset($parsed['position']) && ($num = $getMatchNum($parsed['stage'] ?? '', $parsed['position']))
+                    ? "Pemenang Match #{$num}"
                     : "Pemenang Match #" . ($parsed['position'] ?? '?'),
             },
             'loser'    => match ($parsed['stage'] ?? null) {
-                'semifinal', 'sf' => isset($stageMap[$mode]['semifinal'][$parsed['position']])
-                    ? "Kalah Match #" . $stageMap[$mode]['semifinal'][$parsed['position']]
+                'semifinal', 'sf' => ($num = $getMatchNum('semifinal', $parsed['position']))
+                    ? "Kalah Match #{$num}"
                     : "Kalah SF #{$parsed['position']}",
                 default => "Kalah Match #" . ($parsed['position'] ?? '?'),
             },

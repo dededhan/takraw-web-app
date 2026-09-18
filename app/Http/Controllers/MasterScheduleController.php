@@ -268,6 +268,7 @@ class MasterScheduleController extends Controller
         ]);
 
         // Load SELURUH matches untuk semua hari (diurutkan kronologis dengan nomor match start dari 1)
+        // Match yang lawannya BYE tidak ditampilkan di master schedule karena lolos otomatis
         $rawMatches = Match_::where('tournament_id', $tournament->id)
             ->with([
                 'homeTeam', 'awayTeam', 'referee',
@@ -275,6 +276,14 @@ class MasterScheduleController extends Controller
                 'court', 'timeSlot',
                 'conflicts' => fn($q) => $q->whereNull('resolved_at'),
             ])
+            ->where(function ($q) {
+                $q->whereNull('home_placeholder')
+                  ->orWhereRaw("UPPER(TRIM(home_placeholder)) != 'BYE'");
+            })
+            ->where(function ($q) {
+                $q->whereNull('away_placeholder')
+                  ->orWhereRaw("UPPER(TRIM(away_placeholder)) != 'BYE'");
+            })
             ->orderBy('day_number')
             ->orderBy('time_slot_id')
             ->orderBy('court_id')
@@ -347,6 +356,14 @@ class MasterScheduleController extends Controller
                 'homeSuperTeam.members', 'awaySuperTeam.members',
                 'court', 'timeSlot',
             ])
+            ->where(function ($q) {
+                $q->whereNull('home_placeholder')
+                  ->orWhereRaw("UPPER(TRIM(home_placeholder)) != 'BYE'");
+            })
+            ->where(function ($q) {
+                $q->whereNull('away_placeholder')
+                  ->orWhereRaw("UPPER(TRIM(away_placeholder)) != 'BYE'");
+            })
             ->orderBy('day_number')
             ->orderBy('time_slot_id')
             ->orderBy('court_id')
@@ -382,10 +399,13 @@ class MasterScheduleController extends Controller
         $stageMap = [];
         foreach ($matchesCollection as $idx => $m) {
             $matchNum = $idx + 1;
+            $bGroup = $m->bracket_group ?: 'default';
             if ($m->stage && $m->bracket_position) {
-                $stageMap[$m->match_mode][$m->stage][$m->bracket_position] = $matchNum;
+                $stageMap[$m->match_mode][$bGroup][$m->stage][$m->bracket_position] = $matchNum;
+                $stageMap[$m->match_mode]['default'][$m->stage][$m->bracket_position] = $matchNum;
                 if ($m->stage === 'quarterfinal') {
-                    $stageMap[$m->match_mode]['round_of_8'][$m->bracket_position] = $matchNum;
+                    $stageMap[$m->match_mode][$bGroup]['round_of_8'][$m->bracket_position] = $matchNum;
+                    $stageMap[$m->match_mode]['default']['round_of_8'][$m->bracket_position] = $matchNum;
                 }
             }
         }
@@ -422,22 +442,47 @@ class MasterScheduleController extends Controller
             return 'TBD';
         }
 
-        $mode = $match->match_mode;
+        $mode   = $match->match_mode;
+        $bGroup = $match->bracket_group ?: 'default';
+
+        $getMatchNum = function (string $stageKey, int $pos) use ($stageMap, $mode, $bGroup) {
+            return $stageMap[$mode][$bGroup][$stageKey][$pos]
+                ?? $stageMap[$mode]['default'][$stageKey][$pos]
+                ?? ($stageMap[$mode][$stageKey][$pos] ?? null);
+        };
+
+        // Cek pola winner / pemenang R32
+        if (preg_match('/(?:winner_r32_|winner\s*r32\s*#?|pemenang\s*r32\s*#?|pemenang\s*32\s*besar\s*#?)(\d+)/i', $raw, $mat)) {
+            $pos = (int) $mat[1];
+            if ($num = $getMatchNum('round_of_32', $pos)) {
+                return "Pemenang Match #{$num}";
+            }
+            return "Pemenang R32 #{$pos}";
+        }
+
+        // Cek pola winner / pemenang R16
+        if (preg_match('/(?:winner_r16_|winner\s*r16\s*#?|pemenang\s*r16\s*#?|pemenang\s*16\s*besar\s*#?)(\d+)/i', $raw, $mat)) {
+            $pos = (int) $mat[1];
+            if ($num = $getMatchNum('round_of_16', $pos)) {
+                return "Pemenang Match #{$num}";
+            }
+            return "Pemenang R16 #{$pos}";
+        }
 
         // Cek pola winner / pemenang QF
-        if (preg_match('/(?:winner_qf_|winner\s*qf\s*#?|pemenang\s*qf\s*#?)(\d+)/i', $raw, $mat)) {
+        if (preg_match('/(?:winner_qf_|winner\s*qf\s*#?|pemenang\s*qf\s*#?|pemenang\s*8\s*besar\s*#?)(\d+)/i', $raw, $mat)) {
             $pos = (int) $mat[1];
-            if (isset($stageMap[$mode]['quarterfinal'][$pos])) {
-                return "Pemenang Match #" . $stageMap[$mode]['quarterfinal'][$pos];
+            if ($num = ($getMatchNum('quarterfinal', $pos) ?? $getMatchNum('round_of_8', $pos))) {
+                return "Pemenang Match #{$num}";
             }
             return "Pemenang QF #{$pos}";
         }
 
         // Cek pola winner / pemenang SF
-        if (preg_match('/(?:winner_sf_|winner\s*sf\s*#?|pemenang\s*sf\s*#?)(\d+)/i', $raw, $mat)) {
+        if (preg_match('/(?:winner_sf_|winner\s*sf\s*#?|pemenang\s*sf\s*#?|pemenang\s*semifinal\s*#?)(\d+)/i', $raw, $mat)) {
             $pos = (int) $mat[1];
-            if (isset($stageMap[$mode]['semifinal'][$pos])) {
-                return "Pemenang Match #" . $stageMap[$mode]['semifinal'][$pos];
+            if ($num = $getMatchNum('semifinal', $pos)) {
+                return "Pemenang Match #{$num}";
             }
             return "Pemenang SF #{$pos}";
         }
@@ -445,8 +490,8 @@ class MasterScheduleController extends Controller
         // Cek pola loser / kalah SF (perebutan juara 3)
         if (preg_match('/(?:loser_sf_|loser\s*sf\s*#?|kalah\s*sf\s*#?)(\d+)/i', $raw, $mat)) {
             $pos = (int) $mat[1];
-            if (isset($stageMap[$mode]['semifinal'][$pos])) {
-                return "Kalah Match #" . $stageMap[$mode]['semifinal'][$pos];
+            if ($num = $getMatchNum('semifinal', $pos)) {
+                return "Kalah Match #{$num}";
             }
             return "Kalah SF #{$pos}";
         }
