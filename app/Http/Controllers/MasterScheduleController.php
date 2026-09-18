@@ -123,6 +123,9 @@ class MasterScheduleController extends Controller
             'modes.*'                  => 'in:regu,double,quadrant,team_regu,team_double',
             'pool_counts'              => 'required|array',
             'pool_counts.*'            => 'integer|min:1|max:16',
+            'extra_breaks'             => 'nullable|array',
+            'extra_breaks.*.after_session'    => 'required|integer|min:1',
+            'extra_breaks.*.duration_minutes' => 'required|integer|min:1|max:180',
             'day_overrides'            => 'nullable|array',
             'day_overrides.*.session_start_time'       => 'nullable|date_format:H:i',
             'day_overrides.*.session_end_time'         => 'nullable|date_format:H:i',
@@ -130,6 +133,9 @@ class MasterScheduleController extends Controller
             'day_overrides.*.ishoma_start_time'        => 'nullable|date_format:H:i',
             'day_overrides.*.ishoma_end_time'          => 'nullable|date_format:H:i',
             'day_overrides.*.session_duration_minutes' => 'nullable|integer|min:10|max:180',
+            'day_overrides.*.extra_breaks'             => 'nullable|array',
+            'day_overrides.*.extra_breaks.*.after_session'    => 'required|integer|min:1',
+            'day_overrides.*.extra_breaks.*.duration_minutes' => 'required|integer|min:1|max:180',
         ]);
 
         $breakDuration = isset($validated['break_duration_minutes']) ? (int) $validated['break_duration_minutes'] : 0;
@@ -141,6 +147,10 @@ class MasterScheduleController extends Controller
             [$eh, $em] = explode(':', $validated['ishoma_end_time']);
             $ishomaMinutes = ((int)$eh * 60 + (int)$em) - ((int)$sh * 60 + (int)$sm);
         }
+
+        $extraBreaks = !empty($validated['extra_breaks'])
+            ? array_values(array_filter($validated['extra_breaks'], fn($b) => !empty($b['after_session']) && !empty($b['duration_minutes'])))
+            : null;
 
         // Update konfigurasi turnamen
         $tournament->update([
@@ -154,6 +164,7 @@ class MasterScheduleController extends Controller
             'ishoma_end_time'          => $validated['ishoma_end_time'] ? $validated['ishoma_end_time'] . ':00' : null,
             'ishoma_duration_minutes'  => $ishomaMinutes,
             'day_overrides'            => !empty($validated['day_overrides']) ? $validated['day_overrides'] : null,
+            'extra_breaks'             => $extraBreaks,
         ]);
 
         // Sync tournament modes

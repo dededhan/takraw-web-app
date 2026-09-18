@@ -113,9 +113,21 @@ class TimeSlotGeneratorService
             ? $startDate->copy()->setTimeFromTimeString($ishomaEndTime)
             : null;
 
-        $current    = $sessionStart->copy();
-        $slotNumber = 1;
-        $ishomaInserted = false;
+        // Konfigurasi Break Khusus Antar Sesi
+        $extraBreaks = $override['extra_breaks'] ?? $tournament->extra_breaks ?? [];
+        $breaksBySession = [];
+        if (is_array($extraBreaks)) {
+            foreach ($extraBreaks as $eb) {
+                if (!empty($eb['after_session']) && !empty($eb['duration_minutes'])) {
+                    $breaksBySession[(int)$eb['after_session']] = (int)$eb['duration_minutes'];
+                }
+            }
+        }
+
+        $current           = $sessionStart->copy();
+        $slotNumber        = 1;
+        $matchSessionIndex = 0;
+        $ishomaInserted    = false;
 
         while ($current < $sessionEnd) {
             // ─── Cek ISHOMA ──────────────────────────────────
@@ -152,6 +164,7 @@ class TimeSlotGeneratorService
             }
 
             // ─── Insert slot match ────────────────────────────
+            $matchSessionIndex++;
             $label = $current->format('H:i') . ' - ' . $slotEnd->format('H:i');
             $slots->push(TimeSlot::create([
                 'tournament_id' => $tournament->id,
@@ -163,8 +176,31 @@ class TimeSlotGeneratorService
                 'label'         => $label,
             ]));
 
-            // Geser ke slot berikutnya (slot + break)
-            $current->addMinutes($sessionDuration + $breakDuration);
+            // Geser ke slot berikutnya (slot + break reguler)
+            $current = $slotEnd->copy()->addMinutes($breakDuration);
+
+            // ─── Cek Istirahat Break Khusus Antar Sesi ─────────
+            if (isset($breaksBySession[$matchSessionIndex])) {
+                $extraDur = $breaksBySession[$matchSessionIndex];
+                if ($extraDur > 0 && $current < $sessionEnd) {
+                    $breakStart = $current->copy();
+                    $breakEnd   = $breakStart->copy()->addMinutes($extraDur);
+                    if ($breakEnd > $sessionEnd) {
+                        $breakEnd = $sessionEnd->copy();
+                    }
+                    $breakLabel = 'Break ' . $breakStart->format('H:i') . ' - ' . $breakEnd->format('H:i');
+                    $slots->push(TimeSlot::create([
+                        'tournament_id' => $tournament->id,
+                        'day_number'    => $dayNumber,
+                        'slot_number'   => $slotNumber++,
+                        'start_time'    => $breakStart,
+                        'end_time'      => $breakEnd,
+                        'slot_type'     => 'break',
+                        'label'         => $breakLabel,
+                    ]));
+                    $current = $breakEnd->copy();
+                }
+            }
         }
 
         return $slots;
@@ -208,10 +244,23 @@ class TimeSlotGeneratorService
                 $ishomaMinutes = $iEnd->diffInMinutes($iStart);
             }
 
-            $netMinutes = $totalMinutes - $ishomaMinutes;
+            // Durasi break khusus antar sesi
+            $extraBreaks = $override['extra_breaks'] ?? $tournament->extra_breaks ?? [];
+            $extraBreakMinutes = 0;
+            $extraBreakCount = 0;
+            if (is_array($extraBreaks)) {
+                foreach ($extraBreaks as $eb) {
+                    if (!empty($eb['duration_minutes'])) {
+                        $extraBreakMinutes += (int)$eb['duration_minutes'];
+                        $extraBreakCount++;
+                    }
+                }
+            }
+
+            $netMinutes = $totalMinutes - $ishomaMinutes - $extraBreakMinutes;
             $matchSlotsToday = (int) floor($netMinutes / ($slotInterval ?: 1));
             $totalMatchSlots += $matchSlotsToday;
-            $totalAllSlots += $matchSlotsToday + ($hasIshoma ? 1 : 0);
+            $totalAllSlots += $matchSlotsToday + ($hasIshoma ? 1 : 0) + $extraBreakCount;
         }
 
         return [

@@ -25,9 +25,37 @@ const parseTimeToMinutes = (timeStr) => {
 export default function Config({ tournament, modePools = {}, preview: initialPreview }) {
     const [step, setStep] = useState(1);
     const [calcMode, setCalcMode] = useState('auto'); // 'auto' | 'manual'
-    const [sessionsBeforeBreak, setSessionsBeforeBreak] = useState(4);
-    const [ishomaDurationMin, setIshomaDurationMin] = useState(60);
-    const [sessionsAfterBreak, setSessionsAfterBreak] = useState(4);
+
+    // Estimasi awal sesi dari konfigurasi yang ada di turnamen
+    const initBefore = (() => {
+        if (tournament.session_start_time && tournament.ishoma_start_time && tournament.session_duration_minutes) {
+            const diff = parseTimeToMinutes(tournament.ishoma_start_time) - parseTimeToMinutes(tournament.session_start_time);
+            const count = Math.round(diff / tournament.session_duration_minutes);
+            if (count > 0) return count;
+        }
+        return 4;
+    })();
+
+    const initIshoma = tournament.ishoma_duration_minutes || 60;
+
+    const initAfter = (() => {
+        if (tournament.session_end_time && tournament.ishoma_end_time && tournament.session_duration_minutes) {
+            let diff = parseTimeToMinutes(tournament.session_end_time) - parseTimeToMinutes(tournament.ishoma_end_time);
+            if (Array.isArray(tournament.extra_breaks)) {
+                tournament.extra_breaks.forEach(b => { diff -= Number(b.duration_minutes || 0); });
+            }
+            const count = Math.round(diff / tournament.session_duration_minutes);
+            if (count >= 0) return count;
+        }
+        return 4;
+    })();
+
+    const [sessionsBeforeBreak, setSessionsBeforeBreak] = useState(initBefore);
+    const [ishomaDurationMin, setIshomaDurationMin] = useState(initIshoma);
+    const [sessionsAfterBreak, setSessionsAfterBreak] = useState(initAfter);
+    const [hasExtraBreaks, setHasExtraBreaks] = useState(
+        Array.isArray(tournament.extra_breaks) && tournament.extra_breaks.length > 0
+    );
     const [selectedPreviewDay, setSelectedPreviewDay] = useState('default');
     const [customDayPickerOpen, setCustomDayPickerOpen] = useState(false);
 
@@ -41,6 +69,12 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         has_ishoma:               tournament.ishoma_start_time ? true : true,
         ishoma_start_time:        tournament.ishoma_start_time?.slice(0, 5) || '12:00',
         ishoma_end_time:          tournament.ishoma_end_time?.slice(0, 5) || '13:00',
+        extra_breaks: Array.isArray(tournament.extra_breaks) && tournament.extra_breaks.length > 0
+            ? tournament.extra_breaks.map(b => ({
+                after_session: Number(b.after_session || 1),
+                duration_minutes: Number(b.duration_minutes || 10),
+            }))
+            : [],
         day_overrides:            tournament.day_overrides || {},
         modes: (tournament.modes || []).filter(m => m.is_active).map(m => m.match_mode).length > 0
             ? tournament.modes.filter(m => m.is_active).map(m => m.match_mode)
@@ -60,9 +94,19 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         const startMins = parseTimeToMinutes(data.session_start_time || '08:00');
         const sessionDur = Number(data.session_duration_minutes || 50);
 
-        const sBefore = data.has_ishoma ? Math.max(1, Number(sessionsBeforeBreak)) : Math.max(1, Number(sessionsBeforeBreak) + Number(sessionsAfterBreak));
-        const sAfter = data.has_ishoma ? Math.max(1, Number(sessionsAfterBreak)) : 0;
-        const ishomaDur = data.has_ishoma ? Number(ishomaDurationMin) : 0;
+        const sBefore = data.has_ishoma ? Math.max(1, Number(sessionsBeforeBreak || 1)) : Math.max(1, Number(sessionsBeforeBreak || 1) + Number(sessionsAfterBreak || 0));
+        const sAfter = data.has_ishoma ? Math.max(0, Number(sessionsAfterBreak || 0)) : 0;
+        const ishomaDur = data.has_ishoma ? Number(ishomaDurationMin || 0) : 0;
+
+        // Map extra breaks berdasarkan after_session
+        const breaksMap = {};
+        (data.extra_breaks || []).forEach(b => {
+            const sNum = Number(b.after_session);
+            const dur = Number(b.duration_minutes || 0);
+            if (sNum > 0 && dur > 0) {
+                breaksMap[sNum] = dur;
+            }
+        });
 
         const slots = [];
         let currentMins = startMins;
@@ -70,6 +114,7 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
 
         // Morning Sessions
         for (let i = 0; i < sBefore; i++) {
+            const currentSession = slotNum;
             const mStart = currentMins;
             const mEnd = mStart + sessionDur;
             slots.push({
@@ -77,33 +122,53 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                 type: 'match',
                 startTime: formatTime(mStart),
                 endTime: formatTime(mEnd),
-                period: `Pagi (Sesi ${i + 1})`,
+                period: `Pagi (Sesi ${currentSession})`,
             });
             currentMins = mEnd;
+
+            // Cek jika ada break setelah sesi ini
+            if (breaksMap[currentSession]) {
+                const bDur = breaksMap[currentSession];
+                const bStart = currentMins;
+                const bEnd = bStart + bDur;
+                slots.push({
+                    slotNum: null,
+                    type: 'break',
+                    afterSession: currentSession,
+                    startTime: formatTime(bStart),
+                    endTime: formatTime(bEnd),
+                    duration: bDur,
+                    period: `Break Istirahat (${bDur}m)`,
+                });
+                currentMins = bEnd;
+            }
         }
 
         let computedIshomaStart = '';
         let computedIshomaEnd = '';
 
         if (data.has_ishoma) {
-            // Ishoma starts after morning sessions
+            // Ishoma starts after morning sessions (and any break right after morning sessions)
             computedIshomaStart = formatTime(currentMins);
             const ishomaEndMins = currentMins + ishomaDur;
             computedIshomaEnd = formatTime(ishomaEndMins);
 
-            slots.push({
-                slotNum: null,
-                type: 'ishoma',
-                startTime: computedIshomaStart,
-                endTime: computedIshomaEnd,
-                duration: ishomaDur,
-                period: 'ISHOMA / Istirahat',
-            });
+            if (ishomaDur > 0) {
+                slots.push({
+                    slotNum: null,
+                    type: 'ishoma',
+                    startTime: computedIshomaStart,
+                    endTime: computedIshomaEnd,
+                    duration: ishomaDur,
+                    period: 'ISHOMA / Istirahat',
+                });
+            }
 
             currentMins = ishomaEndMins;
 
             // Afternoon Sessions
             for (let i = 0; i < sAfter; i++) {
+                const currentSession = slotNum;
                 const mStart = currentMins;
                 const mEnd = mStart + sessionDur;
                 slots.push({
@@ -111,13 +176,30 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                     type: 'match',
                     startTime: formatTime(mStart),
                     endTime: formatTime(mEnd),
-                    period: `Siang-Sore (Sesi ${sBefore + i + 1})`,
+                    period: `Siang-Sore (Sesi ${currentSession})`,
                 });
                 currentMins = mEnd;
+
+                // Cek jika ada break setelah sesi ini
+                if (breaksMap[currentSession]) {
+                    const bDur = breaksMap[currentSession];
+                    const bStart = currentMins;
+                    const bEnd = bStart + bDur;
+                    slots.push({
+                        slotNum: null,
+                        type: 'break',
+                        afterSession: currentSession,
+                        startTime: formatTime(bStart),
+                        endTime: formatTime(bEnd),
+                        duration: bDur,
+                        period: `Break Istirahat (${bDur}m)`,
+                    });
+                    currentMins = bEnd;
+                }
             }
         }
 
-        // End of day is after the last afternoon slot
+        // End of day is after the last slot
         const computedSessionEnd = formatTime(currentMins);
 
         return {
@@ -148,7 +230,8 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         data.has_ishoma,
         sessionsBeforeBreak,
         ishomaDurationMin,
-        sessionsAfterBreak
+        sessionsAfterBreak,
+        data.extra_breaks,
     ]);
 
     const addCustomDay = (dayNum) => {
@@ -212,6 +295,14 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         const iStart = parseTimeToMinutes(override.ishoma_start_time || data.ishoma_start_time || '12:00');
         const iEnd = parseTimeToMinutes(override.ishoma_end_time || data.ishoma_end_time || '13:00');
 
+        const activeBreaks = override.extra_breaks !== undefined ? override.extra_breaks : data.extra_breaks;
+        const breaksMap = {};
+        (activeBreaks || []).forEach(b => {
+            if (b.after_session && b.duration_minutes) {
+                breaksMap[Number(b.after_session)] = Number(b.duration_minutes);
+            }
+        });
+
         const slots = [];
         let currentMins = sStart;
         let slotNum = 1;
@@ -219,14 +310,17 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
 
         while (currentMins < sEnd) {
             if (hIshoma && !ishomaInserted && currentMins >= iStart) {
-                slots.push({
-                    slotNum: null,
-                    type: 'ishoma',
-                    startTime: formatTime(iStart),
-                    endTime: formatTime(iEnd),
-                    duration: Math.max(0, iEnd - iStart),
-                    period: 'ISHOMA / Istirahat',
-                });
+                const iDur = Math.max(0, iEnd - iStart);
+                if (iDur > 0) {
+                    slots.push({
+                        slotNum: null,
+                        type: 'ishoma',
+                        startTime: formatTime(iStart),
+                        endTime: formatTime(iEnd),
+                        duration: iDur,
+                        period: 'ISHOMA / Istirahat',
+                    });
+                }
                 currentMins = iEnd;
                 ishomaInserted = true;
                 continue;
@@ -240,14 +334,34 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                 continue;
             }
 
+            const currMatchNum = slotNum++;
             slots.push({
-                slotNum: slotNum++,
+                slotNum: currMatchNum,
                 type: 'match',
                 startTime: formatTime(currentMins),
                 endTime: formatTime(slotEnd),
-                period: `Sesi ${slotNum - 1}`,
+                period: `Sesi ${currMatchNum}`,
             });
             currentMins = slotEnd;
+
+            // Extra break di hari override
+            if (breaksMap[currMatchNum]) {
+                const bDur = breaksMap[currMatchNum];
+                const bStart = currentMins;
+                const bEnd = bStart + bDur;
+                if (bEnd <= sEnd) {
+                    slots.push({
+                        slotNum: null,
+                        type: 'break',
+                        afterSession: currMatchNum,
+                        startTime: formatTime(bStart),
+                        endTime: formatTime(bEnd),
+                        duration: bDur,
+                        period: `Break Istirahat (${bDur}m)`,
+                    });
+                    currentMins = bEnd;
+                }
+            }
         }
 
         return slots;
@@ -287,6 +401,12 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
             break_duration_minutes: 0,
             ishoma_start_time: formData.has_ishoma ? formData.ishoma_start_time : null,
             ishoma_end_time:   formData.has_ishoma ? formData.ishoma_end_time : null,
+            extra_breaks:      (formData.extra_breaks || [])
+                .filter(b => Number(b.after_session) > 0 && Number(b.duration_minutes) > 0)
+                .map(b => ({
+                    after_session: Number(b.after_session),
+                    duration_minutes: Number(b.duration_minutes),
+                })),
             day_overrides:     Object.keys(formData.day_overrides || {}).length > 0 ? formData.day_overrides : null,
             pool_counts:       resolvedPoolCounts,
         }));
@@ -295,7 +415,7 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
             preserveScroll: true,
             onError: (errs) => {
                 // If there are errors in step 1 or 2, jump back to appropriate step
-                if (errs.total_days || errs.courts_count || errs.session_start_time || errs.session_end_time || errs.ishoma_start_time || errs.ishoma_end_time || errs.day_overrides) {
+                if (errs.total_days || errs.courts_count || errs.session_start_time || errs.session_end_time || errs.ishoma_start_time || errs.ishoma_end_time || errs.day_overrides || errs.extra_breaks) {
                     setStep(1);
                 } else if (errs.modes || errs.pool_counts) {
                     setStep(2);
@@ -468,91 +588,206 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
 
                                 {data.has_ishoma && (
                                     calcMode === 'auto' ? (
-                                        /* Auto Calculation Session Pickers */
-                                        <div className="space-y-4 pt-4 border-t border-surface-850">
+                                        /* Auto Calculation Session Pickers using Number Inputs */
+                                        <div className="space-y-5 pt-4 border-t border-surface-850">
                                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                 
                                                 {/* Sessions Before Break */}
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-surface-300 mb-1.5">
-                                                        Sesi Sebelum Istirahat (Pagi)
-                                                    </label>
-                                                    <div className="flex gap-1.5 flex-wrap">
-                                                        {[1, 2, 3, 4, 5, 6].map(n => (
-                                                            <button
-                                                                key={n}
-                                                                type="button"
-                                                                onClick={() => setSessionsBeforeBreak(n)}
-                                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                                                                    sessionsBeforeBreak === n
-                                                                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm ring-1 ring-amber-400/30'
-                                                                        : 'bg-surface-900 text-surface-400 border-surface-700 hover:text-surface-200'
-                                                                }`}
-                                                            >
-                                                                {n} Sesi
-                                                            </button>
-                                                        ))}
+                                                <Field
+                                                    label="Sesi Sebelum Istirahat (Pagi)"
+                                                    hint={`→ ISHOMA mulai pk. ${schedule.computedIshomaStart || '-'}`}
+                                                >
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            max={20}
+                                                            value={sessionsBeforeBreak}
+                                                            onChange={e => setSessionsBeforeBreak(Math.max(1, parseInt(e.target.value) || 1))}
+                                                            className="input-field font-mono font-bold pl-3 pr-14 text-amber-300"
+                                                            placeholder="4"
+                                                        />
+                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 font-semibold pointer-events-none">
+                                                            Sesi
+                                                        </span>
                                                     </div>
-                                                    <p className="text-[10px] text-amber-400/80 mt-1 font-mono">
-                                                        → Istirahat mulai pk. <strong>{schedule.computedIshomaStart}</strong>
-                                                    </p>
-                                                </div>
+                                                </Field>
 
                                                 {/* Ishoma Duration */}
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-surface-300 mb-1.5">
-                                                        Durasi Istirahat / ISHOMA
-                                                    </label>
-                                                    <div className="flex gap-1.5 flex-wrap">
-                                                        {[30, 45, 60, 90, 120].map(dur => (
-                                                            <button
-                                                                key={dur}
-                                                                type="button"
-                                                                onClick={() => setIshomaDurationMin(dur)}
-                                                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                                                                    ishomaDurationMin === dur
-                                                                        ? 'bg-primary-500/20 text-primary-300 border-primary-500/50 shadow-sm ring-1 ring-primary-400/30'
-                                                                        : 'bg-surface-900 text-surface-400 border-surface-700 hover:text-surface-200'
-                                                                }`}
-                                                            >
-                                                                {dur}m
-                                                            </button>
-                                                        ))}
+                                                <Field
+                                                    label="Durasi Istirahat / ISHOMA"
+                                                    hint={`→ Selesai istirahat pk. ${schedule.computedIshomaEnd || '-'}`}
+                                                >
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            max={240}
+                                                            step={5}
+                                                            value={ishomaDurationMin}
+                                                            onChange={e => setIshomaDurationMin(Math.max(0, parseInt(e.target.value) || 0))}
+                                                            className="input-field font-mono font-bold pl-3 pr-16 text-primary-300"
+                                                            placeholder="60"
+                                                        />
+                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 font-semibold pointer-events-none">
+                                                            Menit
+                                                        </span>
                                                     </div>
-                                                    <p className="text-[10px] text-primary-400/80 mt-1 font-mono">
-                                                        → Selesai istirahat pk. <strong>{schedule.computedIshomaEnd}</strong>
-                                                    </p>
-                                                </div>
+                                                </Field>
 
                                                 {/* Sessions After Break */}
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-surface-300 mb-1.5">
-                                                        Sesi Setelah Istirahat (Sore)
-                                                    </label>
-                                                    <div className="flex gap-1.5 flex-wrap">
-                                                        {[1, 2, 3, 4, 5, 6].map(n => (
-                                                            <button
-                                                                key={n}
-                                                                type="button"
-                                                                onClick={() => setSessionsAfterBreak(n)}
-                                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                                                                    sessionsAfterBreak === n
-                                                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm ring-1 ring-emerald-400/30'
-                                                                        : 'bg-surface-900 text-surface-400 border-surface-700 hover:text-surface-200'
-                                                                }`}
-                                                            >
-                                                                {n} Sesi
-                                                            </button>
-                                                        ))}
+                                                <Field
+                                                    label="Sesi Setelah Istirahat (Sore)"
+                                                    hint={`→ Selesai hari pk. ${schedule.computedSessionEnd || '-'}`}
+                                                >
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            max={20}
+                                                            value={sessionsAfterBreak}
+                                                            onChange={e => setSessionsAfterBreak(Math.max(0, parseInt(e.target.value) || 0))}
+                                                            className="input-field font-mono font-bold pl-3 pr-14 text-emerald-300"
+                                                            placeholder="4"
+                                                        />
+                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 font-semibold pointer-events-none">
+                                                            Sesi
+                                                        </span>
                                                     </div>
-                                                    <p className="text-[10px] text-emerald-400/80 mt-1 font-mono">
-                                                        → Selesai hari pk. <strong>{schedule.computedSessionEnd}</strong>
-                                                    </p>
+                                                </Field>
+                                            </div>
+
+                                            {/* Extra Break Section */}
+                                            <div className="p-4 rounded-2xl bg-surface-900/90 border border-surface-800 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={hasExtraBreaks}
+                                                            onChange={e => {
+                                                                const checked = e.target.checked;
+                                                                setHasExtraBreaks(checked);
+                                                                if (checked && (!data.extra_breaks || data.extra_breaks.length === 0)) {
+                                                                    const defaultSession = Math.max(1, Math.min(6, (sessionsBeforeBreak || 4) + 2));
+                                                                    setData('extra_breaks', [{ after_session: defaultSession, duration_minutes: 10 }]);
+                                                                } else if (!checked) {
+                                                                    setData('extra_breaks', []);
+                                                                }
+                                                            }}
+                                                            className="w-4 h-4 rounded text-sky-600 bg-surface-950 border-surface-700 focus:ring-sky-500"
+                                                        />
+                                                        <div>
+                                                            <span className="font-bold text-surface-200 text-xs sm:text-sm flex items-center gap-1.5">
+                                                                <span>☕</span>
+                                                                <span>Istirahat Tambahan / Break Antar Sesi (Opsional)</span>
+                                                            </span>
+                                                            <span className="text-[11px] text-surface-400">
+                                                                Sisipkan jeda istirahat khusus (misal 10 menit) di antara dua sesi pertandingan (contoh: antara sesi 6 dan 7)
+                                                            </span>
+                                                        </div>
+                                                    </label>
+
+                                                    {hasExtraBreaks && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const lastSession = data.extra_breaks?.[data.extra_breaks.length - 1]?.after_session || 6;
+                                                                const nextSession = Number(lastSession) + 2;
+                                                                setData('extra_breaks', [
+                                                                    ...(data.extra_breaks || []),
+                                                                    { after_session: nextSession, duration_minutes: 10 }
+                                                                ]);
+                                                            }}
+                                                            className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 text-xs font-bold transition-all flex items-center gap-1 border border-sky-500/30"
+                                                        >
+                                                            <span>➕</span>
+                                                            <span>Tambah Break</span>
+                                                        </button>
+                                                    )}
                                                 </div>
+
+                                                {hasExtraBreaks && (
+                                                    <div className="space-y-2.5 pt-2 border-t border-surface-800/80">
+                                                        {(data.extra_breaks || []).map((brk, idx) => {
+                                                            const totalSessions = schedule.totalMatchSlots || (sessionsBeforeBreak + sessionsAfterBreak);
+                                                            return (
+                                                                <div key={idx} className="p-3 rounded-xl bg-surface-950/80 border border-sky-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                                    <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap flex-1">
+                                                                        <span className="px-2 py-1 rounded-md bg-sky-500/20 text-sky-300 font-mono font-bold text-xs shrink-0">
+                                                                            Break #{idx + 1}
+                                                                        </span>
+
+                                                                        {/* After Session Input */}
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="text-xs text-surface-300 font-semibold whitespace-nowrap">
+                                                                                Setelah Sesi ke-
+                                                                            </span>
+                                                                            <input
+                                                                                type="number"
+                                                                                min={1}
+                                                                                max={Math.max(1, totalSessions)}
+                                                                                value={brk.after_session}
+                                                                                onChange={e => {
+                                                                                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                                                                                    const next = [...data.extra_breaks];
+                                                                                    next[idx] = { ...next[idx], after_session: val };
+                                                                                    setData('extra_breaks', next);
+                                                                                }}
+                                                                                className="w-18 px-2.5 py-1 rounded-lg bg-surface-900 border border-surface-700 text-sky-300 font-mono font-bold text-xs focus:ring-1 focus:ring-sky-500"
+                                                                            />
+                                                                        </div>
+
+                                                                        {/* Duration Minutes Input */}
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="text-xs text-surface-300 font-semibold whitespace-nowrap">
+                                                                                Durasi:
+                                                                            </span>
+                                                                            <input
+                                                                                type="number"
+                                                                                min={1}
+                                                                                max={180}
+                                                                                step={5}
+                                                                                value={brk.duration_minutes}
+                                                                                onChange={e => {
+                                                                                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                                                                                    const next = [...data.extra_breaks];
+                                                                                    next[idx] = { ...next[idx], duration_minutes: val };
+                                                                                    setData('extra_breaks', next);
+                                                                                }}
+                                                                                className="w-18 px-2.5 py-1 rounded-lg bg-surface-900 border border-surface-700 text-sky-300 font-mono font-bold text-xs focus:ring-1 focus:ring-sky-500"
+                                                                            />
+                                                                            <span className="text-xs text-surface-400 font-semibold">Menit</span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Helper Preview & Delete Button */}
+                                                                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                                                                        <span className="text-[11px] font-mono text-sky-300 bg-sky-950/60 px-2.5 py-1 rounded-lg border border-sky-800/60">
+                                                                            ☕ Antara Sesi {brk.after_session} & {Number(brk.after_session) + 1} ({brk.duration_minutes}m)
+                                                                        </span>
+
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                const next = data.extra_breaks.filter((_, i) => i !== idx);
+                                                                                setData('extra_breaks', next);
+                                                                                if (next.length === 0) setHasExtraBreaks(false);
+                                                                            }}
+                                                                            className="p-1.5 rounded-lg text-red-400 hover:text-red-200 hover:bg-red-500/20 transition-all text-xs"
+                                                                            title="Hapus Break"
+                                                                        >
+                                                                            🗑️
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Computed Summary Badges */}
-                                            <div className="mt-4 p-3 rounded-xl bg-surface-900 border border-surface-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                                            <div className="mt-4 p-3 rounded-xl bg-surface-900 border border-surface-800 grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
                                                 <div>
                                                     <span className="text-[10px] text-surface-500 uppercase font-bold block">Mulai Pagi</span>
                                                     <span className="text-xs font-mono font-bold text-surface-200">{data.session_start_time}</span>
@@ -560,6 +795,14 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                                                 <div>
                                                     <span className="text-[10px] text-amber-400 uppercase font-bold block">Waktu ISHOMA</span>
                                                     <span className="text-xs font-mono font-bold text-amber-300">{schedule.computedIshomaStart} – {schedule.computedIshomaEnd}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] text-sky-400 uppercase font-bold block">Break Antar Sesi</span>
+                                                    <span className="text-xs font-mono font-bold text-sky-300">
+                                                        {data.extra_breaks && data.extra_breaks.length > 0
+                                                            ? `${data.extra_breaks.length} Break (${data.extra_breaks.reduce((acc, b) => acc + Number(b.duration_minutes || 0), 0)}m)`
+                                                            : 'Tidak Ada'}
+                                                    </span>
                                                 </div>
                                                 <div>
                                                     <span className="text-[10px] text-emerald-400 uppercase font-bold block">Selesai Hari</span>
@@ -655,13 +898,21 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                                             className={`p-2.5 rounded-xl border text-center transition-all ${
                                                 slot.type === 'ishoma'
                                                     ? 'col-span-2 bg-amber-500/15 border-amber-500/40 text-amber-300 ring-1 ring-amber-400/20'
-                                                    : 'bg-surface-950/80 border-surface-800 text-surface-200'
+                                                    : slot.type === 'break'
+                                                        ? 'col-span-2 bg-sky-500/15 border-sky-500/40 text-sky-300 ring-1 ring-sky-400/20'
+                                                        : 'bg-surface-950/80 border-surface-800 text-surface-200'
                                             }`}
                                         >
                                             <div className="flex items-center justify-between text-[10px] text-surface-400 mb-1 font-bold">
-                                                <span>{slot.type === 'ishoma' ? '🕌 ISHOMA' : `Sesi ${slot.slotNum}`}</span>
-                                                <span className="text-[9px] opacity-75">
+                                                <span>
                                                     {slot.type === 'ishoma'
+                                                        ? '🕌 ISHOMA'
+                                                        : slot.type === 'break'
+                                                            ? `☕ Break (${slot.duration}m)`
+                                                            : `Sesi ${slot.slotNum}`}
+                                                </span>
+                                                <span className="text-[9px] opacity-75">
+                                                    {slot.type === 'ishoma' || slot.type === 'break'
                                                         ? `${slot.duration}m`
                                                         : `${selectedPreviewDay !== 'default' && data.day_overrides?.[selectedPreviewDay]?.session_duration_minutes ? data.day_overrides[selectedPreviewDay].session_duration_minutes : data.session_duration_minutes}m`}
                                                 </span>
@@ -1045,6 +1296,15 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                                 
                                 {data.has_ishoma && (
                                     <SummaryCard icon="🕌" label="Waktu ISHOMA" value={`${data.ishoma_start_time} – ${data.ishoma_end_time}`} note="Serentak semua lapangan" />
+                                )}
+
+                                {data.extra_breaks && data.extra_breaks.length > 0 && (
+                                    <SummaryCard
+                                        icon="☕"
+                                        label="Break Antar Sesi"
+                                        value={`${data.extra_breaks.length} Break`}
+                                        note={data.extra_breaks.map(b => `Sesi ${b.after_session}→${Number(b.after_session)+1} (${b.duration_minutes}m)`).join(', ')}
+                                    />
                                 )}
                                 
                                 <SummaryCard icon="🗓️" label="Slot Pertandingan/Hari" value={`${schedule.totalMatchSlots} Sesi/Lap`} />

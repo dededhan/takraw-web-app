@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'session_duration_minutes', 'break_duration_minutes',
     'ishoma_start_time', 'ishoma_end_time', 'ishoma_duration_minutes',
     'day_overrides',
+    'extra_breaks',
     'schedule_status',
     'registration_code',
 ])]
@@ -41,6 +42,7 @@ class Tournament extends Model
             'break_duration_minutes'   => 'integer',
             'ishoma_duration_minutes'  => 'integer',
             'day_overrides'            => 'array',
+            'extra_breaks'             => 'array',
         ];
     }
 

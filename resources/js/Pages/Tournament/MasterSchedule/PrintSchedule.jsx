@@ -360,6 +360,22 @@ export default function PrintSchedule({
                                                     );
                                                 }
 
+                                                if (slot.slot_type === 'break') {
+                                                    return (
+                                                        <tr key={slot.id} className="bg-sky-50 print:bg-gray-100 text-center font-bold text-[10px]">
+                                                            <td className="border border-black p-1.5 font-mono">
+                                                                {slot.start_time?.slice(0, 5)} - {slot.end_time?.slice(0, 5)}
+                                                            </td>
+                                                            <td
+                                                                colSpan={activeCourts.length}
+                                                                className="border border-black py-1.5 text-sky-900 print:text-black uppercase tracking-wider"
+                                                            >
+                                                                ☕ ISTIRAHAT / BREAK — SELURUH LAPANGAN
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                }
+
                                                 const timeLabel = `${slot.start_time?.slice(0, 5)} - ${slot.end_time?.slice(0, 5)}`;
 
                                                 return (

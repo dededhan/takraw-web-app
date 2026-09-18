@@ -278,21 +278,22 @@ class ConflictDetectorService
     {
         $conflicts = collect();
 
-        // Ambil semua slot ISHOMA
-        $ishomaSlots = TimeSlot::where('tournament_id', $tournament->id)
-            ->where('slot_type', 'ishoma')
+        // Ambil semua slot ISHOMA dan Break
+        $blockedSlots = TimeSlot::where('tournament_id', $tournament->id)
+            ->whereIn('slot_type', ['ishoma', 'break'])
             ->get()
             ->keyBy('id');
 
         foreach ($matches as $match) {
-            if (isset($ishomaSlots[$match->time_slot_id])) {
-                $ishomaLabel = $ishomaSlots[$match->time_slot_id]->label ?? 'ISHOMA';
+            if (isset($blockedSlots[$match->time_slot_id])) {
+                $slotItem = $blockedSlots[$match->time_slot_id];
+                $slotLabel = $slotItem->label ?? ($slotItem->slot_type === 'break' ? 'BREAK' : 'ISHOMA');
                 $conflicts->push(ScheduleConflict::create([
                     'tournament_id' => $tournament->id,
                     'match_id'      => $match->id,
                     'conflict_type' => 'ishoma_overlap',
                     'severity'      => 'error',
-                    'description'   => "Match #{$match->id} ({$match->home_display_name} vs {$match->away_display_name}) dijadwalkan di slot {$ishomaLabel} yang seharusnya diblokir untuk ISHOMA/istirahat.",
+                    'description'   => "Match #{$match->id} ({$match->home_display_name} vs {$match->away_display_name}) dijadwalkan di slot {$slotLabel} yang seharusnya diblokir untuk istirahat/jeda.",
                 ]));
             }
         }

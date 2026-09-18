@@ -1012,6 +1012,7 @@ function SlotRow({
     isDraggable,
 }) {
     const isIshoma = slot.slot_type === 'ishoma';
+    const isBreak = slot.slot_type === 'break';
 
     if (isIshoma) {
         return (
@@ -1022,6 +1023,20 @@ function SlotRow({
                 <div className="flex-1 bg-amber-500/10 border-amber-500/20 flex items-center justify-center gap-3">
                     <span className="text-xs font-bold text-amber-300 uppercase tracking-widest">ISHOMA</span>
                     <span className="text-xs text-amber-400 font-mono">({slot.label})</span>
+                </div>
+            </div>
+        );
+    }
+
+    if (isBreak) {
+        return (
+            <div className="flex border-b border-surface-700/40" style={{ height: slotHeight }}>
+                <div className="w-24 shrink-0 bg-sky-500/10 border-r border-sky-500/20 flex items-center justify-center">
+                    <span className="text-xs text-sky-300 font-bold">☕ BREAK</span>
+                </div>
+                <div className="flex-1 bg-sky-500/10 border-sky-500/20 flex items-center justify-center gap-3">
+                    <span className="text-xs font-bold text-sky-300 uppercase tracking-widest">ISTIRAHAT BREAK</span>
+                    <span className="text-xs text-sky-400 font-mono">({slot.label})</span>
                 </div>
             </div>
         );
