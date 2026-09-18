@@ -44,12 +44,28 @@ class BracketMatrix extends Model
             return ['type' => 'bye'];
         }
 
+        if (str_starts_with($source, 'best_runner_up_')) {
+            return ['type' => 'best_runner_up', 'position' => (int) substr($source, 15)];
+        }
+
+        if ($source === 'best_runner_up') {
+            return ['type' => 'best_runner_up', 'position' => 1];
+        }
+
         if (str_starts_with($source, 'pool_')) {
             // pool_A_rank_1
-            preg_match('/^pool_([A-Z])_rank_(\d+)$/', $source, $m);
+            preg_match('/^pool_([A-Za-z0-9]+)_rank_(\d+)$/', $source, $m);
             if ($m) {
                 return ['type' => 'pool', 'pool' => $m[1], 'rank' => (int) $m[2]];
             }
+        }
+
+        if (str_starts_with($source, 'winner_r32_')) {
+            return ['type' => 'winner', 'stage' => 'round_of_32', 'position' => (int) substr($source, 11)];
+        }
+
+        if (str_starts_with($source, 'winner_r16_')) {
+            return ['type' => 'winner', 'stage' => 'round_of_16', 'position' => (int) substr($source, 11)];
         }
 
         if (str_starts_with($source, 'winner_qf_')) {
@@ -106,8 +122,13 @@ class BracketMatrix extends Model
                 default => "Peringkat {$parsed['rank']} Pool {$parsed['pool']}",
             },
             'bye'      => 'BYE (Langsung Lolos)',
+            'best_runner_up' => isset($parsed['position']) && $parsed['position'] > 1
+                ? "Runner-up Terbaik #{$parsed['position']}"
+                : "Runner-up Terbaik",
             'wildcard' => "Wildcard #{$parsed['position']}",
             'winner'   => match ($parsed['stage'] ?? null) {
+                'round_of_32'  => "Pemenang R32 #{$parsed['position']}",
+                'round_of_16'  => "Pemenang R16 #{$parsed['position']}",
                 'quarterfinal' => "Pemenang QF #{$parsed['position']}",
                 'semifinal'    => "Pemenang SF #{$parsed['position']}",
                 default        => "Pemenang Match #{$parsed['position']}",

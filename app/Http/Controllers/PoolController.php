@@ -323,166 +323,25 @@ class PoolController extends Controller
 
         $bracketNum = 1;
 
+        $matrixController = app(\App\Http\Controllers\BracketMatrixController::class);
+
         foreach ($bracketsConfig as $bCfg) {
             $bracketName = trim($bCfg['name']) ?: "Braket {$bracketNum}";
             $poolCount   = (int) $bCfg['pool_count'];
 
-            if ($poolCount <= 1) {
-                // 1 Pool per bracket -> Full Round Robin (Setengah Kompetisi).
-                // Pemenang bracket ini langsung ditentukan dari poin klasemen akhir (tanpa laga final adu).
-                $bracketNum++;
-                continue;
-            } elseif ($poolCount === 2) {
-                // 2 Pool per bracket -> Semifinal (A1 vs B2, B1 vs A2) + Final
+            $stages = $matrixController->getBracketStages($poolCount);
+            foreach ($stages as $stage) {
                 \App\Models\BracketMatrix::create([
                     'tournament_id'    => $tournament->id,
                     'match_mode'       => $matchMode,
                     'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'semifinal',
-                    'bracket_position' => 1,
-                    'home_source'      => "pool_A_rank_1",
-                    'away_source'      => "pool_B_rank_2",
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'semifinal',
-                    'bracket_position' => 2,
-                    'home_source'      => "pool_B_rank_1",
-                    'away_source'      => "pool_A_rank_2",
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'final',
-                    'bracket_position' => 1,
-                    'home_source'      => 'winner_sf_1',
-                    'away_source'      => 'winner_sf_2',
-                ]);
-            } elseif ($poolCount === 3) {
-                // 3 Pool (ganjil) -> Wildcard / Bye round + Semifinal + Final
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'round_of_8',
-                    'bracket_position' => 1,
-                    'home_source'      => 'pool_A_rank_1',
-                    'away_source'      => 'bye',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'round_of_8',
-                    'bracket_position' => 2,
-                    'home_source'      => 'pool_B_rank_1',
-                    'away_source'      => 'wildcard_1',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'round_of_8',
-                    'bracket_position' => 3,
-                    'home_source'      => 'pool_C_rank_1',
-                    'away_source'      => 'wildcard_2',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'semifinal',
-                    'bracket_position' => 1,
-                    'home_source'      => 'winner_qf_1',
-                    'away_source'      => 'winner_qf_2',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'semifinal',
-                    'bracket_position' => 2,
-                    'home_source'      => 'winner_qf_3',
-                    'away_source'      => 'best_runner_up',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'final',
-                    'bracket_position' => 1,
-                    'home_source'      => 'winner_sf_1',
-                    'away_source'      => 'winner_sf_2',
-                ]);
-            } else {
-                // >= 4 Pool -> QF + SF + Final
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'round_of_8',
-                    'bracket_position' => 1,
-                    'home_source'      => 'pool_A_rank_1',
-                    'away_source'      => 'pool_B_rank_2',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'round_of_8',
-                    'bracket_position' => 2,
-                    'home_source'      => 'pool_C_rank_1',
-                    'away_source'      => 'pool_D_rank_2',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'round_of_8',
-                    'bracket_position' => 3,
-                    'home_source'      => 'pool_B_rank_1',
-                    'away_source'      => 'pool_A_rank_2',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'round_of_8',
-                    'bracket_position' => 4,
-                    'home_source'      => 'pool_D_rank_1',
-                    'away_source'      => 'pool_C_rank_2',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'semifinal',
-                    'bracket_position' => 1,
-                    'home_source'      => 'winner_qf_1',
-                    'away_source'      => 'winner_qf_2',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'semifinal',
-                    'bracket_position' => 2,
-                    'home_source'      => 'winner_qf_3',
-                    'away_source'      => 'winner_qf_4',
-                ]);
-                \App\Models\BracketMatrix::create([
-                    'tournament_id'    => $tournament->id,
-                    'match_mode'       => $matchMode,
-                    'bracket_name'     => $bracketName,
-                    'bracket_stage'    => 'final',
-                    'bracket_position' => 1,
-                    'home_source'      => 'winner_sf_1',
-                    'away_source'      => 'winner_sf_2',
+                    'bracket_stage'    => $stage['bracket_stage'],
+                    'bracket_position' => $stage['bracket_position'],
+                    'home_source'      => $stage['home_source'],
+                    'away_source'      => $stage['away_source'],
                 ]);
             }
+
             $bracketNum++;
         }
     }
@@ -599,60 +458,20 @@ class PoolController extends Controller
         if ($poolCount <= 1) {
             // 1 Pool → Full Round Robin (tidak ada laga adu gugur, juara dari klasemen)
             return;
-        } elseif ($poolCount === 2) {
-            // 2 Pool → Langsung ke Semifinal (A1 vs B2, B1 vs A2)
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'semifinal', 'bracket_position' => 1,
-                'home_source'   => 'pool_A_rank_1', 'away_source' => 'pool_B_rank_2',
-            ]);
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'semifinal', 'bracket_position' => 2,
-                'home_source'   => 'pool_B_rank_1', 'away_source' => 'pool_A_rank_2',
-            ]);
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'final', 'bracket_position' => 1,
-                'home_source'   => 'winner_sf_1', 'away_source' => 'winner_sf_2',
-            ]);
-        } else {
-            // 4 Pool → Quarterfinal (A1 vs B2, C1 vs D2, B1 vs A2, D1 vs C2)
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'round_of_8', 'bracket_position' => 1,
-                'home_source'   => 'pool_A_rank_1', 'away_source' => 'pool_B_rank_2',
-            ]);
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'round_of_8', 'bracket_position' => 2,
-                'home_source'   => 'pool_C_rank_1', 'away_source' => 'pool_D_rank_2',
-            ]);
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'round_of_8', 'bracket_position' => 3,
-                'home_source'   => 'pool_B_rank_1', 'away_source' => 'pool_A_rank_2',
-            ]);
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'round_of_8', 'bracket_position' => 4,
-                'home_source'   => 'pool_D_rank_1', 'away_source' => 'pool_C_rank_2',
-            ]);
+        }
 
+        $matrixController = app(\App\Http\Controllers\BracketMatrixController::class);
+        $stages = $matrixController->getBracketStages($poolCount);
+
+        foreach ($stages as $stage) {
             \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'semifinal', 'bracket_position' => 1,
-                'home_source'   => 'winner_qf_1', 'away_source' => 'winner_qf_2',
-            ]);
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'semifinal', 'bracket_position' => 2,
-                'home_source'   => 'winner_qf_3', 'away_source' => 'winner_qf_4',
-            ]);
-            \App\Models\BracketMatrix::create([
-                'tournament_id' => $tournament->id, 'match_mode' => $matchMode,
-                'bracket_stage' => 'final', 'bracket_position' => 1,
-                'home_source'   => 'winner_sf_1', 'away_source' => 'winner_sf_2',
+                'tournament_id'    => $tournament->id,
+                'match_mode'       => $matchMode,
+                'bracket_name'     => 'Braket 1',
+                'bracket_stage'    => $stage['bracket_stage'],
+                'bracket_position' => $stage['bracket_position'],
+                'home_source'      => $stage['home_source'],
+                'away_source'      => $stage['away_source'],
             ]);
         }
     }

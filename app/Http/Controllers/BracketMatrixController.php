@@ -167,29 +167,30 @@ class BracketMatrixController extends Controller
      *
      * @return array Daftar stage dengan posisi dan sumber tim yang bisa dipilih
      */
-    protected function getBracketStages(int $poolCount): array
+    public function getBracketStages(int $poolCount): array
     {
         $stages = [];
-        $pools  = range('A', chr(64 + max(1, $poolCount)));
+        $pools  = range('A', chr(64 + max(1, min($poolCount, 16))));
 
         if ($poolCount <= 1) {
             // 1 pool → Full Round Robin (Setengah Kompetisi, juara dari klasemen akhir)
             return [];
         } elseif ($poolCount === 2) {
-            // 2 pool → Langsung ke Semifinal + Final
+            // 2 pool → Juara & Runner-up (4 tim) → Semifinal (2 laga) + Final
             $stages[] = $this->makeStage('semifinal', 1, 'pool_A_rank_1', 'pool_B_rank_2');
             $stages[] = $this->makeStage('semifinal', 2, 'pool_B_rank_1', 'pool_A_rank_2');
             $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
         } elseif ($poolCount === 3) {
-            // 3 pool (ganjil) → Wildcard round terlebih dahulu
-            $stages[] = $this->makeStage('round_of_8', 1, 'pool_A_rank_1', 'bye', isOdd: true);
-            $stages[] = $this->makeStage('round_of_8', 2, 'pool_B_rank_1', 'wildcard_1', isOdd: true);
-            $stages[] = $this->makeStage('round_of_8', 3, 'pool_C_rank_1', 'wildcard_2', isOdd: true);
-            $stages[] = $this->makeStage('semifinal', 1, 'winner_pos_1', 'winner_pos_2');
-            $stages[] = $this->makeStage('semifinal', 2, 'winner_pos_3', 'best_runner_up');
+            // 3 pool → Juara & Runner-up (6 tim) → 8 Besar (4 laga, 2 BYE) + SF + Final
+            $stages[] = $this->makeStage('round_of_8', 1, 'pool_A_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_8', 2, 'pool_C_rank_1', 'pool_B_rank_2');
+            $stages[] = $this->makeStage('round_of_8', 3, 'pool_B_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_8', 4, 'pool_A_rank_2', 'pool_C_rank_2');
+            $stages[] = $this->makeStage('semifinal', 1, 'winner_qf_1', 'winner_qf_2');
+            $stages[] = $this->makeStage('semifinal', 2, 'winner_qf_3', 'winner_qf_4');
             $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
         } elseif ($poolCount === 4) {
-            // 4 pool → Quarterfinal + Semifinal + Final
+            // 4 pool → Juara & Runner-up (8 tim) → 8 Besar (4 laga murni tanpa BYE) + SF + Final
             $stages[] = $this->makeStage('round_of_8', 1, 'pool_A_rank_1', 'pool_B_rank_2');
             $stages[] = $this->makeStage('round_of_8', 2, 'pool_C_rank_1', 'pool_D_rank_2');
             $stages[] = $this->makeStage('round_of_8', 3, 'pool_B_rank_1', 'pool_A_rank_2');
@@ -197,19 +198,116 @@ class BracketMatrixController extends Controller
             $stages[] = $this->makeStage('semifinal', 1, 'winner_qf_1', 'winner_qf_2');
             $stages[] = $this->makeStage('semifinal', 2, 'winner_qf_3', 'winner_qf_4');
             $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
+        } elseif ($poolCount === 5) {
+            // 5 pool → Juara & Runner-up (10 tim) → 16 Besar (8 laga, 6 BYE) + 8 Besar (4 laga) + SF + Final
+            $stages[] = $this->makeStage('round_of_16', 1, 'pool_A_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 2, 'pool_C_rank_1', 'pool_D_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 3, 'pool_E_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 4, 'pool_B_rank_2', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 5, 'pool_B_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 6, 'pool_D_rank_1', 'pool_C_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 7, 'pool_A_rank_2', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 8, 'pool_E_rank_2', 'bye');
+            $stages[] = $this->makeStage('round_of_8', 1, 'winner_r16_1', 'winner_r16_2');
+            $stages[] = $this->makeStage('round_of_8', 2, 'winner_r16_3', 'winner_r16_4');
+            $stages[] = $this->makeStage('round_of_8', 3, 'winner_r16_5', 'winner_r16_6');
+            $stages[] = $this->makeStage('round_of_8', 4, 'winner_r16_7', 'winner_r16_8');
+            $stages[] = $this->makeStage('semifinal', 1, 'winner_qf_1', 'winner_qf_2');
+            $stages[] = $this->makeStage('semifinal', 2, 'winner_qf_3', 'winner_qf_4');
+            $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
+        } elseif ($poolCount === 6) {
+            // 6 pool → Juara & Runner-up (12 tim) → 16 Besar (8 laga, 4 BYE) + 8 Besar (4 laga) + SF + Final
+            $stages[] = $this->makeStage('round_of_16', 1, 'pool_A_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 2, 'pool_E_rank_1', 'pool_F_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 3, 'pool_C_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 4, 'pool_B_rank_2', 'pool_D_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 5, 'pool_B_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 6, 'pool_F_rank_1', 'pool_E_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 7, 'pool_D_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 8, 'pool_A_rank_2', 'pool_C_rank_2');
+            $stages[] = $this->makeStage('round_of_8', 1, 'winner_r16_1', 'winner_r16_2');
+            $stages[] = $this->makeStage('round_of_8', 2, 'winner_r16_3', 'winner_r16_4');
+            $stages[] = $this->makeStage('round_of_8', 3, 'winner_r16_5', 'winner_r16_6');
+            $stages[] = $this->makeStage('round_of_8', 4, 'winner_r16_7', 'winner_r16_8');
+            $stages[] = $this->makeStage('semifinal', 1, 'winner_qf_1', 'winner_qf_2');
+            $stages[] = $this->makeStage('semifinal', 2, 'winner_qf_3', 'winner_qf_4');
+            $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
+        } elseif ($poolCount === 7) {
+            // 7 pool → Juara & Runner-up (14 tim) → 16 Besar (8 laga / 8 kotak, 2 BYE) + 8 Besar (4 laga) + SF + Final
+            $stages[] = $this->makeStage('round_of_16', 1, 'pool_A_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 2, 'pool_C_rank_1', 'pool_D_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 3, 'pool_E_rank_1', 'pool_F_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 4, 'pool_G_rank_1', 'pool_B_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 5, 'pool_B_rank_1', 'bye');
+            $stages[] = $this->makeStage('round_of_16', 6, 'pool_D_rank_1', 'pool_C_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 7, 'pool_F_rank_1', 'pool_E_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 8, 'pool_A_rank_2', 'pool_G_rank_2');
+            $stages[] = $this->makeStage('round_of_8', 1, 'winner_r16_1', 'winner_r16_2');
+            $stages[] = $this->makeStage('round_of_8', 2, 'winner_r16_3', 'winner_r16_4');
+            $stages[] = $this->makeStage('round_of_8', 3, 'winner_r16_5', 'winner_r16_6');
+            $stages[] = $this->makeStage('round_of_8', 4, 'winner_r16_7', 'winner_r16_8');
+            $stages[] = $this->makeStage('semifinal', 1, 'winner_qf_1', 'winner_qf_2');
+            $stages[] = $this->makeStage('semifinal', 2, 'winner_qf_3', 'winner_qf_4');
+            $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
+        } elseif ($poolCount === 8) {
+            // 8 pool → Juara & Runner-up (16 tim) → 16 Besar (8 laga / 8 kotak murni) + 8 Besar (4 laga) + SF + Final
+            $stages[] = $this->makeStage('round_of_16', 1, 'pool_A_rank_1', 'pool_B_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 2, 'pool_C_rank_1', 'pool_D_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 3, 'pool_E_rank_1', 'pool_F_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 4, 'pool_G_rank_1', 'pool_H_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 5, 'pool_B_rank_1', 'pool_A_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 6, 'pool_D_rank_1', 'pool_C_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 7, 'pool_F_rank_1', 'pool_E_rank_2');
+            $stages[] = $this->makeStage('round_of_16', 8, 'pool_H_rank_1', 'pool_G_rank_2');
+            $stages[] = $this->makeStage('round_of_8', 1, 'winner_r16_1', 'winner_r16_2');
+            $stages[] = $this->makeStage('round_of_8', 2, 'winner_r16_3', 'winner_r16_4');
+            $stages[] = $this->makeStage('round_of_8', 3, 'winner_r16_5', 'winner_r16_6');
+            $stages[] = $this->makeStage('round_of_8', 4, 'winner_r16_7', 'winner_r16_8');
+            $stages[] = $this->makeStage('semifinal', 1, 'winner_qf_1', 'winner_qf_2');
+            $stages[] = $this->makeStage('semifinal', 2, 'winner_qf_3', 'winner_qf_4');
+            $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
         } else {
-            // 6 atau 8 pool → Round of 16 + QF + SF + Final
-            for ($i = 1; $i <= min($poolCount, 8); $i++) {
-                $homePool = $pools[$i - 1];
-                $awayPool = $pools[$poolCount - $i];
-                $stages[] = $this->makeStage('round_of_16', $i, "pool_{$homePool}_rank_1", "pool_{$awayPool}_rank_2");
+            // 9 s/d 16 pool → Juara & Runner-up (18 s/d 32 tim)
+            // Babak 32 Besar (16 laga / 16 kotak dengan 32 - 2*poolCount BYE) + 16 Besar + 8 Besar + SF + Final
+            $totalTeams = $poolCount * 2;
+            $byeCount   = max(0, 32 - $totalTeams);
+            $byePositions = [1, 9, 5, 13, 3, 11, 7, 15, 2, 10, 6, 14, 4, 12, 8, 16];
+            $slotsWithBye = array_slice($byePositions, 0, $byeCount);
+
+            // Pool pairs
+            for ($pos = 1; $pos <= 16; $pos++) {
+                $poolIdx = ($pos - 1) % $poolCount;
+                $pLetter = $pools[$poolIdx];
+                $oppIdx  = ($poolIdx + 1) % $poolCount;
+                $oppLetter = $pools[$oppIdx];
+
+                $home = "pool_{$pLetter}_rank_1";
+                if (in_array($pos, $slotsWithBye)) {
+                    $away = 'bye';
+                } else {
+                    $away = "pool_{$oppLetter}_rank_2";
+                }
+                $stages[] = $this->makeStage('round_of_32', $pos, $home, $away);
             }
-            for ($i = 1; $i <= 4; $i++) {
-                $stages[] = $this->makeStage('round_of_8', $i, "winner_r16_pos_{$i}", "winner_r16_pos_" . ($i + 4));
+
+            // 16 Besar (8 laga)
+            for ($p = 1; $p <= 8; $p++) {
+                $h = ($p * 2) - 1;
+                $a = $p * 2;
+                $stages[] = $this->makeStage('round_of_16', $p, "winner_r32_{$h}", "winner_r32_{$a}");
             }
-            for ($i = 1; $i <= 2; $i++) {
-                $stages[] = $this->makeStage('semifinal', $i, "winner_qf_pos_{$i}", "winner_qf_pos_" . ($i + 2));
-            }
+
+            // 8 Besar (QF 1..4)
+            $stages[] = $this->makeStage('round_of_8', 1, 'winner_r16_1', 'winner_r16_2');
+            $stages[] = $this->makeStage('round_of_8', 2, 'winner_r16_3', 'winner_r16_4');
+            $stages[] = $this->makeStage('round_of_8', 3, 'winner_r16_5', 'winner_r16_6');
+            $stages[] = $this->makeStage('round_of_8', 4, 'winner_r16_7', 'winner_r16_8');
+
+            // Semifinal 1..2
+            $stages[] = $this->makeStage('semifinal', 1, 'winner_qf_1', 'winner_qf_2');
+            $stages[] = $this->makeStage('semifinal', 2, 'winner_qf_3', 'winner_qf_4');
+
+            // Final
             $stages[] = $this->makeStage('final', 1, 'winner_sf_1', 'winner_sf_2');
         }
 

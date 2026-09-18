@@ -341,7 +341,7 @@ class MasterScheduleGeneratorService
         // Ambil semua konfigurasi bracket matrix per mode yang baru
         $matrices = BracketMatrix::where('tournament_id', $tournament->id)
             ->orderBy('match_mode')
-            ->orderByRaw("CASE bracket_stage WHEN 'round_of_16' THEN 1 WHEN 'round_of_8' THEN 2 WHEN 'semifinal' THEN 3 WHEN 'third_place' THEN 4 WHEN 'final' THEN 5 ELSE 6 END")
+            ->orderByRaw("CASE bracket_stage WHEN 'round_of_32' THEN 1 WHEN 'round_of_16' THEN 2 WHEN 'round_of_8' THEN 3 WHEN 'semifinal' THEN 4 WHEN 'third_place' THEN 5 WHEN 'final' THEN 6 ELSE 7 END")
             ->orderBy('bracket_position')
             ->get();
 
@@ -356,7 +356,7 @@ class MasterScheduleGeneratorService
             // Track next_match_id: final dibuat dulu, lalu semifinal, lalu QF
             $previousStageMatches = [];
 
-            $stageOrder = ['round_of_16', 'round_of_8', 'semifinal', 'third_place', 'final'];
+            $stageOrder = ['round_of_32', 'round_of_16', 'round_of_8', 'semifinal', 'third_place', 'final'];
             $stageGroups = $modeMatrices->groupBy('bracket_stage');
 
             // LANGKAH 1: Buat Record Matches dari Final ke Belakang (agar next_match_id terisi)
@@ -393,7 +393,7 @@ class MasterScheduleGeneratorService
             }
 
             // LANGKAH 2: Plotting Slot Waktu secara Kronologis MAJU (QF -> Semifinal -> Final)
-            $forwardStages = ['round_of_16', 'quarterfinal', 'semifinal', 'third_place', 'final'];
+            $forwardStages = ['round_of_32', 'round_of_16', 'quarterfinal', 'semifinal', 'third_place', 'final'];
             $lastStageSlotId = $afterSlotId;
 
             foreach ($forwardStages as $stage) {
@@ -784,6 +784,7 @@ class MasterScheduleGeneratorService
     protected function resolveNextMatchId(string $stage, int $position, array $previousStageMatches): ?int
     {
         $nextStageMap = [
+            'round_of_32' => 'round_of_16',
             'round_of_16' => 'round_of_8',
             'round_of_8'  => 'semifinal',
             'semifinal'   => 'final',
@@ -814,8 +815,13 @@ class MasterScheduleGeneratorService
                 default => "Peringkat {$parsed['rank']} Pool {$parsed['pool']}",
             },
             'bye'      => 'BYE',
+            'best_runner_up' => isset($parsed['position']) && $parsed['position'] > 1
+                ? "Runner-up Terbaik #{$parsed['position']}"
+                : "Runner-up Terbaik",
             'wildcard' => "Wildcard #{$parsed['position']}",
             'winner'   => match ($parsed['stage'] ?? null) {
+                'round_of_32'  => "Pemenang R32 #{$parsed['position']}",
+                'round_of_16'  => "Pemenang R16 #{$parsed['position']}",
                 'quarterfinal' => "Pemenang QF #{$parsed['position']}",
                 'semifinal'    => "Pemenang SF #{$parsed['position']}",
                 default        => "Pemenang Match #{$parsed['position']}",
@@ -838,8 +844,17 @@ class MasterScheduleGeneratorService
                 default => "Peringkat {$parsed['rank']} Pool {$parsed['pool']}",
             },
             'bye'      => 'BYE',
+            'best_runner_up' => isset($parsed['position']) && $parsed['position'] > 1
+                ? "Runner-up Terbaik #{$parsed['position']}"
+                : "Runner-up Terbaik",
             'wildcard' => "Wildcard #{$parsed['position']}",
             'winner'   => match ($parsed['stage'] ?? null) {
+                'round_of_32', 'r32' => isset($stageMap[$mode]['round_of_32'][$parsed['position']])
+                    ? "Pemenang Match #" . $stageMap[$mode]['round_of_32'][$parsed['position']]
+                    : "Pemenang R32 #{$parsed['position']}",
+                'round_of_16', 'r16' => isset($stageMap[$mode]['round_of_16'][$parsed['position']])
+                    ? "Pemenang Match #" . $stageMap[$mode]['round_of_16'][$parsed['position']]
+                    : "Pemenang R16 #{$parsed['position']}",
                 'quarterfinal', 'qf', 'round_of_8' => isset($stageMap[$mode]['quarterfinal'][$parsed['position']])
                     ? "Pemenang Match #" . $stageMap[$mode]['quarterfinal'][$parsed['position']]
                     : "Pemenang QF #{$parsed['position']}",
