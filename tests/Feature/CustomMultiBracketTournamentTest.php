@@ -251,4 +251,78 @@ class CustomMultiBracketTournamentTest extends TestCase
             }
         }
     }
+
+    /**
+     * Test generating up to 12 pools per bracket and in random generator.
+     */
+    public function test_generate_up_to_twelve_pools(): void
+    {
+        $tournament = Tournament::create([
+            'name'                     => 'Turnamen 12 Pool Test',
+            'start_date'               => now()->toDateString(),
+            'end_date'                 => now()->addDays(4)->toDateString(),
+            'mode'                     => 'regu',
+            'status'                   => 'pool_stage',
+            'total_days'               => 4,
+            'courts_count'             => 4,
+            'session_start_time'       => '08:00:00',
+            'session_end_time'         => '18:00:00',
+            'session_duration_minutes' => 45,
+            'break_duration_minutes'   => 15,
+            'created_by'               => $this->admin->id,
+        ]);
+
+        $tournament->modes()->create([
+            'match_mode' => 'regu',
+            'pool_count' => 12,
+            'is_active'  => true,
+        ]);
+
+        // Create 24 teams
+        for ($i = 1; $i <= 24; $i++) {
+            $team = Team::create([
+                'tournament_id' => $tournament->id,
+                'name'          => "Tim Regu {$i}",
+                'region'        => 'Jawa Barat',
+                'created_by'    => $this->admin->id,
+            ]);
+            $tournament->teams()->attach($team->id, ['match_mode' => 'regu']);
+        }
+
+        // Test multi-bracket with 12 pools
+        $payload = [
+            'match_mode' => 'regu',
+            'brackets'   => [
+                ['name' => 'Braket Utama', 'pool_count' => 12],
+            ],
+        ];
+
+        $response = $this->actingAs($this->admin)->post(
+            route('pools.generate-multi-bracket', $tournament->id),
+            $payload
+        );
+
+        $response->assertRedirect(route('pools.index', $tournament->id));
+
+        $pools = Pool::where('tournament_id', $tournament->id)->where('match_mode', 'regu')->orderBy('name')->get();
+        $this->assertCount(12, $pools);
+
+        $expectedNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+        $this->assertEquals($expectedNames, $pools->pluck('name')->all());
+
+        // Test generate-random with 12 pools
+        $randomResponse = $this->actingAs($this->admin)->post(
+            route('pools.generate-random', $tournament->id),
+            [
+                'match_mode' => 'regu',
+                'pool_count' => 12,
+            ]
+        );
+
+        $randomResponse->assertRedirect(route('pools.index', $tournament->id));
+        $randomPools = Pool::where('tournament_id', $tournament->id)->where('match_mode', 'regu')->orderBy('name')->get();
+        $this->assertCount(12, $randomPools);
+        $this->assertEquals($expectedNames, $randomPools->pluck('name')->all());
+    }
 }
+

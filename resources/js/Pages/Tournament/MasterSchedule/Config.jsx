@@ -927,8 +927,14 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                                                                     <option value={2}>2 Pool (Pool A & B — Semifinal & Final)</option>
                                                                     <option value={3}>3 Pool (Pool A, B, C — Wildcard & Final)</option>
                                                                     <option value={4}>4 Pool (Pool A, B, C, D — QF, SF, Final)</option>
+                                                                    <option value={5}>5 Pool (Pool A s/d E)</option>
                                                                     <option value={6}>6 Pool (Pool A s/d F — R16, QF, SF, Final)</option>
+                                                                    <option value={7}>7 Pool (Pool A s/d G)</option>
                                                                     <option value={8}>8 Pool (Pool A s/d H — R16, QF, SF, Final)</option>
+                                                                    <option value={9}>9 Pool (Pool A s/d I)</option>
+                                                                    <option value={10}>10 Pool (Pool A s/d J)</option>
+                                                                    <option value={11}>11 Pool (Pool A s/d K)</option>
+                                                                    <option value={12}>12 Pool (Pool A s/d L)</option>
                                                                 </select>
                                                             </div>
                                                         )}

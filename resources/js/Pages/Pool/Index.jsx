@@ -360,18 +360,24 @@ export default function PoolIndex({ tournament }) {
                                                         <option value={4}>4 Pool (Pool A, B, C, D — QF & Semifinal)</option>
                                                         <option value={5}>5 Pool (Pool A s/d E)</option>
                                                         <option value={6}>6 Pool (Pool A s/d F)</option>
+                                                        <option value={7}>7 Pool (Pool A s/d G)</option>
+                                                        <option value={8}>8 Pool (Pool A s/d H — Babak 16 Besar)</option>
+                                                        <option value={9}>9 Pool (Pool A s/d I)</option>
+                                                        <option value={10}>10 Pool (Pool A s/d J)</option>
+                                                        <option value={11}>11 Pool (Pool A s/d K)</option>
+                                                        <option value={12}>12 Pool (Pool A s/d L)</option>
                                                     </select>
                                                 </div>
                                             </div>
 
-                                            <div className="pt-2 border-t border-surface-800/80 flex items-center justify-between text-[11px] mt-2">
-                                                <span className="text-surface-500 font-medium">Susunan Pool:</span>
+                                            <div className="pt-2 border-t border-surface-800/80 flex items-start justify-between text-[11px] mt-2 gap-2">
+                                                <span className="text-surface-500 font-medium shrink-0">Susunan Pool:</span>
                                                 {b.pool_count === 1 ? (
                                                     <span className="font-mono text-amber-300 font-bold">
                                                         Pool A (1 Pool)
                                                     </span>
                                                 ) : (
-                                                    <span className="font-mono text-purple-300 font-bold">
+                                                    <span className="font-mono text-purple-300 font-bold text-right break-words">
                                                         {poolLetters.map(p => `Pool ${p}`).join(', ')}
                                                     </span>
                                                 )}

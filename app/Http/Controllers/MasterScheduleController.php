@@ -122,7 +122,7 @@ class MasterScheduleController extends Controller
             'modes'                    => 'required|array|min:1',
             'modes.*'                  => 'in:regu,double,quadrant,team_regu,team_double',
             'pool_counts'              => 'required|array',
-            'pool_counts.*'            => 'integer|min:1|max:8',
+            'pool_counts.*'            => 'integer|min:1|max:16',
             'day_overrides'            => 'nullable|array',
             'day_overrides.*.session_start_time'       => 'nullable|date_format:H:i',
             'day_overrides.*.session_end_time'         => 'nullable|date_format:H:i',

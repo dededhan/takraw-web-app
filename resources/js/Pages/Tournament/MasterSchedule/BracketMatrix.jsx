@@ -175,6 +175,11 @@ export default function BracketMatrix({
         options.push({ value: 'loser_sf_1', label: '🥉 Kalah Semifinal #1 (Juara 3)' });
         options.push({ value: 'loser_sf_2', label: '🥉 Kalah Semifinal #2 (Juara 3)' });
 
+        // Babak 16 Besar
+        for (let r = 1; r <= 8; r++) {
+            options.push({ value: `winner_r16_${r}`, label: `🛡️ Pemenang R16 #${r}` });
+        }
+
         options.push({ value: 'winner_qf_1', label: '🥊 Pemenang QF #1' });
         options.push({ value: 'winner_qf_2', label: '🥊 Pemenang QF #2' });
         options.push({ value: 'winner_qf_3', label: '🥊 Pemenang QF #3' });

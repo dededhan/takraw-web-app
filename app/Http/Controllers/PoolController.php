@@ -79,7 +79,7 @@ class PoolController extends Controller
             'match_mode'            => 'required|in:regu,double,quadrant,team_regu,team_double',
             'brackets'              => 'required|array|min:1|max:6',
             'brackets.*.name'       => 'required|string|max:50',
-            'brackets.*.pool_count' => 'required|integer|min:1|max:8',
+            'brackets.*.pool_count' => 'required|integer|min:1|max:16',
             'brackets.*.keyword'    => 'nullable|string|max:50',
         ]);
 
@@ -444,7 +444,7 @@ class PoolController extends Controller
     public function generateRandom(Request $request, Tournament $tournament)
     {
         $validated = $request->validate([
-            'pool_count' => 'required|integer|min:1|max:8',
+            'pool_count' => 'required|integer|min:1|max:16',
             'match_mode' => 'required|in:regu,double,quadrant,team_regu,team_double',
         ]);
 
