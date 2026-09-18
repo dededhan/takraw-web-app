@@ -202,4 +202,87 @@ class CustomDayScheduleTest extends TestCase
         $this->assertStringContainsString('14:10', (string) $session7->start_time, 'Sesi ke-7 harus dimulai setelah break jam 14:10');
         $this->assertStringContainsString('15:00', (string) $session7->end_time);
     }
+
+    /**
+     * Test saving tournament config with custom day specific breaks and session counts.
+     */
+    public function test_custom_day_schedule_with_custom_break_and_sessions(): void
+    {
+        $tournament = Tournament::create([
+            'name'                     => 'Turnamen Custom Day Break Test',
+            'start_date'               => '2026-10-01',
+            'end_date'                 => '2026-10-02',
+            'mode'                     => 'regu',
+            'status'                   => 'pool_stage',
+            'total_days'               => 2,
+            'courts_count'             => 2,
+            'session_start_time'       => '08:00:00',
+            'session_end_time'         => '17:00:00',
+            'session_duration_minutes' => 50,
+            'break_duration_minutes'   => 0,
+            'created_by'               => $this->admin->id,
+        ]);
+
+        $payload = [
+            'total_days'               => 2,
+            'courts_count'             => 2,
+            'session_start_time'       => '08:00',
+            'session_end_time'         => '17:00',
+            'session_duration_minutes' => 50,
+            'break_duration_minutes'   => 0,
+            'has_ishoma'               => true,
+            'ishoma_start_time'        => '11:20',
+            'ishoma_end_time'          => '12:20',
+            'modes'                    => ['regu'],
+            'pool_counts'              => ['regu' => 2],
+            'extra_breaks'             => [],
+            'day_overrides'            => [
+                '2' => [
+                    'session_start_time'       => '08:30',
+                    'session_end_time'         => '16:00',
+                    'session_duration_minutes' => 45,
+                    'has_ishoma'               => true,
+                    'ishoma_start_time'        => '11:30',
+                    'ishoma_end_time'          => '12:30',
+                    'sessions_before_break'    => 4,
+                    'ishoma_duration_minutes'  => 60,
+                    'sessions_after_break'     => 3,
+                    'has_extra_breaks'         => true,
+                    'extra_breaks'             => [
+                        [
+                            'after_session'    => 5,
+                            'duration_minutes' => 15,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($this->admin)->post(
+            route('tournaments.master-schedule.save-config', $tournament->id),
+            $payload
+        );
+
+        $response->assertRedirect(route('tournaments.master-schedule.bracket-matrix', $tournament->id));
+
+        $tournament->refresh();
+        $this->assertNotNull($tournament->day_overrides);
+        $this->assertArrayHasKey('2', $tournament->day_overrides);
+        $this->assertEquals(45, $tournament->day_overrides['2']['session_duration_minutes']);
+
+        // Day 1 has NO break
+        $day1Break = TimeSlot::where('tournament_id', $tournament->id)
+            ->where('day_number', 1)
+            ->where('slot_type', 'break')
+            ->first();
+        $this->assertNull($day1Break, 'Hari 1 tidak boleh ada slot break');
+
+        // Day 2 has the 15-minute break after session 5
+        $day2Break = TimeSlot::where('tournament_id', $tournament->id)
+            ->where('day_number', 2)
+            ->where('slot_type', 'break')
+            ->first();
+        $this->assertNotNull($day2Break, 'Hari 2 harus memiliki slot break');
+        $this->assertStringContainsString('Break', $day2Break->label);
+    }
 }

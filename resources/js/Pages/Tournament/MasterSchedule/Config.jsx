@@ -22,6 +22,132 @@ const parseTimeToMinutes = (timeStr) => {
     return (h || 0) * 60 + (m || 0);
 };
 
+const computeDaySchedule = ({
+    session_start_time = '08:00',
+    session_duration_minutes = 50,
+    has_ishoma = true,
+    sessions_before_break = 4,
+    ishoma_duration_minutes = 60,
+    sessions_after_break = 4,
+    extra_breaks = [],
+}) => {
+    const startMins = parseTimeToMinutes(session_start_time || '08:00');
+    const sessionDur = Number(session_duration_minutes || 50);
+
+    const sBefore = has_ishoma
+        ? Math.max(1, Number(sessions_before_break ?? 1))
+        : Math.max(1, Number(sessions_before_break ?? 1) + Number(sessions_after_break ?? 0));
+    const sAfter = has_ishoma ? Math.max(0, Number(sessions_after_break ?? 0)) : 0;
+    const ishomaDur = has_ishoma ? Number(ishoma_duration_minutes ?? 0) : 0;
+
+    const breaksMap = {};
+    (extra_breaks || []).forEach(b => {
+        const sNum = Number(b.after_session);
+        const dur = Number(b.duration_minutes || 0);
+        if (sNum > 0 && dur > 0) {
+            breaksMap[sNum] = dur;
+        }
+    });
+
+    const slots = [];
+    let currentMins = startMins;
+    let slotNum = 1;
+
+    // Morning Sessions
+    for (let i = 0; i < sBefore; i++) {
+        const currentSession = slotNum;
+        const mStart = currentMins;
+        const mEnd = mStart + sessionDur;
+        slots.push({
+            slotNum: slotNum++,
+            type: 'match',
+            startTime: formatTime(mStart),
+            endTime: formatTime(mEnd),
+            period: `Pagi (Sesi ${currentSession})`,
+        });
+        currentMins = mEnd;
+
+        if (breaksMap[currentSession]) {
+            const bDur = breaksMap[currentSession];
+            const bStart = currentMins;
+            const bEnd = bStart + bDur;
+            slots.push({
+                slotNum: null,
+                type: 'break',
+                afterSession: currentSession,
+                startTime: formatTime(bStart),
+                endTime: formatTime(bEnd),
+                duration: bDur,
+                period: `Break Istirahat (${bDur}m)`,
+            });
+            currentMins = bEnd;
+        }
+    }
+
+    let computedIshomaStart = '';
+    let computedIshomaEnd = '';
+
+    if (has_ishoma) {
+        computedIshomaStart = formatTime(currentMins);
+        const ishomaEndMins = currentMins + ishomaDur;
+        computedIshomaEnd = formatTime(ishomaEndMins);
+
+        if (ishomaDur > 0) {
+            slots.push({
+                slotNum: null,
+                type: 'ishoma',
+                startTime: computedIshomaStart,
+                endTime: computedIshomaEnd,
+                duration: ishomaDur,
+                period: 'ISHOMA / Istirahat',
+            });
+        }
+
+        currentMins = ishomaEndMins;
+
+        // Afternoon Sessions
+        for (let i = 0; i < sAfter; i++) {
+            const currentSession = slotNum;
+            const mStart = currentMins;
+            const mEnd = mStart + sessionDur;
+            slots.push({
+                slotNum: slotNum++,
+                type: 'match',
+                startTime: formatTime(mStart),
+                endTime: formatTime(mEnd),
+                period: `Siang-Sore (Sesi ${currentSession})`,
+            });
+            currentMins = mEnd;
+
+            if (breaksMap[currentSession]) {
+                const bDur = breaksMap[currentSession];
+                const bStart = currentMins;
+                const bEnd = bStart + bDur;
+                slots.push({
+                    slotNum: null,
+                    type: 'break',
+                    afterSession: currentSession,
+                    startTime: formatTime(bStart),
+                    endTime: formatTime(bEnd),
+                    duration: bDur,
+                    period: `Break Istirahat (${bDur}m)`,
+                });
+                currentMins = bEnd;
+            }
+        }
+    }
+
+    const computedSessionEnd = formatTime(currentMins);
+
+    return {
+        slots,
+        totalMatchSlots: slots.filter(s => s.type === 'match').length,
+        computedIshomaStart,
+        computedIshomaEnd,
+        computedSessionEnd,
+    };
+};
+
 export default function Config({ tournament, modePools = {}, preview: initialPreview }) {
     const [step, setStep] = useState(1);
     const [calcMode, setCalcMode] = useState('auto'); // 'auto' | 'manual'
@@ -89,126 +215,17 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         },
     });
 
-    // Smart Schedule Computation
+    // Smart Schedule Computation using common computeDaySchedule
     const computeSchedule = () => {
-        const startMins = parseTimeToMinutes(data.session_start_time || '08:00');
-        const sessionDur = Number(data.session_duration_minutes || 50);
-
-        const sBefore = data.has_ishoma ? Math.max(1, Number(sessionsBeforeBreak || 1)) : Math.max(1, Number(sessionsBeforeBreak || 1) + Number(sessionsAfterBreak || 0));
-        const sAfter = data.has_ishoma ? Math.max(0, Number(sessionsAfterBreak || 0)) : 0;
-        const ishomaDur = data.has_ishoma ? Number(ishomaDurationMin || 0) : 0;
-
-        // Map extra breaks berdasarkan after_session
-        const breaksMap = {};
-        (data.extra_breaks || []).forEach(b => {
-            const sNum = Number(b.after_session);
-            const dur = Number(b.duration_minutes || 0);
-            if (sNum > 0 && dur > 0) {
-                breaksMap[sNum] = dur;
-            }
+        return computeDaySchedule({
+            session_start_time: data.session_start_time || '08:00',
+            session_duration_minutes: Number(data.session_duration_minutes || 50),
+            has_ishoma: data.has_ishoma,
+            sessions_before_break: sessionsBeforeBreak,
+            ishoma_duration_minutes: ishomaDurationMin,
+            sessions_after_break: sessionsAfterBreak,
+            extra_breaks: data.extra_breaks,
         });
-
-        const slots = [];
-        let currentMins = startMins;
-        let slotNum = 1;
-
-        // Morning Sessions
-        for (let i = 0; i < sBefore; i++) {
-            const currentSession = slotNum;
-            const mStart = currentMins;
-            const mEnd = mStart + sessionDur;
-            slots.push({
-                slotNum: slotNum++,
-                type: 'match',
-                startTime: formatTime(mStart),
-                endTime: formatTime(mEnd),
-                period: `Pagi (Sesi ${currentSession})`,
-            });
-            currentMins = mEnd;
-
-            // Cek jika ada break setelah sesi ini
-            if (breaksMap[currentSession]) {
-                const bDur = breaksMap[currentSession];
-                const bStart = currentMins;
-                const bEnd = bStart + bDur;
-                slots.push({
-                    slotNum: null,
-                    type: 'break',
-                    afterSession: currentSession,
-                    startTime: formatTime(bStart),
-                    endTime: formatTime(bEnd),
-                    duration: bDur,
-                    period: `Break Istirahat (${bDur}m)`,
-                });
-                currentMins = bEnd;
-            }
-        }
-
-        let computedIshomaStart = '';
-        let computedIshomaEnd = '';
-
-        if (data.has_ishoma) {
-            // Ishoma starts after morning sessions (and any break right after morning sessions)
-            computedIshomaStart = formatTime(currentMins);
-            const ishomaEndMins = currentMins + ishomaDur;
-            computedIshomaEnd = formatTime(ishomaEndMins);
-
-            if (ishomaDur > 0) {
-                slots.push({
-                    slotNum: null,
-                    type: 'ishoma',
-                    startTime: computedIshomaStart,
-                    endTime: computedIshomaEnd,
-                    duration: ishomaDur,
-                    period: 'ISHOMA / Istirahat',
-                });
-            }
-
-            currentMins = ishomaEndMins;
-
-            // Afternoon Sessions
-            for (let i = 0; i < sAfter; i++) {
-                const currentSession = slotNum;
-                const mStart = currentMins;
-                const mEnd = mStart + sessionDur;
-                slots.push({
-                    slotNum: slotNum++,
-                    type: 'match',
-                    startTime: formatTime(mStart),
-                    endTime: formatTime(mEnd),
-                    period: `Siang-Sore (Sesi ${currentSession})`,
-                });
-                currentMins = mEnd;
-
-                // Cek jika ada break setelah sesi ini
-                if (breaksMap[currentSession]) {
-                    const bDur = breaksMap[currentSession];
-                    const bStart = currentMins;
-                    const bEnd = bStart + bDur;
-                    slots.push({
-                        slotNum: null,
-                        type: 'break',
-                        afterSession: currentSession,
-                        startTime: formatTime(bStart),
-                        endTime: formatTime(bEnd),
-                        duration: bDur,
-                        period: `Break Istirahat (${bDur}m)`,
-                    });
-                    currentMins = bEnd;
-                }
-            }
-        }
-
-        // End of day is after the last slot
-        const computedSessionEnd = formatTime(currentMins);
-
-        return {
-            slots,
-            totalMatchSlots: slots.filter(s => s.type === 'match').length,
-            computedIshomaStart,
-            computedIshomaEnd,
-            computedSessionEnd,
-        };
     };
 
     const schedule = computeSchedule();
@@ -234,18 +251,101 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         data.extra_breaks,
     ]);
 
+    const getCustomDayConfig = (dayNum) => {
+        const override = data.day_overrides?.[dayNum] || {};
+        const session_start_time = override.session_start_time || data.session_start_time || '08:00';
+        const session_duration_minutes = Number(override.session_duration_minutes ?? data.session_duration_minutes ?? 50);
+        const has_ishoma = override.has_ishoma !== undefined ? override.has_ishoma : (data.has_ishoma !== undefined ? data.has_ishoma : true);
+
+        let sessions_before_break = override.sessions_before_break;
+        if (sessions_before_break === undefined) {
+            if (override.session_start_time && override.ishoma_start_time && override.session_duration_minutes) {
+                const diff = parseTimeToMinutes(override.ishoma_start_time) - parseTimeToMinutes(override.session_start_time);
+                const count = Math.round(diff / override.session_duration_minutes);
+                if (count > 0) sessions_before_break = count;
+            }
+            if (sessions_before_break === undefined) sessions_before_break = sessionsBeforeBreak || 4;
+        }
+
+        let ishoma_duration_minutes = override.ishoma_duration_minutes;
+        if (ishoma_duration_minutes === undefined) {
+            if (override.ishoma_start_time && override.ishoma_end_time) {
+                const diff = parseTimeToMinutes(override.ishoma_end_time) - parseTimeToMinutes(override.ishoma_start_time);
+                if (diff >= 0) ishoma_duration_minutes = diff;
+            }
+            if (ishoma_duration_minutes === undefined) ishoma_duration_minutes = ishomaDurationMin || 60;
+        }
+
+        let sessions_after_break = override.sessions_after_break;
+        if (sessions_after_break === undefined) {
+            if (override.session_end_time && override.ishoma_end_time && override.session_duration_minutes) {
+                let diff = parseTimeToMinutes(override.session_end_time) - parseTimeToMinutes(override.ishoma_end_time);
+                if (Array.isArray(override.extra_breaks)) {
+                    override.extra_breaks.forEach(b => { diff -= Number(b.duration_minutes || 0); });
+                }
+                const count = Math.round(diff / override.session_duration_minutes);
+                if (count >= 0) sessions_after_break = count;
+            }
+            if (sessions_after_break === undefined) sessions_after_break = sessionsAfterBreak || 4;
+        }
+
+        const extra_breaks = Array.isArray(override.extra_breaks) ? override.extra_breaks : [];
+        const has_extra_breaks = override.has_extra_breaks !== undefined
+            ? override.has_extra_breaks
+            : extra_breaks.length > 0;
+
+        return {
+            session_start_time,
+            session_duration_minutes,
+            has_ishoma,
+            sessions_before_break: Number(sessions_before_break),
+            ishoma_duration_minutes: Number(ishoma_duration_minutes),
+            sessions_after_break: Number(sessions_after_break),
+            has_extra_breaks,
+            extra_breaks,
+        };
+    };
+
+    const computeCustomDaySchedule = (dayNum) => {
+        const config = getCustomDayConfig(dayNum);
+        return {
+            ...config,
+            ...computeDaySchedule(config),
+        };
+    };
+
     const addCustomDay = (dayNum) => {
+        const sBefore = Number(sessionsBeforeBreak || 4);
+        const iDur = data.has_ishoma ? Number(ishomaDurationMin || 60) : 0;
+        const sAfter = data.has_ishoma ? Number(sessionsAfterBreak || 4) : 0;
+        const currentBreaks = Array.isArray(data.extra_breaks) ? JSON.parse(JSON.stringify(data.extra_breaks)) : [];
+
+        const computed = computeDaySchedule({
+            session_start_time: data.session_start_time || '08:00',
+            session_duration_minutes: Number(data.session_duration_minutes || 50),
+            has_ishoma: data.has_ishoma !== undefined ? data.has_ishoma : true,
+            sessions_before_break: sBefore,
+            ishoma_duration_minutes: iDur,
+            sessions_after_break: sAfter,
+            extra_breaks: currentBreaks,
+        });
+
         setData(prev => ({
             ...prev,
             day_overrides: {
                 ...(prev.day_overrides || {}),
                 [dayNum]: {
                     session_start_time: prev.session_start_time || '08:00',
-                    session_end_time: prev.session_end_time || '17:00',
                     session_duration_minutes: Number(prev.session_duration_minutes || 50),
                     has_ishoma: prev.has_ishoma !== undefined ? prev.has_ishoma : true,
-                    ishoma_start_time: prev.ishoma_start_time || '12:00',
-                    ishoma_end_time: prev.ishoma_end_time || '13:00',
+                    sessions_before_break: sBefore,
+                    ishoma_duration_minutes: iDur,
+                    sessions_after_break: sAfter,
+                    has_extra_breaks: currentBreaks.length > 0,
+                    extra_breaks: currentBreaks,
+                    ishoma_start_time: computed.computedIshomaStart || '12:00',
+                    ishoma_end_time: computed.computedIshomaEnd || '13:00',
+                    session_end_time: computed.computedSessionEnd || '17:00',
                 },
             },
         }));
@@ -268,17 +368,121 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         }
     };
 
-    const updateCustomDay = (dayNum, field, value) => {
-        setData(prev => ({
-            ...prev,
-            day_overrides: {
-                ...(prev.day_overrides || {}),
-                [dayNum]: {
-                    ...(prev.day_overrides?.[dayNum] || {}),
-                    [field]: value,
+    const updateCustomDay = (dayNum, fieldOrUpdates, valueIfField) => {
+        const updates = typeof fieldOrUpdates === 'string'
+            ? { [fieldOrUpdates]: valueIfField }
+            : fieldOrUpdates;
+
+        setData(prev => {
+            const current = prev.day_overrides?.[dayNum] || {};
+            const merged = { ...current, ...updates };
+
+            const sStart = merged.session_start_time || prev.session_start_time || '08:00';
+            const sDur = Number(merged.session_duration_minutes ?? prev.session_duration_minutes ?? 50);
+            const hasIshoma = merged.has_ishoma !== undefined ? merged.has_ishoma : (prev.has_ishoma !== undefined ? prev.has_ishoma : true);
+
+            let sBefore = merged.sessions_before_break;
+            if (sBefore === undefined) {
+                if (merged.session_start_time && merged.ishoma_start_time && merged.session_duration_minutes) {
+                    const diff = parseTimeToMinutes(merged.ishoma_start_time) - parseTimeToMinutes(merged.session_start_time);
+                    const count = Math.round(diff / merged.session_duration_minutes);
+                    if (count > 0) sBefore = count;
+                }
+                if (sBefore === undefined) sBefore = sessionsBeforeBreak || 4;
+            }
+
+            let iDur = merged.ishoma_duration_minutes;
+            if (iDur === undefined) {
+                if (merged.ishoma_start_time && merged.ishoma_end_time) {
+                    const diff = parseTimeToMinutes(merged.ishoma_end_time) - parseTimeToMinutes(merged.ishoma_start_time);
+                    if (diff >= 0) iDur = diff;
+                }
+                if (iDur === undefined) iDur = ishomaDurationMin || 60;
+            }
+
+            let sAfter = merged.sessions_after_break;
+            if (sAfter === undefined) {
+                if (merged.session_end_time && merged.ishoma_end_time && merged.session_duration_minutes) {
+                    let diff = parseTimeToMinutes(merged.session_end_time) - parseTimeToMinutes(merged.ishoma_end_time);
+                    if (Array.isArray(merged.extra_breaks)) {
+                        merged.extra_breaks.forEach(b => { diff -= Number(b.duration_minutes || 0); });
+                    }
+                    const count = Math.round(diff / merged.session_duration_minutes);
+                    if (count >= 0) sAfter = count;
+                }
+                if (sAfter === undefined) sAfter = sessionsAfterBreak || 4;
+            }
+
+            const extraBreaks = Array.isArray(merged.extra_breaks) ? merged.extra_breaks : [];
+
+            const computed = computeDaySchedule({
+                session_start_time: sStart,
+                session_duration_minutes: sDur,
+                has_ishoma: hasIshoma,
+                sessions_before_break: Number(sBefore),
+                ishoma_duration_minutes: Number(iDur),
+                sessions_after_break: Number(sAfter),
+                extra_breaks: extraBreaks,
+            });
+
+            return {
+                ...prev,
+                day_overrides: {
+                    ...(prev.day_overrides || {}),
+                    [dayNum]: {
+                        ...merged,
+                        session_start_time: sStart,
+                        session_duration_minutes: sDur,
+                        has_ishoma: hasIshoma,
+                        sessions_before_break: Number(sBefore),
+                        ishoma_duration_minutes: Number(iDur),
+                        sessions_after_break: Number(sAfter),
+                        ishoma_start_time: computed.computedIshomaStart || '12:00',
+                        ishoma_end_time: computed.computedIshomaEnd || '13:00',
+                        session_end_time: computed.computedSessionEnd || '17:00',
+                    },
                 },
-            },
-        }));
+            };
+        });
+    };
+
+    const addCustomDayBreak = (dayNum) => {
+        const config = getCustomDayConfig(dayNum);
+        const currentBreaks = Array.isArray(config.extra_breaks) ? [...config.extra_breaks] : [];
+        const lastSession = currentBreaks.length > 0
+            ? currentBreaks[currentBreaks.length - 1]?.after_session
+            : (config.sessions_before_break + 2);
+        const nextSession = Math.max(1, Number(lastSession) + 2);
+        const newBreaks = [
+            ...currentBreaks,
+            { after_session: nextSession, duration_minutes: 10 }
+        ];
+        updateCustomDay(dayNum, {
+            has_extra_breaks: true,
+            extra_breaks: newBreaks,
+        });
+    };
+
+    const updateCustomDayBreak = (dayNum, breakIdx, field, value) => {
+        const config = getCustomDayConfig(dayNum);
+        const currentBreaks = Array.isArray(config.extra_breaks) ? [...config.extra_breaks] : [];
+        if (currentBreaks[breakIdx]) {
+            currentBreaks[breakIdx] = {
+                ...currentBreaks[breakIdx],
+                [field]: value,
+            };
+            updateCustomDay(dayNum, { extra_breaks: currentBreaks });
+        }
+    };
+
+    const removeCustomDayBreak = (dayNum, breakIdx) => {
+        const config = getCustomDayConfig(dayNum);
+        const currentBreaks = (Array.isArray(config.extra_breaks) ? config.extra_breaks : [])
+            .filter((_, i) => i !== breakIdx);
+        updateCustomDay(dayNum, {
+            extra_breaks: currentBreaks,
+            has_extra_breaks: currentBreaks.length > 0,
+        });
     };
 
     const getPreviewSlots = (previewKey) => {
@@ -288,83 +492,8 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
         const override = data.day_overrides?.[previewKey];
         if (!override) return schedule.slots;
 
-        const sStart = parseTimeToMinutes(override.session_start_time || data.session_start_time || '08:00');
-        const sEnd = parseTimeToMinutes(override.session_end_time || data.session_end_time || '17:00');
-        const sDur = Number(override.session_duration_minutes || data.session_duration_minutes || 50);
-        const hIshoma = override.has_ishoma !== undefined ? override.has_ishoma : data.has_ishoma;
-        const iStart = parseTimeToMinutes(override.ishoma_start_time || data.ishoma_start_time || '12:00');
-        const iEnd = parseTimeToMinutes(override.ishoma_end_time || data.ishoma_end_time || '13:00');
-
-        const activeBreaks = override.extra_breaks !== undefined ? override.extra_breaks : data.extra_breaks;
-        const breaksMap = {};
-        (activeBreaks || []).forEach(b => {
-            if (b.after_session && b.duration_minutes) {
-                breaksMap[Number(b.after_session)] = Number(b.duration_minutes);
-            }
-        });
-
-        const slots = [];
-        let currentMins = sStart;
-        let slotNum = 1;
-        let ishomaInserted = false;
-
-        while (currentMins < sEnd) {
-            if (hIshoma && !ishomaInserted && currentMins >= iStart) {
-                const iDur = Math.max(0, iEnd - iStart);
-                if (iDur > 0) {
-                    slots.push({
-                        slotNum: null,
-                        type: 'ishoma',
-                        startTime: formatTime(iStart),
-                        endTime: formatTime(iEnd),
-                        duration: iDur,
-                        period: 'ISHOMA / Istirahat',
-                    });
-                }
-                currentMins = iEnd;
-                ishomaInserted = true;
-                continue;
-            }
-
-            const slotEnd = currentMins + sDur;
-            if (slotEnd > sEnd) break;
-
-            if (hIshoma && !ishomaInserted && slotEnd > iStart) {
-                currentMins = iStart;
-                continue;
-            }
-
-            const currMatchNum = slotNum++;
-            slots.push({
-                slotNum: currMatchNum,
-                type: 'match',
-                startTime: formatTime(currentMins),
-                endTime: formatTime(slotEnd),
-                period: `Sesi ${currMatchNum}`,
-            });
-            currentMins = slotEnd;
-
-            // Extra break di hari override
-            if (breaksMap[currMatchNum]) {
-                const bDur = breaksMap[currMatchNum];
-                const bStart = currentMins;
-                const bEnd = bStart + bDur;
-                if (bEnd <= sEnd) {
-                    slots.push({
-                        slotNum: null,
-                        type: 'break',
-                        afterSession: currMatchNum,
-                        startTime: formatTime(bStart),
-                        endTime: formatTime(bEnd),
-                        duration: bDur,
-                        period: `Break Istirahat (${bDur}m)`,
-                    });
-                    currentMins = bEnd;
-                }
-            }
-        }
-
-        return slots;
+        const daySched = computeCustomDaySchedule(previewKey);
+        return daySched.slots;
     };
 
     const toggleMode = (key) => {
@@ -407,7 +536,37 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                     after_session: Number(b.after_session),
                     duration_minutes: Number(b.duration_minutes),
                 })),
-            day_overrides:     Object.keys(formData.day_overrides || {}).length > 0 ? formData.day_overrides : null,
+            day_overrides:     Object.keys(formData.day_overrides || {}).length > 0
+                ? Object.fromEntries(
+                    Object.entries(formData.day_overrides).map(([k, v]) => {
+                        const config = getCustomDayConfig(k);
+                        const computed = computeDaySchedule(config);
+                        return [
+                            k,
+                            {
+                                session_start_time: config.session_start_time,
+                                session_end_time: computed.computedSessionEnd || '17:00',
+                                session_duration_minutes: Number(config.session_duration_minutes),
+                                has_ishoma: config.has_ishoma,
+                                ishoma_start_time: config.has_ishoma ? (computed.computedIshomaStart || '12:00') : null,
+                                ishoma_end_time:   config.has_ishoma ? (computed.computedIshomaEnd || '13:00') : null,
+                                sessions_before_break: Number(config.sessions_before_break),
+                                ishoma_duration_minutes: Number(config.ishoma_duration_minutes),
+                                sessions_after_break: Number(config.sessions_after_break),
+                                has_extra_breaks: !!config.has_extra_breaks,
+                                extra_breaks: (config.has_extra_breaks && Array.isArray(config.extra_breaks))
+                                    ? config.extra_breaks
+                                        .filter(b => Number(b.after_session) > 0 && Number(b.duration_minutes) > 0)
+                                        .map(b => ({
+                                            after_session: Number(b.after_session),
+                                            duration_minutes: Number(b.duration_minutes),
+                                        }))
+                                    : null,
+                            }
+                        ];
+                    })
+                )
+                : null,
             pool_counts:       resolvedPoolCounts,
         }));
 
@@ -990,12 +1149,13 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                                 ) : (
                                     <div className="space-y-4">
                                         {activeOverrideDays.map(dayNum => {
-                                            const override = data.day_overrides[dayNum] || {};
-                                            const daySlots = getPreviewSlots(String(dayNum));
-                                            const matchCount = daySlots.filter(s => s.type === 'match').length;
+                                            const dayConfig = getCustomDayConfig(dayNum);
+                                            const daySched = computeCustomDaySchedule(dayNum);
+                                            const matchCount = daySched.totalMatchSlots;
 
                                             return (
-                                                <div key={dayNum} className="p-5 rounded-2xl bg-surface-900 border border-amber-500/30 space-y-4 shadow-sm relative animate-fade-in">
+                                                <div key={dayNum} className="p-5 rounded-2xl bg-surface-900 border border-amber-500/30 space-y-5 shadow-sm relative animate-fade-in">
+                                                    {/* Header */}
                                                     <div className="flex items-center justify-between pb-3 border-b border-surface-800">
                                                         <div className="flex items-center gap-2.5">
                                                             <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-xs border border-amber-500/30">
@@ -1014,69 +1174,282 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                                                         </button>
                                                     </div>
 
-                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                    {/* Row 1: Jam Mulai & Durasi 1 Sesi */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                         <div>
-                                                            <label className="block text-[11px] font-semibold text-surface-400 mb-1">Jam Mulai Sesi 1</label>
+                                                            <label className="block text-xs font-semibold text-surface-300 mb-1.5">
+                                                                Jam Mulai Sesi 1
+                                                            </label>
                                                             <input
                                                                 type="time"
-                                                                value={override.session_start_time || '08:00'}
-                                                                onChange={e => updateCustomDay(dayNum, 'session_start_time', e.target.value)}
+                                                                value={dayConfig.session_start_time}
+                                                                onChange={e => updateCustomDay(dayNum, { session_start_time: e.target.value })}
                                                                 className="input-field font-mono font-bold"
                                                             />
                                                         </div>
 
                                                         <div>
-                                                            <label className="block text-[11px] font-semibold text-surface-400 mb-1">Jam Selesai Harian</label>
-                                                            <input
-                                                                type="time"
-                                                                value={override.session_end_time || '17:00'}
-                                                                onChange={e => updateCustomDay(dayNum, 'session_end_time', e.target.value)}
-                                                                className="input-field font-mono font-bold"
-                                                            />
-                                                        </div>
-
-                                                        <div>
-                                                            <label className="block text-[11px] font-semibold text-surface-400 mb-1">Durasi 1 Sesi (Menit)</label>
-                                                            <input
-                                                                type="number"
-                                                                min={10}
-                                                                max={180}
-                                                                value={override.session_duration_minutes || 50}
-                                                                onChange={e => updateCustomDay(dayNum, 'session_duration_minutes', +e.target.value)}
-                                                                className="input-field font-mono font-bold"
-                                                            />
+                                                            <label className="block text-xs font-semibold text-surface-300 mb-1.5">
+                                                                Durasi 1 Sesi Pertandingan (Menit)
+                                                            </label>
+                                                            <div className="relative">
+                                                                <input
+                                                                    type="number"
+                                                                    min={10}
+                                                                    max={180}
+                                                                    value={dayConfig.session_duration_minutes}
+                                                                    onChange={e => updateCustomDay(dayNum, { session_duration_minutes: Math.max(10, parseInt(e.target.value) || 10) })}
+                                                                    className="input-field font-mono font-bold pl-3 pr-16 text-primary-300"
+                                                                />
+                                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 font-semibold pointer-events-none">
+                                                                    Menit
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
 
-                                                    {/* Custom ISHOMA for this day */}
-                                                    <div className="pt-2 border-t border-surface-800/80 flex flex-col sm:flex-row sm:items-center gap-4">
-                                                        <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-surface-300">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={override.has_ishoma !== false}
-                                                                onChange={e => updateCustomDay(dayNum, 'has_ishoma', e.target.checked)}
-                                                                className="w-4 h-4 rounded text-amber-600 bg-surface-950 border-surface-700 focus:ring-amber-500"
-                                                            />
-                                                            <span>Aktifkan ISHOMA di Hari {dayNum}</span>
-                                                        </label>
+                                                    {/* Row 2: ISHOMA / Istirahat Siang */}
+                                                    <div className="p-4 rounded-xl bg-surface-950/70 border border-surface-800 space-y-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={dayConfig.has_ishoma}
+                                                                    onChange={e => updateCustomDay(dayNum, { has_ishoma: e.target.checked })}
+                                                                    className="w-4 h-4 rounded text-amber-500 bg-surface-900 border-surface-700 focus:ring-amber-500"
+                                                                />
+                                                                <div>
+                                                                    <span className="font-bold text-surface-200 text-xs sm:text-sm block">
+                                                                        🕌 Aktifkan ISHOMA di Hari {dayNum}
+                                                                    </span>
+                                                                    <span className="text-[11px] text-surface-400">
+                                                                        Pertandingan dijeda serentak di semua lapangan pada hari ini
+                                                                    </span>
+                                                                </div>
+                                                            </label>
+                                                        </div>
 
-                                                        {override.has_ishoma !== false && (
-                                                            <div className="flex items-center gap-2">
-                                                                <input
-                                                                    type="time"
-                                                                    value={override.ishoma_start_time || '12:00'}
-                                                                    onChange={e => updateCustomDay(dayNum, 'ishoma_start_time', e.target.value)}
-                                                                    className="w-28 px-2 py-1 rounded-lg bg-surface-950 border border-surface-700 text-xs font-mono font-bold text-surface-200"
-                                                                />
-                                                                <span className="text-surface-500 text-xs">s/d</span>
-                                                                <input
-                                                                    type="time"
-                                                                    value={override.ishoma_end_time || '13:00'}
-                                                                    onChange={e => updateCustomDay(dayNum, 'ishoma_end_time', e.target.value)}
-                                                                    className="w-28 px-2 py-1 rounded-lg bg-surface-950 border border-surface-700 text-xs font-mono font-bold text-surface-200"
-                                                                />
+                                                        {dayConfig.has_ishoma && (
+                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-surface-850">
+                                                                {/* Sesi Sebelum Istirahat */}
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold text-surface-300 mb-1">
+                                                                        Sesi Sebelum Istirahat (Pagi)
+                                                                    </label>
+                                                                    <span className="text-[11px] text-surface-400 block mb-1.5">
+                                                                        → ISHOMA mulai pk. {daySched.computedIshomaStart || '-'}
+                                                                    </span>
+                                                                    <div className="relative">
+                                                                        <input
+                                                                            type="number"
+                                                                            min={1}
+                                                                            max={20}
+                                                                            value={dayConfig.sessions_before_break}
+                                                                            onChange={e => updateCustomDay(dayNum, { sessions_before_break: Math.max(1, parseInt(e.target.value) || 1) })}
+                                                                            className="input-field font-mono font-bold pl-3 pr-14 text-amber-300"
+                                                                            placeholder="4"
+                                                                        />
+                                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 font-semibold pointer-events-none">
+                                                                            Sesi
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Durasi ISHOMA */}
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold text-surface-300 mb-1">
+                                                                        Durasi Istirahat / ISHOMA
+                                                                    </label>
+                                                                    <span className="text-[11px] text-surface-400 block mb-1.5">
+                                                                        → Selesai istirahat pk. {daySched.computedIshomaEnd || '-'}
+                                                                    </span>
+                                                                    <div className="relative">
+                                                                        <input
+                                                                            type="number"
+                                                                            min={0}
+                                                                            max={240}
+                                                                            step={5}
+                                                                            value={dayConfig.ishoma_duration_minutes}
+                                                                            onChange={e => updateCustomDay(dayNum, { ishoma_duration_minutes: Math.max(0, parseInt(e.target.value) || 0) })}
+                                                                            className="input-field font-mono font-bold pl-3 pr-16 text-primary-300"
+                                                                            placeholder="60"
+                                                                        />
+                                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 font-semibold pointer-events-none">
+                                                                            Menit
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Sesi Setelah Istirahat */}
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold text-surface-300 mb-1">
+                                                                        Sesi Setelah Istirahat (Sore)
+                                                                    </label>
+                                                                    <span className="text-[11px] text-surface-400 block mb-1.5">
+                                                                        → Selesai hari pk. {daySched.computedSessionEnd || '-'}
+                                                                    </span>
+                                                                    <div className="relative">
+                                                                        <input
+                                                                            type="number"
+                                                                            min={0}
+                                                                            max={20}
+                                                                            value={dayConfig.sessions_after_break}
+                                                                            onChange={e => updateCustomDay(dayNum, { sessions_after_break: Math.max(0, parseInt(e.target.value) || 0) })}
+                                                                            className="input-field font-mono font-bold pl-3 pr-14 text-emerald-300"
+                                                                            placeholder="4"
+                                                                        />
+                                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 font-semibold pointer-events-none">
+                                                                            Sesi
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         )}
+                                                    </div>
+
+                                                    {/* Row 3: Istirahat Tambahan / Break Antar Sesi */}
+                                                    <div className="p-4 rounded-xl bg-surface-950/70 border border-surface-800 space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={dayConfig.has_extra_breaks}
+                                                                    onChange={e => {
+                                                                        const checked = e.target.checked;
+                                                                        if (checked) {
+                                                                            const newBreaks = dayConfig.extra_breaks.length > 0
+                                                                                ? dayConfig.extra_breaks
+                                                                                : [{ after_session: Math.max(1, (dayConfig.sessions_before_break || 4) + 2), duration_minutes: 10 }];
+                                                                            updateCustomDay(dayNum, {
+                                                                                has_extra_breaks: true,
+                                                                                extra_breaks: newBreaks,
+                                                                            });
+                                                                        } else {
+                                                                            updateCustomDay(dayNum, {
+                                                                                has_extra_breaks: false,
+                                                                                extra_breaks: [],
+                                                                            });
+                                                                        }
+                                                                    }}
+                                                                    className="w-4 h-4 rounded text-sky-600 bg-surface-900 border-surface-700 focus:ring-sky-500"
+                                                                />
+                                                                <div>
+                                                                    <span className="font-bold text-surface-200 text-xs sm:text-sm flex items-center gap-1.5">
+                                                                        <span>☕</span>
+                                                                        <span>Istirahat Tambahan / Break Antar Sesi di Hari {dayNum} (Opsional)</span>
+                                                                    </span>
+                                                                    <span className="text-[11px] text-surface-400">
+                                                                        Sisipkan jeda istirahat khusus (misal 10 menit) di antara dua sesi pertandingan hari ini
+                                                                    </span>
+                                                                </div>
+                                                            </label>
+
+                                                            {dayConfig.has_extra_breaks && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => addCustomDayBreak(dayNum)}
+                                                                    className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 text-xs font-bold transition-all flex items-center gap-1 border border-sky-500/30"
+                                                                >
+                                                                    <span>➕</span>
+                                                                    <span>Tambah Break Hari {dayNum}</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        {dayConfig.has_extra_breaks && dayConfig.extra_breaks.length > 0 && (
+                                                            <div className="space-y-2.5 pt-2 border-t border-surface-800/80">
+                                                                {dayConfig.extra_breaks.map((brk, bIdx) => (
+                                                                    <div key={bIdx} className="p-3 rounded-xl bg-surface-900/90 border border-sky-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                                        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap flex-1">
+                                                                            <span className="px-2 py-1 rounded-md bg-sky-500/20 text-sky-300 font-mono font-bold text-xs shrink-0">
+                                                                                Break #{bIdx + 1}
+                                                                            </span>
+
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <span className="text-xs text-surface-300 font-semibold whitespace-nowrap">
+                                                                                    Setelah Sesi ke-
+                                                                                </span>
+                                                                                <input
+                                                                                    type="number"
+                                                                                    min={1}
+                                                                                    max={Math.max(1, daySched.totalMatchSlots || 10)}
+                                                                                    value={brk.after_session}
+                                                                                    onChange={e => {
+                                                                                        const val = Math.max(1, parseInt(e.target.value) || 1);
+                                                                                        updateCustomDayBreak(dayNum, bIdx, 'after_session', val);
+                                                                                    }}
+                                                                                    className="w-18 px-2.5 py-1 rounded-lg bg-surface-950 border border-surface-700 text-sky-300 font-mono font-bold text-xs focus:ring-1 focus:ring-sky-500"
+                                                                                />
+                                                                            </div>
+
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <span className="text-xs text-surface-300 font-semibold whitespace-nowrap">
+                                                                                    Durasi:
+                                                                                </span>
+                                                                                <input
+                                                                                    type="number"
+                                                                                    min={1}
+                                                                                    max={180}
+                                                                                    step={5}
+                                                                                    value={brk.duration_minutes}
+                                                                                    onChange={e => {
+                                                                                        const val = Math.max(1, parseInt(e.target.value) || 1);
+                                                                                        updateCustomDayBreak(dayNum, bIdx, 'duration_minutes', val);
+                                                                                    }}
+                                                                                    className="w-18 px-2.5 py-1 rounded-lg bg-surface-950 border border-surface-700 text-sky-300 font-mono font-bold text-xs focus:ring-1 focus:ring-sky-500"
+                                                                                />
+                                                                                <span className="text-xs text-surface-400 font-semibold">Menit</span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                                                                            <span className="text-[11px] font-mono text-sky-300 bg-sky-950/60 px-2.5 py-1 rounded-lg border border-sky-800/60">
+                                                                                ☕ Antara Sesi {brk.after_session} & {Number(brk.after_session) + 1} ({brk.duration_minutes}m)
+                                                                            </span>
+
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => removeCustomDayBreak(dayNum, bIdx)}
+                                                                                className="p-1.5 rounded-lg text-red-400 hover:text-red-200 hover:bg-red-500/20 transition-all text-xs"
+                                                                                title="Hapus Break"
+                                                                            >
+                                                                                🗑️
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Row 4: Ringkasan Jadwal Otomatis Hari Ini */}
+                                                    <div className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+                                                        <div>
+                                                            <span className="text-[10px] text-surface-500 uppercase font-bold block">Mulai Pagi</span>
+                                                            <span className="text-xs font-mono font-bold text-surface-200">{dayConfig.session_start_time}</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-amber-400 uppercase font-bold block">Waktu ISHOMA</span>
+                                                            <span className="text-xs font-mono font-bold text-amber-300">
+                                                                {dayConfig.has_ishoma ? `${daySched.computedIshomaStart} – ${daySched.computedIshomaEnd}` : 'Tanpa ISHOMA'}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-sky-400 uppercase font-bold block">Break Antar Sesi</span>
+                                                            <span className="text-xs font-mono font-bold text-sky-300">
+                                                                {dayConfig.has_extra_breaks && dayConfig.extra_breaks.length > 0
+                                                                    ? `${dayConfig.extra_breaks.length} Break (${dayConfig.extra_breaks.reduce((acc, b) => acc + Number(b.duration_minutes || 0), 0)}m)`
+                                                                    : 'Tidak Ada'}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-emerald-400 uppercase font-bold block">Selesai Hari</span>
+                                                            <span className="text-xs font-mono font-bold text-emerald-300">{daySched.computedSessionEnd}</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] text-primary-400 uppercase font-bold block">Total Sesi/Hari</span>
+                                                            <span className="text-xs font-mono font-bold text-primary-300">{daySched.totalMatchSlots} Sesi/Lap</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             );
@@ -1370,17 +1743,26 @@ export default function Config({ tournament, modePools = {}, preview: initialPre
                                     </p>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                                         {activeOverrideDays.map(d => {
-                                            const o = data.day_overrides[d] || {};
-                                            const dSlots = getPreviewSlots(String(d));
-                                            const mCount = dSlots.filter(s => s.type === 'match').length;
+                                            const config = getCustomDayConfig(d);
+                                            const daySched = computeCustomDaySchedule(d);
+                                            const mCount = daySched.totalMatchSlots;
                                             return (
                                                 <div key={d} className="p-2.5 rounded-xl bg-surface-900/80 border border-surface-700/60 flex items-center justify-between">
                                                     <div>
                                                         <span className="font-bold text-amber-300">Hari ke-{d}:</span>{' '}
-                                                        <span className="font-mono text-surface-200">{o.session_start_time || '08:00'} – {o.session_end_time || '17:00'}</span>
-                                                        {o.has_ishoma !== false && (
+                                                        <span className="font-mono text-surface-200">{config.session_start_time} – {daySched.computedSessionEnd}</span>
+                                                        {config.has_ishoma ? (
                                                             <span className="text-[10px] text-surface-400 block">
-                                                                ISHOMA: {o.ishoma_start_time || '12:00'} – {o.ishoma_end_time || '13:00'}
+                                                                ISHOMA: {daySched.computedIshomaStart} – {daySched.computedIshomaEnd}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] text-surface-500 block">
+                                                                Tanpa ISHOMA
+                                                            </span>
+                                                        )}
+                                                        {config.has_extra_breaks && config.extra_breaks.length > 0 && (
+                                                            <span className="text-[10px] text-sky-400 block">
+                                                                Break: {config.extra_breaks.map(b => `Sesi ${b.after_session}→${Number(b.after_session)+1} (${b.duration_minutes}m)`).join(', ')}
                                                             </span>
                                                         )}
                                                     </div>
