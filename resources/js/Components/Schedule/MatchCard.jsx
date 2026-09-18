@@ -113,6 +113,9 @@ export default function MatchCard({
     const isPlaceholder = match.home_placeholder || match.away_placeholder;
 
     const stageLabel = STAGE_LABELS[match.stage] || match.stage;
+    const bracketName = match.bracket_name || match.bracket_group || match.pool?.bracket_name;
+    const poolName = match.pool_name || match.pool?.name;
+    const stageDisplay = match.stage === 'pool' && poolName ? `Pool ${poolName}` : stageLabel;
 
     const homeName = match.home_display_name
         || match.home_super_team?.name
@@ -182,10 +185,13 @@ export default function MatchCard({
         return 'text-gray-900 font-bold';
     };
 
+    const cardTitle = `Match #${match.match_number || match.id} • ${colors.label}${bracketName ? ` • Braket: ${bracketName}` : ''} • ${stageDisplay} • ${homeName} vs ${awayName}`;
+
     return (
         <div
             ref={setNodeRef}
             id={`match-card-${match.id}`}
+            title={cardTitle}
             style={{ ...style, height: `${height}px`, minHeight: `${height}px` }}
             className={`
                 relative rounded-lg select-none overflow-hidden transition-all duration-200 flex flex-col justify-between
@@ -199,7 +205,7 @@ export default function MatchCard({
             {...(canDrag ? listeners : {})}
             onClick={() => !isDragging && onCardClick?.(match)}
         >
-            {/* Header dengan Nomor Match #ID, Badge Pencarian, dan warna mode */}
+            {/* Header dengan Nomor Match #ID, Badge Braket, Badge Pencarian, dan Stage */}
             <div
                 className="px-2 py-0.5 flex items-center justify-between gap-1 shrink-0"
                 style={headerStyle}
@@ -212,10 +218,18 @@ export default function MatchCard({
                         {colors.label}
                     </span>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 shrink-0 min-w-0 max-w-[65%] justify-end">
                     {headerBadge}
-                    <span className="text-white/90 text-[10px] font-medium shrink-0">
-                        {stageLabel}
+                    {bracketName && (
+                        <span
+                            className="bg-black/35 text-amber-200 font-extrabold text-[9px] px-1.5 py-0.2 rounded truncate border border-amber-300/30"
+                            title={`Braket: ${bracketName}`}
+                        >
+                            🏷️ {bracketName}
+                        </span>
+                    )}
+                    <span className="text-white/95 text-[9.5px] font-bold shrink-0 bg-black/20 px-1 py-0.2 rounded">
+                        {stageDisplay}
                     </span>
                 </div>
             </div>

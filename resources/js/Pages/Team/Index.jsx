@@ -2,13 +2,62 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import Pagination from '@/Components/Pagination';
 import ConfirmDialog from '@/Components/ConfirmDialog';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], coaches = [], tournaments = [] }) {
+export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], coaches = [], tournaments = [], filters = {} }) {
     const { auth } = usePage().props;
     const isCoach = auth.user?.role === 'coach';
     const isAdmin = auth.user?.role === 'admin';
     const canManageSuperTeams = isAdmin || isCoach;
+
+    const [search, setSearch] = useState(filters?.search || '');
+    const [selectedCoachId, setSelectedCoachId] = useState(filters?.coach_id || '');
+    const isFirstRender = useRef(true);
+
+    const handleSearch = (searchTerm, coachId = selectedCoachId) => {
+        router.get(
+            route('teams.index'),
+            {
+                search: searchTerm ? searchTerm.trim() : undefined,
+                coach_id: coachId || undefined,
+            },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+            }
+        );
+    };
+
+    // Debounce search input
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            handleSearch(search, selectedCoachId);
+        }, 350);
+
+        return () => clearTimeout(timer);
+    }, [search]);
+
+    const handleCoachChange = (e) => {
+        const newCoachId = e.target.value;
+        setSelectedCoachId(newCoachId);
+        handleSearch(search, newCoachId);
+    };
+
+    const handleClearSearch = () => {
+        setSearch('');
+        setSelectedCoachId('');
+        router.get(
+            route('teams.index'),
+            {},
+            { preserveState: true, preserveScroll: true, replace: true }
+        );
+    };
 
     const [activeTab, setActiveTab] = useState('single'); // single, super
     const [deletingTeamId, setDeletingTeamId] = useState(null);
@@ -215,6 +264,89 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                 </div>
             </div>
 
+            {/* Search and Filter Toolbar */}
+            <div className="bg-surface-900/80 border border-surface-700/60 rounded-2xl p-4 mb-6 backdrop-blur-sm shadow-md">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    {/* Search Input Box */}
+                    <div className="flex-1 relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-surface-400">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </div>
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder={isAdmin ? "🔍 Cari nama tim, daerah, pelatih, atau nama atlet..." : "🔍 Cari nama tim, asal daerah, atau nama atlet..."}
+                            className="w-full bg-surface-950 border border-surface-700 text-surface-100 rounded-xl pl-10 pr-10 py-2.5 text-xs font-medium focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors placeholder:text-surface-500"
+                        />
+                        {search && (
+                            <button
+                                type="button"
+                                onClick={() => setSearch('')}
+                                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-surface-400 hover:text-surface-200 text-xs font-bold cursor-pointer"
+                                title="Hapus teks pencarian"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Coach Filter Dropdown for Admin */}
+                    {isAdmin && coaches && coaches.length > 0 && (
+                        <div className="sm:w-56 shrink-0">
+                            <select
+                                value={selectedCoachId}
+                                onChange={handleCoachChange}
+                                className="w-full bg-surface-950 border border-surface-700 text-surface-200 rounded-xl px-3 py-2.5 text-xs font-semibold focus:border-primary-500 focus:ring-1 focus:ring-primary-500 cursor-pointer"
+                            >
+                                <option value="">🧑‍🏫 Semua Pelatih</option>
+                                {coaches.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        🧑‍🏫 {c.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Reset All Filters Button */}
+                    {(search || selectedCoachId) && (
+                        <button
+                            type="button"
+                            onClick={handleClearSearch}
+                            className="px-3.5 py-2.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white text-xs font-bold transition-all border border-surface-700 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                            <span>✕</span>
+                            <span>Reset</span>
+                        </button>
+                    )}
+                </div>
+
+                {/* Active Search / Filter Indicator Badge */}
+                {(search || selectedCoachId) && (
+                    <div className="mt-3 pt-3 border-t border-surface-800/80 flex items-center justify-between flex-wrap gap-2 text-xs">
+                        <div className="flex items-center gap-2 flex-wrap text-surface-300">
+                            <span>Hasil pencarian untuk:</span>
+                            {search && (
+                                <span className="px-2.5 py-0.5 rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/30 font-bold">
+                                    Kata kunci: "{search}"
+                                </span>
+                            )}
+                            {selectedCoachId && (
+                                <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+                                    Pelatih: {coaches.find(c => String(c.id) === String(selectedCoachId))?.name || 'Terpilih'}
+                                </span>
+                            )}
+                        </div>
+                        <span className="text-surface-400 font-mono text-[11px]">
+                            Ditemukan: <strong className="text-white">{teams.total ?? teams.data?.length ?? 0}</strong> Tim Unit & <strong className="text-white">{superTeams.length}</strong> Team Squad
+                        </span>
+                    </div>
+                )}
+            </div>
+
             {/* Tab Navigation */}
             <div className="flex items-center gap-2 mb-6 border-b border-surface-800 pb-3">
                 <button
@@ -254,19 +386,36 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
             {activeTab === 'single' && (
                 <div>
                     {teams.data.length === 0 ? (
-                        <div className="text-center py-16 rounded-2xl border border-dashed border-surface-700/50 bg-surface-900/30">
-                            <div className="text-5xl mb-4">👥</div>
-                            <h3 className="text-base font-bold text-surface-200">Belum Ada Tim Terdaftar</h3>
-                            <p className="text-surface-400 text-xs mt-1 max-w-sm mx-auto">
-                                Daftarkan tim binaan Anda terlebih dahulu untuk mengelola daftar atlet dan mengikuti turnamen.
-                            </p>
-                            <Link
-                                href={route('teams.create')}
-                                className="inline-block mt-4 px-4 py-2 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-500 shadow-md"
-                            >
-                                + Daftarkan Tim Pertama
-                            </Link>
-                        </div>
+                        (search || selectedCoachId) ? (
+                            <div className="text-center py-16 rounded-2xl border border-dashed border-surface-700/50 bg-surface-900/30">
+                                <div className="text-5xl mb-4">🔍</div>
+                                <h3 className="text-base font-bold text-surface-200">Tidak Ada Tim Unit yang Cocok</h3>
+                                <p className="text-surface-400 text-xs mt-1 max-w-sm mx-auto">
+                                    Tidak ditemukan tim unit yang sesuai dengan pencarian Anda. Silakan coba kata kunci lain atau reset pencarian.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={handleClearSearch}
+                                    className="inline-block mt-4 px-4 py-2 rounded-xl bg-surface-800 hover:bg-surface-700 text-white text-xs font-bold border border-surface-700 shadow-md cursor-pointer transition-colors"
+                                >
+                                    ✕ Reset Pencarian
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="text-center py-16 rounded-2xl border border-dashed border-surface-700/50 bg-surface-900/30">
+                                <div className="text-5xl mb-4">👥</div>
+                                <h3 className="text-base font-bold text-surface-200">Belum Ada Tim Terdaftar</h3>
+                                <p className="text-surface-400 text-xs mt-1 max-w-sm mx-auto">
+                                    Daftarkan tim binaan Anda terlebih dahulu untuk mengelola daftar atlet dan mengikuti turnamen.
+                                </p>
+                                <Link
+                                    href={route('teams.create')}
+                                    className="inline-block mt-4 px-4 py-2 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-500 shadow-md"
+                                >
+                                    + Daftarkan Tim Pertama
+                                </Link>
+                            </div>
+                        )
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
                             {teams.data.map((team) => (
@@ -374,21 +523,38 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                     </div>
 
                     {superTeams.length === 0 ? (
-                        <div className="text-center py-16 rounded-2xl border border-dashed border-surface-700/50 bg-surface-900/30">
-                            <div className="text-5xl mb-4">🏆</div>
-                            <h3 className="text-base font-bold text-surface-200">Belum Ada Team Squad</h3>
-                            <p className="text-surface-400 text-xs mt-1 max-w-md mx-auto">
-                                Daftarkan Team Squad untuk turnamen kategori Team Squad (3 sesi pertandingan).
-                            </p>
-                            {canManageSuperTeams && (
+                        (search || selectedCoachId) ? (
+                            <div className="text-center py-16 rounded-2xl border border-dashed border-purple-500/30 bg-surface-900/30">
+                                <div className="text-5xl mb-4">🔍</div>
+                                <h3 className="text-base font-bold text-purple-200">Tidak Ada Team Squad yang Cocok</h3>
+                                <p className="text-surface-400 text-xs mt-1 max-w-md mx-auto">
+                                    Tidak ditemukan Team Squad yang sesuai dengan pencarian Anda. Silakan coba kata kunci lain atau reset pencarian.
+                                </p>
                                 <button
-                                    onClick={handleOpenCreateModal}
-                                    className="inline-block mt-4 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                                    type="button"
+                                    onClick={handleClearSearch}
+                                    className="inline-block mt-4 px-4 py-2 rounded-xl bg-surface-800 hover:bg-surface-700 text-white text-xs font-bold border border-surface-700 shadow-md cursor-pointer transition-colors"
                                 >
-                                    + Buat Team Squad Pertama
+                                    ✕ Reset Pencarian
                                 </button>
-                            )}
-                        </div>
+                            </div>
+                        ) : (
+                            <div className="text-center py-16 rounded-2xl border border-dashed border-surface-700/50 bg-surface-900/30">
+                                <div className="text-5xl mb-4">🏆</div>
+                                <h3 className="text-base font-bold text-surface-200">Belum Ada Team Squad</h3>
+                                <p className="text-surface-400 text-xs mt-1 max-w-md mx-auto">
+                                    Daftarkan Team Squad untuk turnamen kategori Team Squad (3 sesi pertandingan).
+                                </p>
+                                {canManageSuperTeams && (
+                                    <button
+                                        onClick={handleOpenCreateModal}
+                                        className="inline-block mt-4 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                                    >
+                                        + Buat Team Squad Pertama
+                                    </button>
+                                )}
+                            </div>
+                        )
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
                             {superTeams.map((st) => {

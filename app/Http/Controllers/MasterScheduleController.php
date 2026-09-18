@@ -273,7 +273,7 @@ class MasterScheduleController extends Controller
             ->with([
                 'homeTeam', 'awayTeam', 'referee',
                 'homeSuperTeam.members', 'awaySuperTeam.members',
-                'court', 'timeSlot',
+                'court', 'timeSlot', 'pool',
                 'conflicts' => fn($q) => $q->whereNull('resolved_at'),
             ])
             ->where(function ($q) {
@@ -354,7 +354,7 @@ class MasterScheduleController extends Controller
             ->with([
                 'homeTeam', 'awayTeam', 'referee',
                 'homeSuperTeam.members', 'awaySuperTeam.members',
-                'court', 'timeSlot',
+                'court', 'timeSlot', 'pool',
             ])
             ->where(function ($q) {
                 $q->whereNull('home_placeholder')
@@ -417,11 +417,17 @@ class MasterScheduleController extends Controller
             $homeDisplay = $this->resolveSideDisplayName($m, 'home', $stageMap);
             $awayDisplay = $this->resolveSideDisplayName($m, 'away', $stageMap);
 
+            $bracketName = !empty($m->bracket_group)
+                ? $m->bracket_group
+                : ($m->pool?->bracket_name ?? null);
+
             return [
                 ...$m->toArray(),
                 'match_number'      => $matchNum,
                 'home_display_name' => $homeDisplay,
                 'away_display_name' => $awayDisplay,
+                'bracket_name'      => $bracketName,
+                'pool_name'         => $m->pool?->name,
                 'has_conflicts'     => method_exists($m, 'hasActiveConflicts') ? $m->hasActiveConflicts() : false,
             ];
         })->all();
@@ -775,6 +781,13 @@ class MasterScheduleController extends Controller
         $message = $swappedCount > 0
             ? "Jadwal Match #{$displayNum}{$spanText} berhasil dipindahkan dan ditukar posisinya secara aman ({$swappedCount} laga disesuaikan)!"
             : "Jadwal Match #{$displayNum}{$spanText} berhasil dipindahkan!";
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+            ]);
+        }
 
         return back()->with('success', $message);
     }

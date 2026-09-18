@@ -408,7 +408,9 @@ export default function PrintSchedule({
                                                             }
 
                                                             const category = MODE_LABELS[match.match_mode] || match.match_mode;
-                                                            const stage = STAGE_LABELS[match.stage] || match.stage || (match.pool ? `Pool ${match.pool.name}` : '');
+                                                            const bracket = match.bracket_name || match.bracket_group || match.pool?.bracket_name;
+                                                            const poolPart = match.pool ? `Pool ${match.pool.name}` : (match.pool_name ? `Pool ${match.pool_name}` : '');
+                                                            const stage = STAGE_LABELS[match.stage] || match.stage || poolPart;
 
                                                             return (
                                                                 <td key={court.id} className="border border-black p-2 bg-white">
@@ -419,8 +421,8 @@ export default function PrintSchedule({
                                                                             <span className="font-mono font-black text-black">
                                                                                 {match.match_number ? `M-${String(match.match_number).padStart(2, '0')}` : 'MATCH'}
                                                                             </span>
-                                                                            <span className="font-semibold text-gray-700 print:text-black uppercase">
-                                                                                {category} {stage && `• ${stage}`}
+                                                                            <span className="font-semibold text-gray-700 print:text-black uppercase text-[8.5px] truncate">
+                                                                                {category} {bracket && `• [${bracket}]`} {stage && `• ${stage}`}
                                                                             </span>
                                                                         </div>
 
@@ -488,7 +490,7 @@ export default function PrintSchedule({
                                                 <th className="border border-black p-1.5 w-24">WAKTU</th>
                                                 <th className="border border-black p-1.5 w-16">LAP.</th>
                                                 <th className="border border-black p-1.5 w-24">KATEGORI</th>
-                                                <th className="border border-black p-1.5 w-28">BABAK / POOL</th>
+                                                <th className="border border-black p-1.5 w-32">BRAKET / BABAK</th>
                                                 <th className="border border-black p-1.5">PERTANDINGAN (HOME vs AWAY)</th>
                                                 {showNotesCol && (
                                                     <th className="border border-black p-1.5 w-24">SKOR / CATATAN</th>
@@ -502,7 +504,9 @@ export default function PrintSchedule({
                                                     : '-';
                                                 const courtName = m.court?.name || `Lap ${m.court?.court_number || m.court_id || '-'}`;
                                                 const category = MODE_LABELS[m.match_mode] || m.match_mode || 'Regu';
-                                                const stage = STAGE_LABELS[m.stage] || m.stage || (m.pool ? `Pool ${m.pool.name}` : '-');
+                                                const bracket = m.bracket_name || m.bracket_group || m.pool?.bracket_name;
+                                                const poolPart = m.pool ? `Pool ${m.pool.name}` : (m.pool_name ? `Pool ${m.pool_name}` : '');
+                                                const stage = STAGE_LABELS[m.stage] || m.stage || poolPart || '-';
 
                                                 const prevMatch = idx > 0 ? dayMatches[idx - 1] : null;
                                                 const showIshomaBeforeThis = showIshoma && ishomaSlot && prevMatch &&
@@ -533,7 +537,14 @@ export default function PrintSchedule({
                                                                 {category}
                                                             </td>
                                                             <td className="border border-black p-1.5 text-center font-medium">
-                                                                {m.pool ? `Pool ${m.pool.name}` : stage}
+                                                                {bracket && (
+                                                                    <div className="text-[9px] font-bold text-black uppercase font-mono">
+                                                                        {bracket}
+                                                                    </div>
+                                                                )}
+                                                                <div className="text-[10px] text-gray-600 print:text-black">
+                                                                    {m.pool ? `Pool ${m.pool.name}` : (m.pool_name ? `Pool ${m.pool_name}` : stage)}
+                                                                </div>
                                                             </td>
                                                             <td className="border border-black p-1.5">
                                                                 <div className="flex items-center justify-between gap-1 font-bold">

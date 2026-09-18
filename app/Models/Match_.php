@@ -28,7 +28,7 @@ class Match_ extends Model
 
     protected $table = 'matches';
 
-    protected $appends = ['home_display_name', 'away_display_name'];
+    protected $appends = ['home_display_name', 'away_display_name', 'bracket_name', 'pool_name'];
 
     protected function casts(): array
     {
@@ -178,6 +178,25 @@ class Match_ extends Model
             return $this->awaySuperTeam?->name ?? $this->away_placeholder ?? 'TBD';
         }
         return $this->awayTeam?->name ?? $this->away_placeholder ?? 'TBD';
+    }
+
+    /**
+     * Tampilkan nama braket (dari bracket_group atau pool).
+     */
+    public function getBracketNameAttribute(): ?string
+    {
+        if (!empty($this->bracket_group)) {
+            return $this->bracket_group;
+        }
+        return $this->pool?->bracket_name;
+    }
+
+    /**
+     * Tampilkan nama pool jika ada.
+     */
+    public function getPoolNameAttribute(): ?string
+    {
+        return $this->pool?->name;
     }
 
     /**

@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import {
     DndContext, DragOverlay, PointerSensor,
     useSensor, useSensors, closestCenter,
@@ -39,9 +40,34 @@ export default function Grid({
     const [draggingItem,       setDraggingItem]       = useState(null);
     const [isLoading,          setIsLoading]          = useState(false);
     const [localMatches,       setLocalMatches]       = useState(matches);
+    const [flashMessage,       setFlashMessage]       = useState(null);
     const [showRefereeModal,   setShowRefereeModal]   = useState(false);
     const [showReEditModal,    setShowReEditModal]    = useState(false);
     const [isEditUnlocked,     setIsEditUnlocked]     = useState(!isPublished);
+
+    // Group matches & timeSlots per day (didefinisikan di awal agar bisa diakses oleh useCallback / memo lainnya)
+    const timeSlotsByDay = useMemo(() => {
+        const map = {};
+        (timeSlots || []).forEach(slot => {
+            const d = slot.day_number || 1;
+            if (!map[d]) map[d] = [];
+            map[d].push(slot);
+        });
+        return map;
+    }, [timeSlots]);
+
+    // Sinkronisasi otomatis localMatches dengan prop matches jika ada update eksternal
+    useEffect(() => {
+        setLocalMatches(matches);
+    }, [matches]);
+
+    // Auto-dismiss notifikasi toast setelah 3.5 detik
+    useEffect(() => {
+        if (flashMessage) {
+            const timer = setTimeout(() => setFlashMessage(null), 3500);
+            return () => clearTimeout(timer);
+        }
+    }, [flashMessage]);
 
     const canEdit = isAdmin && (isPublished ? isEditUnlocked : true);
 
@@ -247,33 +273,134 @@ export default function Grid({
             return;
         }
 
-        const matchId = active.id.replace('match-', '');
+        const matchId = Number(active.id.replace('match-', ''));
         const [slotId, courtId] = over.id.split('_').map(Number);
 
         if (!slotId || !courtId) return;
 
-        setIsLoading(true);
-        router.patch(
-            route('matches.reschedule', matchId),
-            { time_slot_id: slotId, court_id: courtId },
-            {
-                preserveScroll: true,
-                onSuccess: () => setIsLoading(false),
-                onError: () => setIsLoading(false),
-            }
-        );
-    }, [localMatches, tournament.schedule_status, isEditUnlocked, canEdit]);
+        const draggedMatch = localMatches.find(m => Number(m.id) === matchId);
+        if (!draggedMatch) return;
 
-    // Group matches & timeSlots per day
-    const timeSlotsByDay = useMemo(() => {
-        const map = {};
-        timeSlots.forEach(slot => {
-            const d = slot.day_number || 1;
-            if (!map[d]) map[d] = [];
-            map[d].push(slot);
+        // Jika slot dan lapangan tidak berubah, abaikan
+        if (draggedMatch.time_slot_id === slotId && draggedMatch.court_id === courtId) {
+            return;
+        }
+
+        const targetSlot = timeSlots.find(s => s.id === slotId);
+        if (!targetSlot) return;
+
+        const targetDay = targetSlot.day_number || 1;
+        const targetScheduled = targetSlot.start_time;
+
+        const oldSlotId    = draggedMatch.time_slot_id;
+        const oldCourtId   = draggedMatch.court_id;
+        const oldDayNumber = draggedMatch.day_number;
+        const oldScheduled = draggedMatch.scheduled_at;
+
+        // Hitung slot span dari match yang di-drag
+        const matchSpan = draggedMatch.slot_span || ((draggedMatch.match_mode === 'team_regu' || draggedMatch.match_mode === 'team_double') ? 3 : 1);
+
+        const targetDaySlots = (timeSlotsByDay[targetDay] || []).filter(s => s.slot_type === 'match');
+        let targetSlotIndex = targetDaySlots.findIndex(s => s.id === slotId);
+        if (targetSlotIndex === -1) targetSlotIndex = 0;
+
+        if (matchSpan > 1 && targetSlotIndex + matchSpan > targetDaySlots.length) {
+            targetSlotIndex = Math.max(0, targetDaySlots.length - matchSpan);
+        }
+        const targetSpanSlots = targetDaySlots.slice(targetSlotIndex, targetSlotIndex + matchSpan);
+        const targetSpanSlotIds = targetSpanSlots.map(s => s.id);
+
+        // Ambil slot-slot lama jika ada
+        const oldDaySlots = (oldDayNumber && oldSlotId)
+            ? (timeSlotsByDay[oldDayNumber] || []).filter(s => s.slot_type === 'match')
+            : [];
+        const oldSlotIndex = oldDaySlots.findIndex(s => s.id === oldSlotId);
+        const oldSpanSlots = (oldSlotIndex !== -1) ? oldDaySlots.slice(oldSlotIndex, oldSlotIndex + matchSpan) : [];
+
+        // Cari match-match yang bertabrakan di area target
+        const conflictingMatches = localMatches.filter(m => {
+            if (Number(m.id) === matchId) return false;
+            if (m.court_id !== courtId || m.day_number !== targetDay || !m.time_slot_id) return false;
+
+            const oSpan = m.slot_span || ((m.match_mode === 'team_regu' || m.match_mode === 'team_double') ? 3 : 1);
+            const oIdx = targetDaySlots.findIndex(s => s.id === m.time_slot_id);
+            if (oIdx === -1) return false;
+            const oSlotIds = targetDaySlots.slice(oIdx, oIdx + oSpan).map(s => s.id);
+
+            return oSlotIds.some(id => targetSpanSlotIds.includes(id));
         });
-        return map;
-    }, [timeSlots]);
+
+        // Simpan snapshot sebelum drag untuk rollback jika terjadi error di server
+        const previousMatches = localMatches.map(m => ({ ...m }));
+
+        // ─── OPTIMISTIC UPDATE: Terapkan swap seketika (0ms delay tanpa nunggu refresh) ───
+        const nextMatches = localMatches.map(m => {
+            if (Number(m.id) === matchId) {
+                return {
+                    ...m,
+                    time_slot_id: targetSpanSlots[0]?.id || slotId,
+                    court_id: courtId,
+                    day_number: targetDay,
+                    scheduled_at: targetSpanSlots[0]?.start_time || targetScheduled,
+                    slot_span: matchSpan,
+                };
+            }
+
+            // Cek apakah match ini adalah salah satu yang bertabrakan di target (si c vs d)
+            const conflictIdx = conflictingMatches.findIndex(cm => Number(cm.id) === Number(m.id));
+            if (conflictIdx !== -1) {
+                // Tukar langsung ke posisi slot lama match yang di-drag (si a vs b)
+                if (oldSlotId && oldCourtId) {
+                    const assignSlot = oldSpanSlots[conflictIdx] || oldSpanSlots[0];
+                    return {
+                        ...m,
+                        time_slot_id: assignSlot ? assignSlot.id : oldSlotId,
+                        court_id: oldCourtId,
+                        day_number: oldDayNumber,
+                        scheduled_at: assignSlot ? assignSlot.start_time : oldScheduled,
+                    };
+                } else {
+                    return {
+                        ...m,
+                        time_slot_id: null,
+                        court_id: null,
+                        day_number: null,
+                        scheduled_at: null,
+                    };
+                }
+            }
+
+            return m;
+        });
+
+        // UPDATE STATE LANGSUNG TANPA NUNGGU REFRESH!
+        setLocalMatches(nextMatches);
+
+        const targetDesc = conflictingMatches.length > 0
+            ? `🔄 Posisi langsung ditukar dengan Match #${conflictingMatches.map(cm => cm.match_number || cm.id).join(', #')}!`
+            : `📍 Dipindahkan ke Lapangan ${courtId}!`;
+        setFlashMessage({
+            type: 'success',
+            text: `⚡ Match #${draggedMatch.match_number || draggedMatch.id} ${targetDesc}`,
+        });
+
+        // Simpan ke database di background via AJAX (tanpa reload / refresh halaman)
+        axios.patch(route('matches.reschedule', matchId), {
+            time_slot_id: slotId,
+            court_id: courtId,
+        }, {
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => {
+            // Berhasil disimpan di database secara background
+        })
+        .catch(error => {
+            // Revert ke posisi semula jika terjadi kendala di server
+            setLocalMatches(previousMatches);
+            const errMsg = error.response?.data?.message || 'Gagal mengubah jadwal pertandingan.';
+            setFlashMessage({ type: 'error', text: `⚠️ ${errMsg}` });
+        });
+    }, [localMatches, timeSlots, timeSlotsByDay, tournament.schedule_status, isEditUnlocked, canEdit]);
 
     // Pemetaan Status Sel Grid (Root vs Covered oleh 3-slot match)
     const cellStateMap = useMemo(() => {
@@ -742,6 +869,18 @@ export default function Grid({
                     onClose={() => setShowRefereeModal(false)}
                 />
             )}
+
+            {/* ─── Floating Toast Notifikasi Pemindahan Cepat (Tanpa Refresh) ─── */}
+            {flashMessage && (
+                <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-2.5 animate-slide-up backdrop-blur-md transition-all ${
+                    flashMessage.type === 'error'
+                        ? 'bg-rose-950/90 border-rose-500/50 text-rose-200'
+                        : 'bg-surface-900/95 border-emerald-500/50 text-emerald-300'
+                }`}>
+                    <span className="text-base">{flashMessage.type === 'error' ? '❌' : '⚡'}</span>
+                    <span>{flashMessage.text}</span>
+                </div>
+            )}
         </AuthenticatedLayout>
     );
 }
@@ -911,9 +1050,14 @@ function TeamMatchSummaryCard({
                                 className="p-2.5 rounded-xl bg-surface-900/90 border border-surface-700 flex items-center justify-between gap-3 text-xs hover:border-surface-600 transition-all shadow-xs"
                             >
                                 <div className="flex-1 min-w-0 space-y-0.5">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                         <span className="font-mono font-bold text-primary-300">#{m.match_number || m.id}</span>
                                         <span className="text-surface-400 uppercase text-[10px] font-semibold">({m.match_mode})</span>
+                                        {(m.bracket_name || m.bracket_group || m.pool?.bracket_name) && (
+                                            <span className="text-[10px] font-extrabold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                                🏷️ {m.bracket_name || m.bracket_group || m.pool?.bracket_name}
+                                            </span>
+                                        )}
                                         <span className="text-[11px] font-bold text-surface-200 truncate">
                                             ⚔️ Lawan: <strong className="text-white">{opponent}</strong>
                                         </span>
@@ -1509,13 +1653,18 @@ function RefereeAssignModal({ tournament, matches, referees, onClose }) {
                                                                 onChange={() => {}} // Handled by row onClick
                                                                 className="w-4 h-4 rounded border-surface-600 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
                                                             />
-                                                            <div className="flex items-center gap-2 shrink-0">
+                                                            <div className="flex items-center gap-2 shrink-0 flex-wrap">
                                                                 <span className="font-bold font-mono text-purple-300 text-xs bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded">
                                                                     #{match.match_number || match.id}
                                                                 </span>
                                                                 <span className="text-[10px] uppercase font-bold text-surface-400 bg-surface-800 px-2 py-0.5 rounded">
                                                                     {match.match_mode?.replace('_', ' ')}
                                                                 </span>
+                                                                {(match.bracket_name || match.bracket_group || match.pool?.bracket_name) && (
+                                                                    <span className="text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                                                                        🏷️ {match.bracket_name || match.bracket_group || match.pool?.bracket_name}
+                                                                    </span>
+                                                                )}
                                                             </div>
 
                                                             <div className="font-medium text-surface-100 text-xs truncate min-w-0">

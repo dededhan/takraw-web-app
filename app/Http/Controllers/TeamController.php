@@ -14,18 +14,54 @@ class TeamController extends Controller
 {
     public function index(Request $request): Response
     {
+        $search = trim($request->input('search', ''));
+        $coachId = $request->input('coach_id');
+
         $query = Team::where('is_super_sub', false)
             ->with(['coach', 'athletes', 'tournaments'])
             ->withCount('athletes');
 
-        // If coach, only show their teams
+        // If coach, only show their teams. If admin, allow filtering by coach_id if specified.
         if ($request->user()->isCoach()) {
             $query->where('coach_id', $request->user()->id);
+        } elseif ($coachId) {
+            $query->where('coach_id', $coachId);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('region', 'like', "%{$search}%")
+                  ->orWhereHas('coach', function ($cq) use ($search) {
+                      $cq->where('name', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('athletes', function ($aq) use ($search) {
+                      $aq->where('name', 'like', "%{$search}%");
+                  });
+            });
         }
 
         $superTeamsQuery = \App\Models\SuperTeam::with(['members.athletes', 'tournaments', 'tournament', 'coach']);
         if ($request->user()->isCoach()) {
             $superTeamsQuery->where('coach_id', $request->user()->id);
+        } elseif ($coachId) {
+            $superTeamsQuery->where('coach_id', $coachId);
+        }
+
+        if ($search !== '') {
+            $superTeamsQuery->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhereHas('coach', function ($cq) use ($search) {
+                      $cq->where('name', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('members', function ($mq) use ($search) {
+                      $mq->where('name', 'like', "%{$search}%")
+                         ->orWhere('region', 'like', "%{$search}%")
+                         ->orWhereHas('athletes', function ($maq) use ($search) {
+                             $maq->where('name', 'like', "%{$search}%");
+                         });
+                  });
+            });
         }
 
         $allCoachTeams = $request->user()->isCoach()
@@ -40,11 +76,15 @@ class TeamController extends Controller
             ->get(['id', 'name', 'status']);
 
         return Inertia::render('Team/Index', [
-            'teams' => $query->latest()->paginate(12),
+            'teams' => $query->latest()->paginate(12)->withQueryString(),
             'superTeams' => $superTeamsQuery->latest()->get(),
             'allCoachTeams' => $allCoachTeams,
             'coaches' => $coaches,
             'tournaments' => $tournaments,
+            'filters' => [
+                'search'   => $search,
+                'coach_id' => $coachId ? (string) $coachId : '',
+            ],
         ]);
     }
 

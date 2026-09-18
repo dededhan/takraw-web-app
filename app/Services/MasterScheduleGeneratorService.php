@@ -207,6 +207,7 @@ class MasterScheduleGeneratorService
                                 'pool_id'            => $pool->id,
                                 'match_mode'         => $mode,
                                 'stage'              => 'pool',
+                                'bracket_group'      => $pool->bracket_name,
                                 'home_super_team_id' => $homeId,
                                 'away_super_team_id' => $awayId,
                                 'slot_span'          => 3,
@@ -221,6 +222,7 @@ class MasterScheduleGeneratorService
                             'pool_id'            => $pool->id,
                             'match_mode'         => $mode,
                             'stage'              => 'pool',
+                            'bracket_group'      => $pool->bracket_name,
                             'home_super_team_id' => $homeId,
                             'away_super_team_id' => $awayId,
                             'court_id'           => $slot['court_id'],
@@ -275,6 +277,7 @@ class MasterScheduleGeneratorService
                             'tournament_id' => $tournament->id,
                             'pool_id'       => $pool->id,
                             'match_mode'    => $mode,
+                            'bracket_group' => $pool->bracket_name,
                             'home_team_id'  => $teams[$i]->id,
                             'away_team_id'  => $teams[$j]->id,
                         ]);
