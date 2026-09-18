@@ -181,6 +181,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/scoring/{match}/finish-set', [ScoringController::class, 'finishSet'])->name('scoring.finish-set');
         Route::post('/scoring/{match}/quick-athlete', [ScoringController::class, 'quickAthlete'])->name('scoring.quick-athlete');
         Route::post('/scoring/{match}/update-athlete', [ScoringController::class, 'updateAthlete'])->name('scoring.update-athlete');
+        Route::post('/scoring/{match}/update-lineup', [ScoringController::class, 'updateLineup'])->name('scoring.update-lineup');
     });
 });
 

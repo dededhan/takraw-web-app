@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'match_mode', 'court_id', 'time_slot_id', 'day_number', 'slot_span',
     'home_placeholder', 'away_placeholder',
     'home_super_team_id', 'away_super_team_id',
+    'lineup',
 ])]
 class Match_ extends Model
 {
@@ -38,6 +39,7 @@ class Match_ extends Model
             'finished_at'  => 'datetime',
             'slot_span'    => 'integer',
             'day_number'   => 'integer',
+            'lineup'       => 'array',
         ];
     }
 

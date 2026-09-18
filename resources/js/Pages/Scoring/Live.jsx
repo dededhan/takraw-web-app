@@ -63,12 +63,23 @@ export default function LiveScoring({ match: initialMatch }) {
     const [selectedAthlete, setSelectedAthlete] = useState({ home: null, away: null });
     const [scoreAnim, setScoreAnim] = useState({ home: false, away: false });
     const [showSetup, setShowSetup] = useState(matchData.status === 'scheduled');
-    const [setupData, setSetupData] = useState({ court_number: matchData.court_number || 1, max_sets: matchData.max_sets || 3 });
+    const [setupData, setSetupData] = useState({ court_number: matchData.court_number || '', max_sets: matchData.max_sets || 3 });
     const [processing, setProcessing] = useState(false);
     const [statsCache, setStatsCache] = useState({});
 
     // Active on-court lineup per side (stores array of athlete IDs currently active on court)
-    const [courtLineup, setCourtLineup] = useState({ home: [], away: [] });
+    // Initialize from saved lineup in database if available
+    const [courtLineup, setCourtLineup] = useState({
+        home: matchData.lineup?.home || [],
+        away: matchData.lineup?.away || [],
+    });
+
+    // Setup roster selection state (for the setup screen before match starts)
+    const [setupLineup, setSetupLineup] = useState({
+        home: matchData.lineup?.home || [],
+        away: matchData.lineup?.away || [],
+    });
+    const [setupSearch, setSetupSearch] = useState({ home: '', away: '' });
 
     // Explicitly selected set ID so user can freely click between Set 1, Set 2, Set 3, etc.
     const [selectedSetId, setSelectedSetId] = useState(null);
@@ -147,13 +158,22 @@ export default function LiveScoring({ match: initialMatch }) {
     }, [isTeamMode, matchData]);
 
     // Initialize or adapt active court lineup (default 3 starters)
+    // Uses saved lineup from DB as priority, only falls back to default if no saved lineup exists
     useEffect(() => {
         if (homeAthletes.length > 0) {
             setCourtLineup(prev => {
+                // If we already have valid lineup IDs, keep them
                 if (prev.home.length > 0) {
                     const valid = prev.home.filter(id => homeAthletes.some(a => a.id === id));
                     if (valid.length > 0) return { ...prev, home: valid };
                 }
+                // Check saved lineup from database
+                const savedHome = matchData.lineup?.home || [];
+                if (savedHome.length > 0) {
+                    const validSaved = savedHome.filter(id => homeAthletes.some(a => a.id === id));
+                    if (validSaved.length > 0) return { ...prev, home: validSaved };
+                }
+                // Fallback: default 3 starters
                 const startOffset = isTeamMode ? (activeSubRegu * 3) % Math.max(1, homeAthletes.length) : 0;
                 const defaultStarters = homeAthletes.slice(startOffset, startOffset + 3).map(a => a.id);
                 const finalStarters = defaultStarters.length > 0 ? defaultStarters : homeAthletes.slice(0, 3).map(a => a.id);
@@ -169,6 +189,11 @@ export default function LiveScoring({ match: initialMatch }) {
                     const valid = prev.away.filter(id => awayAthletes.some(a => a.id === id));
                     if (valid.length > 0) return { ...prev, away: valid };
                 }
+                const savedAway = matchData.lineup?.away || [];
+                if (savedAway.length > 0) {
+                    const validSaved = savedAway.filter(id => awayAthletes.some(a => a.id === id));
+                    if (validSaved.length > 0) return { ...prev, away: validSaved };
+                }
                 const startOffset = isTeamMode ? (activeSubRegu * 3) % Math.max(1, awayAthletes.length) : 0;
                 const defaultStarters = awayAthletes.slice(startOffset, startOffset + 3).map(a => a.id);
                 const finalStarters = defaultStarters.length > 0 ? defaultStarters : awayAthletes.slice(0, 3).map(a => a.id);
@@ -176,6 +201,29 @@ export default function LiveScoring({ match: initialMatch }) {
             });
         }
     }, [awayAthletes, isTeamMode, activeSubRegu]);
+
+    // Initialize setupLineup from homeAthletes/awayAthletes when available (for setup screen)
+    useEffect(() => {
+        if (homeAthletes.length > 0 && setupLineup.home.length === 0) {
+            const saved = matchData.lineup?.home || [];
+            const validSaved = saved.filter(id => homeAthletes.some(a => a.id === id));
+            setSetupLineup(prev => ({
+                ...prev,
+                home: validSaved.length > 0 ? validSaved : homeAthletes.slice(0, 3).map(a => a.id),
+            }));
+        }
+    }, [homeAthletes]);
+
+    useEffect(() => {
+        if (awayAthletes.length > 0 && setupLineup.away.length === 0) {
+            const saved = matchData.lineup?.away || [];
+            const validSaved = saved.filter(id => awayAthletes.some(a => a.id === id));
+            setSetupLineup(prev => ({
+                ...prev,
+                away: validSaved.length > 0 ? validSaved : awayAthletes.slice(0, 3).map(a => a.id),
+            }));
+        }
+    }, [awayAthletes]);
 
     // Target team IDs for backend quick-athlete endpoint
     const homeTargetTeamId = useMemo(() => {
@@ -322,7 +370,13 @@ export default function LiveScoring({ match: initialMatch }) {
     const handleSetup = (e) => {
         if (e) e.preventDefault();
         setProcessing(true);
-        router.post(route('scoring.setup', matchData.id), setupData, {
+        const payload = {
+            ...setupData,
+            court_number: parseInt(setupData.court_number) || 1,
+            home_lineup: setupLineup.home,
+            away_lineup: setupLineup.away,
+        };
+        router.post(route('scoring.setup', matchData.id), payload, {
             preserveState: false,
             onSuccess: () => {
                 setProcessing(false);
@@ -344,7 +398,13 @@ export default function LiveScoring({ match: initialMatch }) {
     const handleSetupAndStart = (e) => {
         if (e) e.preventDefault();
         setProcessing(true);
-        router.post(route('scoring.setup', matchData.id), setupData, {
+        const payload = {
+            ...setupData,
+            court_number: parseInt(setupData.court_number) || 1,
+            home_lineup: setupLineup.home,
+            away_lineup: setupLineup.away,
+        };
+        router.post(route('scoring.setup', matchData.id), payload, {
             preserveState: false,
             onSuccess: () => {
                 router.post(route('scoring.start', matchData.id), {}, {
@@ -722,10 +782,10 @@ export default function LiveScoring({ match: initialMatch }) {
     // ─── Setup Screen ──────────────────────────────────────────
     if (showSetup || !isLive) {
         return (
-            <div className="min-h-screen bg-surface-950 flex flex-col">
+            <div className="min-h-screen bg-surface-950 flex flex-col overflow-y-auto">
                 <Head title="Setup Pertandingan" />
-                <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
-                    <div className="max-w-lg w-full">
+                <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 py-6">
+                    <div className="max-w-2xl w-full">
                         <div className="rounded-3xl border border-surface-700/50 bg-surface-900/60 p-6 sm:p-8 text-center mb-6 shadow-2xl backdrop-blur-md">
                             <div className="flex items-center justify-center gap-2 mb-3">
                                 <span className="inline-block px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-surface-800 text-emerald-400 border border-surface-700">
@@ -779,7 +839,12 @@ export default function LiveScoring({ match: initialMatch }) {
                                         type="number"
                                         min="1"
                                         value={setupData.court_number}
-                                        onChange={(e) => setSetupData(prev => ({ ...prev, court_number: parseInt(e.target.value) || 1 }))}
+                                        onChange={(e) => setSetupData(prev => ({ ...prev, court_number: e.target.value }))}
+                                        onBlur={(e) => {
+                                            const val = parseInt(e.target.value);
+                                            if (!val || val < 1) setSetupData(prev => ({ ...prev, court_number: 1 }));
+                                        }}
+                                        placeholder="1"
                                         className="w-full rounded-xl bg-surface-800/80 border-surface-700 text-surface-100 text-sm font-bold focus:border-emerald-500 focus:ring-emerald-500"
                                     />
                                 </div>
@@ -801,6 +866,39 @@ export default function LiveScoring({ match: initialMatch }) {
                                         ℹ️ Mode Team menggunakan 3 Sesi Regu (Maks 9 Set). Setiap Regu memainkan format Best of 3.
                                     </div>
                                 )}
+
+                                {/* ─── Roster Selection: Home Team (Atas) ─── */}
+                                {homeAthletes.length > 0 && (
+                                    <SetupRosterTable
+                                        teamName={homeTeamName}
+                                        athletes={homeAthletes}
+                                        selectedIds={setupLineup.home}
+                                        search={setupSearch.home}
+                                        onSearchChange={(v) => setSetupSearch(prev => ({ ...prev, home: v }))}
+                                        onToggle={(id) => setSetupLineup(prev => {
+                                            const exists = prev.home.includes(id);
+                                            return { ...prev, home: exists ? prev.home.filter(x => x !== id) : [...prev.home, id] };
+                                        })}
+                                        color="primary"
+                                    />
+                                )}
+
+                                {/* ─── Roster Selection: Away Team (Bawah) ─── */}
+                                {awayAthletes.length > 0 && (
+                                    <SetupRosterTable
+                                        teamName={awayTeamName}
+                                        athletes={awayAthletes}
+                                        selectedIds={setupLineup.away}
+                                        search={setupSearch.away}
+                                        onSearchChange={(v) => setSetupSearch(prev => ({ ...prev, away: v }))}
+                                        onToggle={(id) => setSetupLineup(prev => {
+                                            const exists = prev.away.includes(id);
+                                            return { ...prev, away: exists ? prev.away.filter(x => x !== id) : [...prev.away, id] };
+                                        })}
+                                        color="accent"
+                                    />
+                                )}
+
                                 <div className="flex flex-col gap-2 pt-2">
                                     <button
                                         type="submit"
@@ -1154,6 +1252,13 @@ export default function LiveScoring({ match: initialMatch }) {
                             const current = prev[side] || [];
                             const exists = current.includes(athleteId);
                             const updated = exists ? current.filter(id => id !== athleteId) : [...current, athleteId];
+                            // Sync lineup to backend (fire-and-forget)
+                            try {
+                                fetchPost(route('scoring.update-lineup', matchData.id), {
+                                    side,
+                                    lineup: updated,
+                                }).catch(err => console.warn('Lineup sync error:', err));
+                            } catch (e) { /* ignore */ }
                             return { ...prev, [side]: updated };
                         });
                     }}
@@ -1994,6 +2099,132 @@ function CourtZoneModal({ modalData, athleteStats, onSelectZone, onClose }) {
                         ✓ SELESAI / TUTUP
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Setup Roster Table Component ─────────────────────────────
+function SetupRosterTable({ teamName, athletes, selectedIds = [], search = '', onSearchChange, onToggle, color = 'primary' }) {
+    const colors = {
+        primary: {
+            header: 'bg-primary-500/15 border-primary-500/30',
+            headerText: 'text-primary-300',
+            badge: 'bg-primary-500/20 text-primary-200 border-primary-500/30',
+            activeBg: 'bg-primary-950/50 border-primary-500/60',
+            activeCheck: 'bg-primary-500 text-white border-primary-300',
+            inactiveCheck: 'bg-surface-800 border-surface-600 text-surface-500',
+            count: 'text-primary-400',
+        },
+        accent: {
+            header: 'bg-accent-500/15 border-accent-500/30',
+            headerText: 'text-accent-300',
+            badge: 'bg-accent-500/20 text-accent-200 border-accent-500/30',
+            activeBg: 'bg-accent-950/50 border-accent-500/60',
+            activeCheck: 'bg-accent-500 text-white border-accent-300',
+            inactiveCheck: 'bg-surface-800 border-surface-600 text-surface-500',
+            count: 'text-accent-400',
+        },
+    };
+    const c = colors[color] || colors.primary;
+
+    const searchLower = search.toLowerCase().trim();
+    const filtered = searchLower
+        ? athletes.filter(a =>
+            (a.name || '').toLowerCase().includes(searchLower) ||
+            String(a.jersey_number || '').includes(searchLower) ||
+            (a.position || '').toLowerCase().includes(searchLower)
+        )
+        : athletes;
+
+    return (
+        <div className="rounded-2xl border border-surface-700/60 overflow-hidden">
+            {/* Header */}
+            <div className={`px-3 py-2.5 ${c.header} border-b flex items-center justify-between gap-2`}>
+                <div className="flex items-center gap-2 min-w-0">
+                    <span className={`text-xs font-black ${c.headerText}`}>📋 {teamName}</span>
+                </div>
+                <span className={`text-[10px] font-black ${c.count}`}>
+                    {selectedIds.length} Bermain
+                </span>
+            </div>
+
+            {/* Search */}
+            <div className="px-3 py-2 border-b border-surface-800">
+                <input
+                    type="text"
+                    placeholder="🔍 Cari nama / no punggung / posisi..."
+                    value={search}
+                    onChange={(e) => onSearchChange(e.target.value)}
+                    className="w-full rounded-xl bg-surface-800/80 border-surface-700 text-surface-100 text-xs font-semibold px-3 py-2 focus:border-emerald-500 focus:ring-emerald-500 placeholder-surface-500"
+                />
+            </div>
+
+            {/* Table */}
+            <div className="max-h-[240px] overflow-y-auto">
+                <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-surface-900/95 backdrop-blur-sm z-10">
+                        <tr className="border-b border-surface-800">
+                            <th className="text-left px-3 py-2 text-[10px] font-black text-surface-400 uppercase tracking-wider w-12">No</th>
+                            <th className="text-left px-2 py-2 text-[10px] font-black text-surface-400 uppercase tracking-wider">Nama Atlet</th>
+                            <th className="text-left px-2 py-2 text-[10px] font-black text-surface-400 uppercase tracking-wider w-20">Posisi</th>
+                            <th className="text-center px-2 py-2 text-[10px] font-black text-surface-400 uppercase tracking-wider w-16">Main</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filtered.length === 0 ? (
+                            <tr>
+                                <td colSpan={4} className="text-center py-4 text-surface-500 italic text-xs">
+                                    {searchLower ? 'Tidak ditemukan atlet dengan pencarian ini.' : 'Belum ada atlet terdaftar.'}
+                                </td>
+                            </tr>
+                        ) : (
+                            filtered.map((a) => {
+                                const isSelected = selectedIds.includes(a.id);
+                                return (
+                                    <tr
+                                        key={a.id}
+                                        onClick={() => onToggle(a.id)}
+                                        className={`border-b cursor-pointer select-none transition-colors duration-100 active:scale-[0.99] ${
+                                            isSelected
+                                                ? `${c.activeBg} border-opacity-50`
+                                                : 'border-surface-800/60 hover:bg-surface-800/50'
+                                        }`}
+                                    >
+                                        <td className="px-3 py-2.5">
+                                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-lg font-mono font-black text-sm border ${
+                                                isSelected
+                                                    ? `${c.activeCheck} shadow-sm`
+                                                    : 'bg-surface-800 border-surface-700 text-surface-300'
+                                            }`}>
+                                                {a.jersey_number}
+                                            </span>
+                                        </td>
+                                        <td className="px-2 py-2.5">
+                                            <span className={`font-bold text-xs ${isSelected ? 'text-white' : 'text-surface-200'}`}>
+                                                {a.name || `Pemain #${a.jersey_number}`}
+                                            </span>
+                                        </td>
+                                        <td className="px-2 py-2.5">
+                                            <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${c.badge}`}>
+                                                {a.position || 'Pemain'}
+                                            </span>
+                                        </td>
+                                        <td className="px-2 py-2.5 text-center">
+                                            <div className={`inline-flex items-center justify-center w-8 h-8 rounded-xl border-2 transition-all duration-150 ${
+                                                isSelected
+                                                    ? `${c.activeCheck} shadow-md`
+                                                    : `${c.inactiveCheck} hover:border-surface-500`
+                                            }`}>
+                                                {isSelected ? '✓' : ''}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
             </div>
         </div>
     );

@@ -51,14 +51,25 @@ class ScoringController extends Controller
         $validated = $request->validate([
             'court_number' => 'required|integer|min:1',
             'max_sets'     => 'required|integer|min:1|max:9',
+            'home_lineup'  => 'nullable|array',
+            'away_lineup'  => 'nullable|array',
         ]);
 
         $totalSets = $match->isTeamMode() ? 9 : $validated['max_sets'];
+
+        $lineup = $match->lineup ?: [];
+        if ($request->has('home_lineup')) {
+            $lineup['home'] = array_values(array_filter(array_map('intval', (array) $request->input('home_lineup', []))));
+        }
+        if ($request->has('away_lineup')) {
+            $lineup['away'] = array_values(array_filter(array_map('intval', (array) $request->input('away_lineup', []))));
+        }
 
         $match->update([
             'court_number' => $validated['court_number'],
             'max_sets'     => $totalSets,
             'status'       => 'setup',
+            'lineup'       => $lineup,
         ]);
 
         // Pre-create sets (9 sets for Team mode: 3 sets x 3 sub-regu matches)
@@ -70,6 +81,27 @@ class ScoringController extends Controller
         }
 
         return back()->with('success', 'Setup pertandingan berhasil!');
+    }
+
+    /**
+     * Update active court lineup for home or away side during match.
+     */
+    public function updateLineup(Request $request, Match_ $match)
+    {
+        $validated = $request->validate([
+            'side'   => 'required|in:home,away',
+            'lineup' => 'required|array',
+        ]);
+
+        $lineup = $match->lineup ?: [];
+        $lineup[$validated['side']] = array_values(array_filter(array_map('intval', (array) $validated['lineup'])));
+
+        $match->update(['lineup' => $lineup]);
+
+        return response()->json([
+            'success' => true,
+            'lineup'  => $lineup,
+        ]);
     }
 
     /**
@@ -444,7 +476,7 @@ class ScoringController extends Controller
                     'regusWonHome'    => $regusWonHome,
                     'regusWonAway'    => $regusWonAway,
                     'redirect_url'    => route('matches.show', $match->id),
-                    'match'           => $match->fresh()->load(['homeSuperTeam.members.athletes', 'awaySuperTeam.members.athletes', 'sets.stats.athlete']),
+                    'match'           => $match->fresh()->load($this->defaultMatchRelations()),
                 ]);
             }
 
@@ -471,7 +503,7 @@ class ScoringController extends Controller
                     'regusWonHome'    => $regusWonHome,
                     'regusWonAway'    => $regusWonAway,
                     'currentSet'      => $nextSet?->fresh(),
-                    'match'           => $match->fresh()->load(['homeSuperTeam.members.athletes', 'awaySuperTeam.members.athletes', 'sets.stats.athlete']),
+                    'match'           => $match->fresh()->load($this->defaultMatchRelations()),
                 ]);
             }
 
@@ -495,7 +527,7 @@ class ScoringController extends Controller
                 'regusWonHome'  => $regusWonHome,
                 'regusWonAway'  => $regusWonAway,
                 'currentSet'    => $nextSetInSub?->fresh(),
-                'match'         => $match->fresh()->load(['homeSuperTeam.members.athletes', 'awaySuperTeam.members.athletes', 'sets.stats.athlete']),
+                'match'         => $match->fresh()->load($this->defaultMatchRelations()),
             ]);
         }
 
@@ -561,7 +593,7 @@ class ScoringController extends Controller
                 'matchFinished' => true,
                 'winner'        => $matchWinner,
                 'redirect_url'  => route('matches.show', $match->id),
-                'match'         => $match->fresh()->load(['homeTeam', 'awayTeam', 'homeSuperTeam', 'awaySuperTeam', 'sets']),
+                'match'         => $match->fresh()->load($this->defaultMatchRelations()),
             ]);
         }
 
@@ -582,7 +614,7 @@ class ScoringController extends Controller
         return response()->json([
             'matchFinished' => false,
             'currentSet' => $nextSet?->fresh(),
-            'match' => $match->fresh()->load(['sets.stats.athlete']),
+            'match' => $match->fresh()->load($this->defaultMatchRelations()),
         ]);
     }
 
@@ -704,6 +736,22 @@ class ScoringController extends Controller
                 'sets.stats.athlete',
             ]),
         ]);
+    }
+
+    /**
+     * Complete match relations needed for live scoring and lineup management.
+     */
+    private function defaultMatchRelations(): array
+    {
+        return [
+            'homeTeam.athletes',
+            'awayTeam.athletes',
+            'homeSuperTeam.members.athletes',
+            'awaySuperTeam.members.athletes',
+            'sets.stats.athlete',
+            'court',
+            'timeSlot',
+        ];
     }
 
     /**
