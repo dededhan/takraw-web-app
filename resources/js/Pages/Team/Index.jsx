@@ -1,6 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import Pagination from '@/Components/Pagination';
 import ConfirmDialog from '@/Components/ConfirmDialog';
+import BulkImportAthletesModal from '@/Components/Team/BulkImportAthletesModal';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState, useEffect, useRef } from 'react';
 
@@ -64,6 +65,7 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
     const [deletingSuperTeamId, setDeletingSuperTeamId] = useState(null);
     const [isSuperTeamModalOpen, setIsSuperTeamModalOpen] = useState(false);
     const [editingSuperTeam, setEditingSuperTeam] = useState(null);
+    const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
 
     // Initial athletes roster template (same clean format as regular team)
     const emptyAthlete = () => ({ name: '', jersey_number: '', position: 'Tekong', photo: null });
@@ -246,6 +248,16 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                 </div>
 
                 <div className="flex items-center gap-2.5 flex-wrap">
+                    {isAdmin && (
+                        <button
+                            type="button"
+                            onClick={() => setIsBulkImportOpen(true)}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+                        >
+                            <span>📥 Import Excel Pemain</span>
+                        </button>
+                    )}
+
                     <Link
                         href={route('teams.create')}
                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-500 transition-colors shadow-glow-primary cursor-pointer"
@@ -963,6 +975,15 @@ export default function TeamIndex({ teams, superTeams = [], allCoachTeams = [], 
                 title="Hapus Team Squad"
                 message="Team Squad beserta seluruh data atletnya akan dihapus permanen. Aksi ini hanya dapat dilakukan jika Team Squad belum pernah mengikuti turnamen."
             />
+
+            {/* Bulk Import Athletes Modal (Admin Only) */}
+            {isAdmin && (
+                <BulkImportAthletesModal
+                    isOpen={isBulkImportOpen}
+                    onClose={() => setIsBulkImportOpen(false)}
+                    allDbTeams={allCoachTeams}
+                />
+            )}
         </AuthenticatedLayout>
     );
 }

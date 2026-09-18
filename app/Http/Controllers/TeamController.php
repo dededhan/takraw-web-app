@@ -437,4 +437,172 @@ class TeamController extends Controller
             'message' => "Berhasil membaca " . count($athletes) . " atlet dari file Excel.",
         ]);
     }
+
+    /**
+     * Analyze uploaded Excel/CSV file for admin bulk team import.
+     */
+    public function analyzeBulkFile(Request $request, \App\Services\AthleteExcelService $excelService)
+    {
+        if (!$request->user()->isAdmin()) {
+            abort(403, 'Akses terbatas untuk Admin.');
+        }
+
+        $request->validate([
+            'file' => 'required|file|max:10240', // 10MB
+        ]);
+
+        $file = $request->file('file');
+        $path = $file->getRealPath();
+        $ext = strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
+
+        if (!in_array($ext, ['xlsx', 'xls', 'csv', 'txt'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format file tidak didukung. Harap unggah file .xlsx, .xls, atau .csv',
+            ], 422);
+        }
+
+        try {
+            $result = $excelService->parseMultiTeamFile($path, $ext);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membaca file: ' . $e->getMessage(),
+            ], 422);
+        }
+
+        $dbTeams = Team::where('is_super_sub', false)->get(['id', 'name', 'region'])->map(function ($t) {
+            return [
+                'id' => $t->id,
+                'name' => $t->name,
+                'region' => $t->region,
+                'clean_name' => strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $t->name)),
+            ];
+        });
+
+        if ($result['has_teams']) {
+            foreach ($result['teams'] as &$pTeam) {
+                $parsedClean = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $pTeam['team_name']));
+                $matched = $dbTeams->first(function ($d) use ($parsedClean) {
+                    return $d['clean_name'] === $parsedClean ||
+                        str_contains($d['clean_name'], $parsedClean) ||
+                        str_contains($parsedClean, $d['clean_name']);
+                });
+
+                $pTeam['matched_team_id'] = $matched ? $matched['id'] : null;
+                $pTeam['matched_team_name'] = $matched ? $matched['name'] : null;
+            }
+            unset($pTeam);
+        }
+
+        return response()->json([
+            'success' => true,
+            'has_teams' => $result['has_teams'],
+            'total_athletes' => $result['total_athletes'],
+            'teams' => $result['teams'] ?? [],
+            'athletes' => $result['athletes'] ?? [],
+            'all_db_teams' => Team::where('is_super_sub', false)->orderBy('name')->get(['id', 'name', 'region']),
+        ]);
+    }
+
+    /**
+     * Execute bulk replacement of athletes for selected teams (Admin only).
+     */
+    public function bulkReplaceAthletes(Request $request)
+    {
+        if (!$request->user()->isAdmin()) {
+            abort(403, 'Akses terbatas untuk Admin.');
+        }
+
+        $request->validate([
+            'targets' => 'required|array|min:1',
+            'targets.*.team_id' => 'required|exists:teams,id',
+            'targets.*.athletes' => 'required|array|min:1',
+            'targets.*.athletes.*.name' => 'required|string|max:255',
+            'targets.*.athletes.*.jersey_number' => 'required|integer',
+            'targets.*.athletes.*.position' => 'nullable|string',
+            'replace_existing' => 'nullable|boolean',
+        ]);
+
+        $targets = $request->input('targets');
+        $replaceExisting = $request->boolean('replace_existing', true);
+
+        $updatedTeamsCount = 0;
+        $totalAthletesCount = 0;
+        $teamNamesUpdated = [];
+
+        \DB::transaction(function () use ($targets, $replaceExisting, &$updatedTeamsCount, &$totalAthletesCount, &$teamNamesUpdated) {
+            foreach ($targets as $target) {
+                $teamId = $target['team_id'];
+                $athletesData = $target['athletes'];
+
+                $team = Team::find($teamId);
+                if (!$team) continue;
+
+                if ($replaceExisting) {
+                    foreach ($team->athletes as $oldAthlete) {
+                        if ($oldAthlete->photo) {
+                            \Storage::disk('public')->delete($oldAthlete->photo);
+                        }
+                    }
+                    $team->athletes()->delete();
+                    $existingJerseys = [];
+                } else {
+                    $existingJerseys = $team->athletes()->pluck('jersey_number')->toArray();
+                }
+
+                $currentJersey = 1;
+                foreach ($athletesData as $a) {
+                    $name = trim($a['name'] ?? '');
+                    if (empty($name)) continue;
+
+                    $jersey = (int)($a['jersey_number'] ?? 0);
+                    if ($jersey <= 0 || in_array($jersey, $existingJerseys)) {
+                        while (in_array($currentJersey, $existingJerseys)) {
+                            $currentJersey++;
+                        }
+                        $jersey = $currentJersey;
+                        $currentJersey++;
+                    }
+
+                    $pos = trim($a['position'] ?? 'Tekong');
+                    $posFormatted = ucfirst(strtolower($pos));
+                    if (strcasecmp($posFormatted, 'Killer') === 0 || strcasecmp($posFormatted, 'Spiker') === 0) {
+                        $posFormatted = 'Smash';
+                    }
+                    if (strcasecmp($posFormatted, 'Toss') === 0 || strcasecmp($posFormatted, 'Pengumpan') === 0) {
+                        $posFormatted = 'Feeder';
+                    }
+                    if (!in_array($posFormatted, ['Tekong', 'Feeder', 'Smash', 'Cadangan'])) {
+                        $posFormatted = 'Tekong';
+                    }
+
+                    Athlete::create([
+                        'team_id' => $team->id,
+                        'name' => $name,
+                        'jersey_number' => $jersey,
+                        'position' => $posFormatted,
+                    ]);
+
+                    $existingJerseys[] = $jersey;
+                    $totalAthletesCount++;
+                }
+
+                $updatedTeamsCount++;
+                $teamNamesUpdated[] = $team->name;
+            }
+        });
+
+        $teamsListStr = count($teamNamesUpdated) <= 3
+            ? implode(', ', $teamNamesUpdated)
+            : implode(', ', array_slice($teamNamesUpdated, 0, 3)) . " dan " . (count($teamNamesUpdated) - 3) . " tim lainnya";
+
+        $actionMsg = $replaceExisting ? "seluruh anggotanya berhasil diganti dengan" : "berhasil ditambahkan";
+
+        return redirect()->route('teams.index')->with(
+            'success',
+            "Berhasil! {$updatedTeamsCount} tim ({$teamsListStr}) {$actionMsg} total {$totalAthletesCount} atlet baru dari file Excel."
+        );
+    }
 }
+

@@ -294,4 +294,370 @@ class AthleteExcelService
 
         return $athletes;
     }
+
+    /**
+     * Parse an Excel or CSV file that may contain multiple teams (e.g. UNJ Open format with Kontingen column)
+     * or single-team format, returning structured teams and athletes.
+     */
+    public function parseMultiTeamFile(string $filePath, string $extension): array
+    {
+        $ext = strtolower($extension);
+        if (!in_array($ext, ['xlsx', 'xls', 'csv', 'txt'])) {
+            throw new \InvalidArgumentException('Format file tidak didukung.');
+        }
+
+        if ($ext === 'csv' || $ext === 'txt') {
+            return $this->parseCsvMultiTeam($filePath);
+        }
+
+        $spreadsheet = IOFactory::load($filePath);
+        $sheetNames = $spreadsheet->getSheetNames();
+
+        $teamsMap = [];
+        $hasTeamColumnGlobal = false;
+        $allAthletesFallback = [];
+
+        foreach ($sheetNames as $sheetName) {
+            $sheet = $spreadsheet->getSheetByName($sheetName);
+            $rows = $sheet->toArray();
+            if (empty($rows)) {
+                continue;
+            }
+
+            $headerFound = false;
+            $nameCol = null;
+            $teamCol = null;
+            // Search header row in first 30 rows
+            foreach ($rows as $rowIndex => $row) {
+                if ($headerFound) {
+                    break;
+                }
+
+                // Check for banner rows to ignore
+                $rowText = implode(' ', array_map(fn($v) => strtolower(trim((string)$v)), $row));
+                if (
+                    str_contains($rowText, 'daftar nama') ||
+                    str_contains($rowText, 'petunjuk') ||
+                    str_contains($rowText, 'peraturan')
+                ) {
+                    continue;
+                }
+
+                $rowClean = array_map(fn($v) => strtolower(trim((string)$v)), $row);
+                $currNameCol = null;
+                $currTeamCol = null;
+                $currPosCol = null;
+                $currJerseyCol = null;
+
+                foreach ($rowClean as $cIdx => $val) {
+                    if (empty($val)) continue;
+                    if (str_contains($val, 'nama') || str_contains($val, 'atlet') || str_contains($val, 'pemain')) {
+                        if ($currNameCol === null) $currNameCol = $cIdx;
+                    }
+                    if (
+                        str_contains($val, 'kontingen') ||
+                        str_contains($val, 'nama tim') ||
+                        str_contains($val, 'nama club') ||
+                        str_contains($val, 'nama regu') ||
+                        $val === 'tim' ||
+                        $val === 'team' ||
+                        $val === 'club' ||
+                        $val === 'regu'
+                    ) {
+                        $currTeamCol = $cIdx;
+                    }
+                    if (str_contains($val, 'posisi') || str_contains($val, 'position')) {
+                        $currPosCol = $cIdx;
+                    }
+                    if (str_contains($val, 'nomor') || str_contains($val, 'jersey') || str_contains($val, 'punggung') || $val === 'no') {
+                        $currJerseyCol = $cIdx;
+                    }
+                }
+
+                // A valid table header must identify name AND at least one other column (team, position, or jersey)
+                if ($currNameCol !== null && ($currTeamCol !== null || $currPosCol !== null || $currJerseyCol !== null)) {
+                    $headerFound = true;
+                    $nameCol = $currNameCol;
+                    $teamCol = $currTeamCol;
+                    $posCol = $currPosCol;
+                    $jerseyCol = $currJerseyCol;
+                    if ($currTeamCol !== null) {
+                        $hasTeamColumnGlobal = true;
+                    }
+                    $rows = array_slice($rows, $rowIndex + 1);
+                    break;
+                }
+            }
+
+            if (!$headerFound || $nameCol === null) {
+                continue;
+            }
+
+            // Iterate data rows in this sheet
+            foreach ($rows as $row) {
+                $rawName = trim((string)($row[$nameCol] ?? ''));
+                $rawTeam = $teamCol !== null ? trim((string)($row[$teamCol] ?? '')) : '';
+                $rawPos = $posCol !== null ? trim((string)($row[$posCol] ?? '')) : '';
+                $rawJersey = $jerseyCol !== null ? trim((string)($row[$jerseyCol] ?? '')) : '';
+
+                // Skip headers/banners/empty rows
+                if (empty($rawName) && empty($rawTeam)) {
+                    continue;
+                }
+                if (
+                    str_starts_with($rawName, '📌') ||
+                    str_starts_with($rawName, '🏆') ||
+                    preg_match('/^\d+\./', $rawName) ||
+                    str_contains(strtolower($rawName), 'daftar nama') ||
+                    str_contains(strtolower($rawName), 'petunjuk') ||
+                    str_contains(strtolower($rawName), 'kolom')
+                ) {
+                    continue;
+                }
+
+                // If team column is present
+                if ($teamCol !== null && !empty($rawTeam)) {
+                    $teamKey = strtoupper($rawTeam);
+                    if (!isset($teamsMap[$teamKey])) {
+                        $teamsMap[$teamKey] = [
+                            'team_name' => $rawTeam,
+                            'sheet_name' => $sheetName,
+                            'coach_name' => null,
+                            'officials' => [],
+                            'athletes' => [],
+                        ];
+                    }
+
+                    // Check if row is an official (Coach, Asisten Coach, Manager, Official)
+                    $upperPos = strtoupper($rawPos);
+                    if (
+                        str_contains($upperPos, 'COACH') ||
+                        str_contains($upperPos, 'PELATIH') ||
+                        str_contains($upperPos, 'MANAGER') ||
+                        str_contains($upperPos, 'MANAJER') ||
+                        str_contains($upperPos, 'OFFICIAL')
+                    ) {
+                        if (!empty($rawName)) {
+                            $teamsMap[$teamKey]['officials'][] = [
+                                'name' => $rawName,
+                                'role' => $rawPos,
+                            ];
+                            if (empty($teamsMap[$teamKey]['coach_name']) && (str_contains($upperPos, 'COACH') || str_contains($upperPos, 'PELATIH'))) {
+                                $teamsMap[$teamKey]['coach_name'] = $rawName;
+                            }
+                        }
+                        continue;
+                    }
+
+                    if (empty($rawName)) {
+                        continue;
+                    }
+
+                    // Format athlete position
+                    $position = $this->normalizePosition($rawPos);
+
+                    // Determine jersey number
+                    $jersey = (int)$rawJersey;
+                    if ($jersey <= 0 || $jersey > 999) {
+                        $jersey = count($teamsMap[$teamKey]['athletes']) + 1;
+                    }
+
+                    // Ensure jersey is unique for this team
+                    $usedJerseys = array_column($teamsMap[$teamKey]['athletes'], 'jersey_number');
+                    while (in_array($jersey, $usedJerseys)) {
+                        $jersey++;
+                    }
+
+                    $teamsMap[$teamKey]['athletes'][] = [
+                        'name' => $rawName,
+                        'jersey_number' => $jersey,
+                        'position' => $position,
+                    ];
+                } elseif (!empty($rawName)) {
+                    // No team column or row without team
+                    $position = $this->normalizePosition($rawPos);
+                    $jersey = (int)$rawJersey;
+                    if ($jersey <= 0 || $jersey > 999) {
+                        $jersey = count($allAthletesFallback) + 1;
+                    }
+                    $allAthletesFallback[] = [
+                        'name' => $rawName,
+                        'jersey_number' => $jersey,
+                        'position' => $position,
+                    ];
+                }
+            }
+        }
+
+        if ($hasTeamColumnGlobal && !empty($teamsMap)) {
+            $totalAthletes = 0;
+            $teamsList = [];
+            foreach ($teamsMap as $t) {
+                $totalAthletes += count($t['athletes']);
+                $teamsList[] = $t;
+            }
+
+            return [
+                'has_teams' => true,
+                'total_athletes' => $totalAthletes,
+                'teams' => $teamsList,
+            ];
+        }
+
+        // Single list fallback
+        $fallback = !empty($allAthletesFallback) ? $allAthletesFallback : $this->parseAthletesFile($filePath, $extension);
+        return [
+            'has_teams' => false,
+            'total_athletes' => count($fallback),
+            'athletes' => $fallback,
+        ];
+    }
+
+    /**
+     * CSV fallback parser for multi-team or single list.
+     */
+    private function parseCsvMultiTeam(string $filePath): array
+    {
+        $handle = fopen($filePath, 'r');
+        if ($handle === false) {
+            return ['has_teams' => false, 'total_athletes' => 0, 'athletes' => []];
+        }
+
+        $rows = [];
+        while (($row = fgetcsv($handle)) !== false) {
+            $rows[] = $row;
+        }
+        fclose($handle);
+
+        if (empty($rows)) {
+            return ['has_teams' => false, 'total_athletes' => 0, 'athletes' => []];
+        }
+
+        $headerFound = false;
+        $nameCol = null;
+        $teamCol = null;
+        $posCol = null;
+        $jerseyCol = null;
+
+        foreach ($rows as $rowIndex => $row) {
+            if ($headerFound) break;
+
+            $rowText = implode(' ', array_map(fn($v) => strtolower(trim((string)$v)), $row));
+            if (
+                str_contains($rowText, 'daftar nama') ||
+                str_contains($rowText, 'petunjuk') ||
+                str_contains($rowText, 'peraturan')
+            ) {
+                continue;
+            }
+
+            $rowClean = array_map(fn($v) => strtolower(trim((string)$v)), $row);
+            $currNameCol = null;
+            $currTeamCol = null;
+            $currPosCol = null;
+            $currJerseyCol = null;
+
+            foreach ($rowClean as $cIdx => $val) {
+                if (str_contains($val, 'nama') || str_contains($val, 'atlet') || str_contains($val, 'pemain')) {
+                    if ($currNameCol === null) $currNameCol = $cIdx;
+                }
+                if (str_contains($val, 'kontingen') || str_contains($val, 'tim') || str_contains($val, 'team')) {
+                    $currTeamCol = $cIdx;
+                }
+                if (str_contains($val, 'posisi') || str_contains($val, 'position')) {
+                    $currPosCol = $cIdx;
+                }
+                if (str_contains($val, 'nomor') || str_contains($val, 'jersey') || str_contains($val, 'no')) {
+                    $currJerseyCol = $cIdx;
+                }
+            }
+
+            if ($currNameCol !== null && ($currTeamCol !== null || $currPosCol !== null || $currJerseyCol !== null)) {
+                $headerFound = true;
+                $nameCol = $currNameCol;
+                $teamCol = $currTeamCol;
+                $posCol = $currPosCol;
+                $jerseyCol = $currJerseyCol;
+                $rows = array_slice($rows, $rowIndex + 1);
+                break;
+            }
+        }
+
+        if ($teamCol !== null) {
+            $teamsMap = [];
+            foreach ($rows as $row) {
+                $rawName = trim((string)($row[$nameCol] ?? ''));
+                $rawTeam = trim((string)($row[$teamCol] ?? ''));
+                $rawPos = $posCol !== null ? trim((string)($row[$posCol] ?? '')) : '';
+                $rawJersey = $jerseyCol !== null ? trim((string)($row[$jerseyCol] ?? '')) : '';
+
+                if (empty($rawName) || empty($rawTeam)) continue;
+                $teamKey = strtoupper($rawTeam);
+                if (!isset($teamsMap[$teamKey])) {
+                    $teamsMap[$teamKey] = [
+                        'team_name' => $rawTeam,
+                        'coach_name' => null,
+                        'officials' => [],
+                        'athletes' => [],
+                    ];
+                }
+
+                $upperPos = strtoupper($rawPos);
+                if (str_contains($upperPos, 'COACH') || str_contains($upperPos, 'MANAGER')) {
+                    $teamsMap[$teamKey]['officials'][] = ['name' => $rawName, 'role' => $rawPos];
+                    if (str_contains($upperPos, 'COACH') && empty($teamsMap[$teamKey]['coach_name'])) {
+                        $teamsMap[$teamKey]['coach_name'] = $rawName;
+                    }
+                    continue;
+                }
+
+                $jersey = (int)$rawJersey;
+                if ($jersey <= 0 || $jersey > 999) {
+                    $jersey = count($teamsMap[$teamKey]['athletes']) + 1;
+                }
+                $teamsMap[$teamKey]['athletes'][] = [
+                    'name' => $rawName,
+                    'jersey_number' => $jersey,
+                    'position' => $this->normalizePosition($rawPos),
+                ];
+            }
+
+            $total = array_reduce($teamsMap, fn($c, $t) => $c + count($t['athletes']), 0);
+            return [
+                'has_teams' => true,
+                'total_athletes' => $total,
+                'teams' => array_values($teamsMap),
+            ];
+        }
+
+        $fallback = $this->parseAthletesFile($filePath, 'csv');
+        return [
+            'has_teams' => false,
+            'total_athletes' => count($fallback),
+            'athletes' => $fallback,
+        ];
+    }
+
+    /**
+     * Helper to normalize takraw player positions.
+     */
+    public function normalizePosition(string $rawPos): string
+    {
+        $pos = trim($rawPos);
+        if (empty($pos)) {
+            return 'Tekong';
+        }
+        if (strcasecmp($pos, 'killer') === 0 || strcasecmp($pos, 'spiker') === 0) {
+            return 'Smash';
+        }
+        if (strcasecmp($pos, 'toss') === 0 || strcasecmp($pos, 'pengumpan') === 0) {
+            return 'Feeder';
+        }
+        $formatted = ucfirst(strtolower($pos));
+        if (in_array($formatted, ['Tekong', 'Feeder', 'Smash', 'Cadangan'])) {
+            return $formatted;
+        }
+        return 'Tekong';
+    }
 }
+

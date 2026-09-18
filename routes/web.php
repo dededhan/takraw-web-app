@@ -135,6 +135,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // User Management CRUD
         Route::resource('users', UserController::class);
         Route::patch('/users/{user}/toggle-active', [UserController::class, 'toggleActive'])->name('users.toggle-active');
+
+        // Admin Bulk Import & Replace Athletes
+        Route::post('/teams/analyze-bulk-file', [TeamController::class, 'analyzeBulkFile'])->name('teams.analyze-bulk-file');
+        Route::post('/teams/bulk-replace-athletes', [TeamController::class, 'bulkReplaceAthletes'])->name('teams.bulk-replace-athletes');
     });
 
 
