@@ -62,10 +62,11 @@ class TournamentController extends Controller
 
     public function show(Tournament $tournament, AthletePerformanceService $performanceService): Response
     {
-        // Sync and recalculate standings for each pool
+        // Sync and recalculate standings for each pool, then resolve ready bracket placeholders
         foreach ($tournament->pools as $pool) {
             \App\Models\PoolStanding::recalculate($pool->id);
         }
+        app(\App\Services\PlaceholderResolverService::class)->resolveAllForTournament($tournament);
 
         $tournament->load([
             'creator',

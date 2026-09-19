@@ -182,6 +182,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/scoring/{match}/quick-athlete', [ScoringController::class, 'quickAthlete'])->name('scoring.quick-athlete');
         Route::post('/scoring/{match}/update-athlete', [ScoringController::class, 'updateAthlete'])->name('scoring.update-athlete');
         Route::post('/scoring/{match}/update-lineup', [ScoringController::class, 'updateLineup'])->name('scoring.update-lineup');
+        Route::post('/scoring/{match}/sync-bracket', [ScoringController::class, 'syncBracket'])->name('scoring.sync-bracket');
     });
 });
 

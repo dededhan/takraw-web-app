@@ -18,6 +18,12 @@ class ScoringController extends Controller
      */
     public function show(Match_ $match): Response
     {
+        // Jika match ini adalah babak gugur (braket) dan tim belum lengkap:
+        if ($match->stage !== 'pool' && (!$match->home_team_id || !$match->away_team_id)) {
+            app(\App\Services\PlaceholderResolverService::class)->resolveForMatch($match);
+            $match->refresh();
+        }
+
         $this->ensureMatchAthletes($match);
 
         $match->load([
@@ -38,8 +44,26 @@ class ScoringController extends Controller
             $match->load('sets.stats.athlete');
         }
 
+        // Ambil kandidat tim turnamen untuk opsi pemilihan manual jika match braket belum terisi
+        $tournamentTeams = [];
+        if ($match->tournament_id) {
+            if ($match->isTeamMode()) {
+                $tournamentTeams = \App\Models\SuperTeam::where('tournament_id', $match->tournament_id)
+                    ->where('match_mode', $match->match_mode)
+                    ->with('members.athletes')
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                $tournamentTeams = \App\Models\Team::where('tournament_id', $match->tournament_id)
+                    ->with('athletes')
+                    ->orderBy('name')
+                    ->get();
+            }
+        }
+
         return Inertia::render('Scoring/Live', [
-            'match' => $match,
+            'match'           => $match,
+            'tournamentTeams' => $tournamentTeams,
         ]);
     }
 
@@ -49,10 +73,14 @@ class ScoringController extends Controller
     public function setup(Request $request, Match_ $match)
     {
         $validated = $request->validate([
-            'court_number' => 'required|integer|min:1',
-            'max_sets'     => 'required|integer|min:1|max:9',
-            'home_lineup'  => 'nullable|array',
-            'away_lineup'  => 'nullable|array',
+            'court_number'        => 'required|integer|min:1',
+            'max_sets'            => 'required|integer|min:1|max:9',
+            'home_lineup'         => 'nullable|array',
+            'away_lineup'         => 'nullable|array',
+            'home_team_id'        => 'nullable|integer|exists:teams,id',
+            'away_team_id'        => 'nullable|integer|exists:teams,id',
+            'home_super_team_id'  => 'nullable|integer|exists:super_teams,id',
+            'away_super_team_id'  => 'nullable|integer|exists:super_teams,id',
         ]);
 
         $totalSets = $match->isTeamMode() ? 9 : $validated['max_sets'];
@@ -65,12 +93,33 @@ class ScoringController extends Controller
             $lineup['away'] = array_values(array_filter(array_map('intval', (array) $request->input('away_lineup', []))));
         }
 
-        $match->update([
+        $updateData = [
             'court_number' => $validated['court_number'],
             'max_sets'     => $totalSets,
             'status'       => 'setup',
             'lineup'       => $lineup,
-        ]);
+        ];
+
+        // Jika tim manual diset pada match braket:
+        if (!empty($validated['home_team_id'])) {
+            $updateData['home_team_id'] = $validated['home_team_id'];
+            $updateData['home_placeholder'] = null;
+        }
+        if (!empty($validated['away_team_id'])) {
+            $updateData['away_team_id'] = $validated['away_team_id'];
+            $updateData['away_placeholder'] = null;
+        }
+        if (!empty($validated['home_super_team_id'])) {
+            $updateData['home_super_team_id'] = $validated['home_super_team_id'];
+            $updateData['home_placeholder'] = null;
+        }
+        if (!empty($validated['away_super_team_id'])) {
+            $updateData['away_super_team_id'] = $validated['away_super_team_id'];
+            $updateData['away_placeholder'] = null;
+        }
+
+        $match->update($updateData);
+        $this->ensureMatchAthletes($match);
 
         // Pre-create sets (9 sets for Team mode: 3 sets x 3 sub-regu matches)
         for ($i = 1; $i <= $totalSets; $i++) {
@@ -81,6 +130,24 @@ class ScoringController extends Controller
         }
 
         return back()->with('success', 'Setup pertandingan berhasil!');
+    }
+
+    /**
+     * Trigger sinkronisasi otomatis bracket match dengan hasil pool terbaru.
+     */
+    public function syncBracket(Match_ $match)
+    {
+        $resolver = app(\App\Services\PlaceholderResolverService::class);
+        $updated = $resolver->resolveForMatch($match);
+
+        $match->refresh();
+        $this->ensureMatchAthletes($match);
+
+        if ($updated) {
+            return back()->with('success', 'Berhasil menyinkronkan nama tim dari klasemen pool!');
+        }
+
+        return back()->with('info', 'Klasemen pool belum selesai atau belum menghasilkan pemenang untuk diisi ke braket.');
     }
 
     /**
@@ -455,17 +522,11 @@ class ScoringController extends Controller
 
                 if ($match->pool_id) {
                     \App\Models\PoolStanding::recalculate($match->pool_id);
+                    app(\App\Services\PlaceholderResolverService::class)->resolve($match);
                 }
 
                 if ($match->next_match_id) {
-                    $nextMatch = Match_::find($match->next_match_id);
-                    if ($nextMatch) {
-                        if (!$nextMatch->home_super_team_id) {
-                            $nextMatch->update(['home_super_team_id' => $matchWinner]);
-                        } else {
-                            $nextMatch->update(['away_super_team_id' => $matchWinner]);
-                        }
-                    }
+                    app(\App\Services\PlaceholderResolverService::class)->advanceWinnerToNextMatch($match, $matchWinner, true);
                 }
 
                 return response()->json([
@@ -563,30 +624,15 @@ class ScoringController extends Controller
                 'winner_super_team_id' => $isTeam ? $matchWinner : null,
             ]);
 
-            // Recalculate standings if it's a pool match
+            // Recalculate standings if it's a pool match and resolve placeholders synchronously
             if ($match->pool_id) {
                 \App\Models\PoolStanding::recalculate($match->pool_id);
+                app(\App\Services\PlaceholderResolverService::class)->resolve($match);
             }
 
             // If bracket match, advance winner to next match
             if ($match->next_match_id) {
-                $nextMatch = Match_::find($match->next_match_id);
-                if ($nextMatch) {
-                    if ($match->home_super_team_id || $match->away_super_team_id) {
-                        $winnerSuperTeamId = $setsWonHome >= $setsToWin ? $match->home_super_team_id : $match->away_super_team_id;
-                        if (!$nextMatch->home_super_team_id) {
-                            $nextMatch->update(['home_super_team_id' => $winnerSuperTeamId]);
-                        } else {
-                            $nextMatch->update(['away_super_team_id' => $winnerSuperTeamId]);
-                        }
-                    } else {
-                        if (!$nextMatch->home_team_id) {
-                            $nextMatch->update(['home_team_id' => $matchWinner]);
-                        } else {
-                            $nextMatch->update(['away_team_id' => $matchWinner]);
-                        }
-                    }
-                }
+                app(\App\Services\PlaceholderResolverService::class)->advanceWinnerToNextMatch($match, $matchWinner, false);
             }
 
             return response()->json([
