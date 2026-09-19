@@ -96,6 +96,8 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
     // Modal for Lineup and Quick Add Athlete on-the-fly
     const [lineupModal, setLineupModal] = useState(null); // { side: 'home' | 'away' }
     // Modal for Sub-Regu Transition
+    const [reguTransition, setReguTransition] = useState(null);
+
     const isTeamMode = matchData.match_mode === 'team_regu' || matchData.match_mode === 'team_double';
     const isBracketMatch = matchData.stage && matchData.stage !== 'pool';
     const isHomeUnresolved = !matchData.home_team_id && !matchData.home_super_team_id && !selectedManualTeams.home;
