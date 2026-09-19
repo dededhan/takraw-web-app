@@ -18,9 +18,9 @@ class ScoringController extends Controller
      */
     public function show(Match_ $match): Response
     {
-        // Jika match ini adalah babak gugur (braket) dan tim belum lengkap:
-        if ($match->stage !== 'pool' && (!$match->home_team_id || !$match->away_team_id)) {
-            app(\App\Services\PlaceholderResolverService::class)->resolveForMatch($match);
+        // Jika match ini adalah babak gugur (braket) dan belum selesai, selalu pastikan tim sinkron dengan hasil pool/babak sebelumnya:
+        if ($match->stage !== 'pool' && $match->status !== 'finished') {
+            app(\App\Services\PlaceholderResolverService::class)->resolveForMatch($match, true);
             $match->refresh();
         }
 
@@ -138,16 +138,113 @@ class ScoringController extends Controller
     public function syncBracket(Match_ $match)
     {
         $resolver = app(\App\Services\PlaceholderResolverService::class);
-        $updated = $resolver->resolveForMatch($match);
+        $updated = $resolver->resolveForMatch($match, true);
 
         $match->refresh();
         $this->ensureMatchAthletes($match);
 
+        $homeName = $match->isTeamMode() ? $match->homeSuperTeam?->name : $match->homeTeam?->name;
+        $awayName = $match->isTeamMode() ? $match->awaySuperTeam?->name : $match->awayTeam?->name;
+
         if ($updated) {
-            return back()->with('success', 'Berhasil menyinkronkan nama tim dari klasemen pool!');
+            return back()->with('success', "Berhasil menyinkronkan nama tim dari bagan! Home: {$homeName}, Away: {$awayName}.");
         }
 
-        return back()->with('info', 'Klasemen pool belum selesai atau belum menghasilkan pemenang untuk diisi ke braket.');
+        return back()->with('info', "Data tim pada pertandingan ini sudah sesuai (Home: {$homeName}, Away: {$awayName}).");
+    }
+
+    /**
+     * Kembalikan pertandingan berstatus live / setup kembali ke status setup (batalkan live).
+     */
+    public function resetToSetup(Match_ $match)
+    {
+        $match->update([
+            'status'     => 'setup',
+            'started_at' => null,
+        ]);
+
+        // Jika ada set yang belum ada skornya atau 0-0, pastikan tetap siap dimainkan
+        foreach ($match->sets as $set) {
+            if ($set->home_score === 0 && $set->away_score === 0 && $set->status !== 'finished') {
+                $set->update([
+                    'status'      => 'pending',
+                    'started_at'  => null,
+                ]);
+            }
+        }
+
+        return back()->with('success', 'Status pertandingan berhasil dikembalikan ke Setup. Anda dapat mengatur ulang tim atau pemain!');
+    }
+
+    /**
+     * Selesaikan dan kunci pertandingan secara menyeluruh dari layar wasit.
+     */
+    public function finalize(Match_ $match)
+    {
+        $isTeam = $match->isTeamMode() || $match->home_super_team_id || $match->away_super_team_id;
+        $homeContestantId = $isTeam ? $match->home_super_team_id : $match->home_team_id;
+        $awayContestantId = $isTeam ? $match->away_super_team_id : $match->away_team_id;
+
+        // Tandai set aktif sebagai finished jika memiliki skor
+        $sets = $match->sets()->get();
+        foreach ($sets as $set) {
+            if ($set->home_score > 0 || $set->away_score > 0 || $set->status === 'live') {
+                $setWinner = $set->home_score > $set->away_score
+                    ? $homeContestantId
+                    : ($set->away_score > $set->home_score ? $awayContestantId : null);
+                $set->update([
+                    'status'               => 'finished',
+                    'finished_at'          => $set->finished_at ?? now(),
+                    'winner_team_id'       => $isTeam ? null : $setWinner,
+                    'winner_super_team_id' => $isTeam ? $setWinner : null,
+                ]);
+            }
+        }
+
+        // Tentukan pemenang pertandingan
+        $matchWinner = null;
+        if ($isTeam && $match->sets()->count() > 3) {
+            $regusWonHome = 0;
+            $regusWonAway = 0;
+            for ($r = 0; $r < 3; $r++) {
+                $rStart = ($r * 3) + 1;
+                $rEnd = ($r * 3) + 3;
+                $rSets = $match->sets()->whereBetween('set_number', [$rStart, $rEnd])
+                    ->where('status', 'finished')
+                    ->get();
+                $rH = $rSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+                $rA = $rSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
+                if ($rH >= 2 || ($rH + $rA >= 3 && $rH > $rA)) {
+                    $regusWonHome++;
+                } elseif ($rA >= 2 || ($rH + $rA >= 3 && $rA > $rH)) {
+                    $regusWonAway++;
+                }
+            }
+            $matchWinner = $regusWonHome >= $regusWonAway ? $homeContestantId : $awayContestantId;
+        } else {
+            $finishedSets = $match->sets()->where('status', 'finished')->get();
+            $setsWonHome = $finishedSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+            $setsWonAway = $finishedSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
+            $matchWinner = $setsWonHome >= $setsWonAway ? $homeContestantId : $awayContestantId;
+        }
+
+        $match->update([
+            'status'               => 'finished',
+            'finished_at'          => now(),
+            'winner_team_id'       => $isTeam ? null : $matchWinner,
+            'winner_super_team_id' => $isTeam ? $matchWinner : null,
+        ]);
+
+        if ($match->pool_id) {
+            \App\Models\PoolStanding::recalculate($match->pool_id);
+            app(\App\Services\PlaceholderResolverService::class)->resolve($match);
+        }
+
+        if ($match->next_match_id) {
+            app(\App\Services\PlaceholderResolverService::class)->advanceWinnerToNextMatch($match, $matchWinner, $isTeam);
+        }
+
+        return back()->with('success', 'Pertandingan berhasil diselesaikan dan dikunci! Hasil telah dicatat ke klasemen & bagan.');
     }
 
     /**
@@ -440,10 +537,14 @@ class ScoringController extends Controller
                 'winner_team_id'        => $isTeam ? null : $setWinnerId,
                 'winner_super_team_id'  => $isTeam ? $setWinnerId : null,
             ]);
+
+            // Sinkronkan status dan pemenang pertandingan jika match sudah selesai/diedit
+            $this->syncMatchStateAfterScoreUpdate($match);
         }
 
         return response()->json([
             'set' => $set->fresh(),
+            'match' => $match->fresh()->load($this->defaultMatchRelations()),
         ]);
     }
 
@@ -469,7 +570,7 @@ class ScoringController extends Controller
 
         $set->update([
             'status'                => 'finished',
-            'finished_at'           => now(),
+            'finished_at'           => $set->finished_at ?? now(),
             'winner_team_id'        => $isTeam ? null : $setWinnerId,
             'winner_super_team_id'  => $isTeam ? $setWinnerId : null,
         ]);
@@ -513,10 +614,10 @@ class ScoringController extends Controller
             $matchOver = ($subFinished && $subIndex >= 2) || ($regusWonHome + $regusWonAway >= 3);
 
             if ($matchOver) {
-                $matchWinner = $regusWonHome > $regusWonAway ? $homeContestantId : $awayContestantId;
+                $matchWinner = $regusWonHome >= $regusWonAway ? $homeContestantId : $awayContestantId;
                 $match->update([
                     'status'               => 'finished',
-                    'finished_at'          => now(),
+                    'finished_at'          => $match->finished_at ?? now(),
                     'winner_super_team_id' => $matchWinner,
                 ]);
 
@@ -556,30 +657,27 @@ class ScoringController extends Controller
                 }
 
                 return response()->json([
-                    'matchFinished'   => false,
-                    'reguFinished'    => true,
-                    'reguWinner'      => $subWinner,
-                    'reguIndex'       => $subIndex,
-                    'nextReguIndex'   => $nextSubIndex,
-                    'regusWonHome'    => $regusWonHome,
-                    'regusWonAway'    => $regusWonAway,
-                    'currentSet'      => $nextSet?->fresh(),
-                    'match'           => $match->fresh()->load($this->defaultMatchRelations()),
+                    'matchFinished' => false,
+                    'reguFinished'  => true,
+                    'reguWinner'    => $subWinner,
+                    'reguIndex'     => $subIndex,
+                    'nextReguIndex' => $nextSubIndex,
+                    'regusWonHome'  => $regusWonHome,
+                    'regusWonAway'  => $regusWonAway,
+                    'currentSet'    => $nextSet ? $nextSet->fresh() : null,
+                    'active_set'    => $nextSet ? $nextSet->fresh() : null,
+                    'match'         => $match->fresh()->load($this->defaultMatchRelations()),
                 ]);
             }
 
-            // Otherwise, continue to next set in current sub-regu
-            $nextSetInSub = $match->sets()->whereBetween('set_number', [$subStartSet, $subEndSet])
-                ->where('status', 'pending')
-                ->orderBy('set_number')
-                ->first();
-
-            if ($nextSetInSub) {
-                $nextSetInSub->update([
+            // Sub-regu continues: activate next set within this sub-regu
+            $nextSet = $match->sets()->where('set_number', $set->set_number + 1)->first();
+            if ($nextSet) {
+                $nextSet->update([
                     'status'     => 'live',
                     'started_at' => now(),
                 ]);
-                $this->initializeSetStats($nextSetInSub, $match);
+                $this->initializeSetStats($nextSet, $match);
             }
 
             return response()->json([
@@ -587,39 +685,38 @@ class ScoringController extends Controller
                 'reguFinished'  => false,
                 'regusWonHome'  => $regusWonHome,
                 'regusWonAway'  => $regusWonAway,
-                'currentSet'    => $nextSetInSub?->fresh(),
+                'currentSet'    => $nextSet ? $nextSet->fresh() : null,
+                'active_set'    => $nextSet ? $nextSet->fresh() : null,
                 'match'         => $match->fresh()->load($this->defaultMatchRelations()),
             ]);
         }
 
         // ─── REGULAR MODE HANDLING (Single Regu / Double / Quadrant) ───
-        $setsWonHome = $match->sets()->where('status', 'finished')
-            ->where(function ($q) use ($isTeam, $homeContestantId) {
-                if ($isTeam) {
-                    $q->where('winner_super_team_id', $homeContestantId);
-                } else {
-                    $q->where('winner_team_id', $homeContestantId);
-                }
-            })->count();
+        $finishedSets = $match->sets()->where('status', 'finished')->get();
+        foreach ($finishedSets as $s) {
+            $sWinner = $s->home_score > $s->away_score
+                ? $homeContestantId
+                : ($s->away_score > $s->home_score ? $awayContestantId : null);
+            if ($sWinner && ($s->winner_team_id !== $sWinner && $s->winner_super_team_id !== $sWinner)) {
+                $s->update([
+                    'winner_team_id'        => $isTeam ? null : $sWinner,
+                    'winner_super_team_id'  => $isTeam ? $sWinner : null,
+                ]);
+            }
+        }
 
-        $setsWonAway = $match->sets()->where('status', 'finished')
-            ->where(function ($q) use ($isTeam, $awayContestantId) {
-                if ($isTeam) {
-                    $q->where('winner_super_team_id', $awayContestantId);
-                } else {
-                    $q->where('winner_team_id', $awayContestantId);
-                }
-            })->count();
+        $setsWonHome = $finishedSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+        $setsWonAway = $finishedSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
 
         $setsToWin = ceil(($match->max_sets ?: 3) / 2);
 
-        if ($setsWonHome >= $setsToWin || $setsWonAway >= $setsToWin) {
+        if ($setsWonHome >= $setsToWin || $setsWonAway >= $setsToWin || $match->status === 'finished') {
             // Match finished
-            $matchWinner = $setsWonHome >= $setsToWin ? $homeContestantId : $awayContestantId;
+            $matchWinner = $setsWonHome >= $setsWonAway ? $homeContestantId : $awayContestantId;
 
             $match->update([
                 'status'               => 'finished',
-                'finished_at'          => now(),
+                'finished_at'          => $match->finished_at ?? now(),
                 'winner_team_id'       => $isTeam ? null : $matchWinner,
                 'winner_super_team_id' => $isTeam ? $matchWinner : null,
             ]);
@@ -662,6 +759,90 @@ class ScoringController extends Controller
             'currentSet' => $nextSet?->fresh(),
             'match' => $match->fresh()->load($this->defaultMatchRelations()),
         ]);
+    }
+
+    /**
+     * Sinkronkan pemenang tiap set dan pemenang keseluruhan match setelah update skor.
+     * Jika skor berubah pada match yang finished atau memicu kemenangan, perbarui pemenang dan dorong ke bagan/klasemen.
+     */
+    public function syncMatchStateAfterScoreUpdate(Match_ $match): void
+    {
+        $isTeam = $match->isTeamMode() || $match->home_super_team_id || $match->away_super_team_id;
+        $homeContestantId = $isTeam ? $match->home_super_team_id : $match->home_team_id;
+        $awayContestantId = $isTeam ? $match->away_super_team_id : $match->away_team_id;
+
+        $finishedSets = $match->sets()->where('status', 'finished')->get();
+        foreach ($finishedSets as $s) {
+            $sWinner = $s->home_score > $s->away_score
+                ? $homeContestantId
+                : ($s->away_score > $s->home_score ? $awayContestantId : null);
+            if ($sWinner && ($s->winner_team_id !== $sWinner && $s->winner_super_team_id !== $sWinner)) {
+                $s->update([
+                    'winner_team_id'        => $isTeam ? null : $sWinner,
+                    'winner_super_team_id'  => $isTeam ? $sWinner : null,
+                ]);
+            }
+        }
+
+        if ($isTeam && $match->sets()->count() > 3) {
+            $regusWonHome = 0;
+            $regusWonAway = 0;
+            for ($r = 0; $r < 3; $r++) {
+                $rStart = ($r * 3) + 1;
+                $rEnd = ($r * 3) + 3;
+                $rSets = $match->sets()->whereBetween('set_number', [$rStart, $rEnd])
+                    ->where('status', 'finished')
+                    ->get();
+                $rH = $rSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+                $rA = $rSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
+                if ($rH >= 2 || ($rH + $rA >= 3 && $rH > $rA)) {
+                    $regusWonHome++;
+                } elseif ($rA >= 2 || ($rH + $rA >= 3 && $rA > $rH)) {
+                    $regusWonAway++;
+                }
+            }
+
+            if ($match->status === 'finished' || ($regusWonHome >= 2 || $regusWonAway >= 2 || ($regusWonHome + $regusWonAway >= 3))) {
+                $matchWinner = $regusWonHome >= $regusWonAway ? $homeContestantId : $awayContestantId;
+                $match->update([
+                    'status'               => 'finished',
+                    'finished_at'          => $match->finished_at ?? now(),
+                    'winner_super_team_id' => $matchWinner,
+                ]);
+
+                if ($match->pool_id) {
+                    \App\Models\PoolStanding::recalculate($match->pool_id);
+                    app(\App\Services\PlaceholderResolverService::class)->resolve($match);
+                }
+
+                if ($match->next_match_id) {
+                    app(\App\Services\PlaceholderResolverService::class)->advanceWinnerToNextMatch($match, $matchWinner, true);
+                }
+            }
+        } else {
+            $setsWonHome = $finishedSets->filter(fn($s) => $s->home_score > $s->away_score)->count();
+            $setsWonAway = $finishedSets->filter(fn($s) => $s->away_score > $s->home_score)->count();
+            $setsToWin = ceil(($match->max_sets ?: 3) / 2);
+
+            if ($match->status === 'finished' || ($setsWonHome >= $setsToWin || $setsWonAway >= $setsToWin)) {
+                $matchWinner = $setsWonHome >= $setsWonAway ? $homeContestantId : $awayContestantId;
+                $match->update([
+                    'status'               => 'finished',
+                    'finished_at'          => $match->finished_at ?? now(),
+                    'winner_team_id'       => $isTeam ? null : $matchWinner,
+                    'winner_super_team_id' => $isTeam ? $matchWinner : null,
+                ]);
+
+                if ($match->pool_id) {
+                    \App\Models\PoolStanding::recalculate($match->pool_id);
+                    app(\App\Services\PlaceholderResolverService::class)->resolve($match);
+                }
+
+                if ($match->next_match_id) {
+                    app(\App\Services\PlaceholderResolverService::class)->advanceWinnerToNextMatch($match, $matchWinner, false);
+                }
+            }
+        }
     }
 
     /**

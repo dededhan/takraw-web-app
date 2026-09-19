@@ -32,6 +32,7 @@ return new class extends Migration
             ])->comment('Mode tanding yang dikonfigurasi');
 
             $table->enum('bracket_stage', [
+                'round_of_32',  // 32 besar (jika 12-16 pool)
                 'round_of_16',  // 16 besar (jika 8 pool)
                 'round_of_8',   // 8 besar / Quarterfinal
                 'semifinal',    // 4 besar

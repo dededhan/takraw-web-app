@@ -67,6 +67,8 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
     const [processing, setProcessing] = useState(false);
     const [statsCache, setStatsCache] = useState({});
     const [syncingBracket, setSyncingBracket] = useState(false);
+    const [finalizingMatch, setFinalizingMatch] = useState(false);
+    const [resettingSetup, setResettingSetup] = useState(false);
     const [showManualTeamPicker, setShowManualTeamPicker] = useState(false);
     const [selectedManualTeams, setSelectedManualTeams] = useState({ home: '', away: '' });
 
@@ -97,6 +99,26 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
     const [lineupModal, setLineupModal] = useState(null); // { side: 'home' | 'away' }
     // Modal for Sub-Regu Transition
     const [reguTransition, setReguTransition] = useState(null);
+
+    // Sinkronkan state lokal saat props dari Inertia berubah (setelah sync bracket / refresh / reload)
+    useEffect(() => {
+        setMatchData(initialMatch);
+        if (initialMatch.lineup) {
+            setCourtLineup({
+                home: initialMatch.lineup?.home || [],
+                away: initialMatch.lineup?.away || [],
+            });
+            setSetupLineup({
+                home: initialMatch.lineup?.home || [],
+                away: initialMatch.lineup?.away || [],
+            });
+        }
+        if (initialMatch.status === 'scheduled') {
+            setShowSetup(true);
+        } else if (initialMatch.status === 'finished') {
+            setViewFinishedSummary(true);
+        }
+    }, [initialMatch]);
 
     const isTeamMode = matchData.match_mode === 'team_regu' || matchData.match_mode === 'team_double';
     const isBracketMatch = matchData.stage && matchData.stage !== 'pool';
@@ -311,6 +333,19 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
         return { home, away };
     }, [isTeamMode, reguSummaries]);
 
+    // Deteksi apakah seluruh set telah selesai atau syarat menang terpenuhi
+    const allCompletedSets = useMemo(() => {
+        if (!matchData.sets || matchData.sets.length === 0) return false;
+        const finishedCount = matchData.sets.filter(s => s.status === 'finished').length;
+        if (isTeamMode) {
+            return finishedCount >= 6 || superTeamScore.home >= 2 || superTeamScore.away >= 2;
+        }
+        const neededToWin = Math.ceil((matchData.max_sets || 3) / 2);
+        const homeSetsWon = matchData.sets.filter(s => s.status === 'finished' && s.home_score > s.away_score).length;
+        const awaySetsWon = matchData.sets.filter(s => s.status === 'finished' && s.away_score > s.home_score).length;
+        return homeSetsWon >= neededToWin || awaySetsWon >= neededToWin || finishedCount >= (matchData.max_sets || 3);
+    }, [matchData.sets, matchData.max_sets, isTeamMode, superTeamScore]);
+
     // Switch active regu session
     const handleSwitchRegu = (rIdx) => {
         setActiveSubRegu(rIdx);
@@ -387,8 +422,34 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
     const handleSyncBracket = () => {
         setSyncingBracket(true);
         router.post(route('scoring.sync-bracket', matchData.id), {}, {
-            preserveState: false,
             onFinish: () => setSyncingBracket(false),
+        });
+    };
+
+    const handleFinalizeMatch = () => {
+        if (!confirm('Apakah Anda yakin ingin menyelesaikan & mengunci pertandingan ini? Hasil akhir dan pemenang akan langsung dicatat ke klasemen serta bagan.')) {
+            return;
+        }
+        setFinalizingMatch(true);
+        router.post(route('scoring.finalize', matchData.id), {}, {
+            onSuccess: () => {
+                setViewFinishedSummary(true);
+                setIsEditMode(false);
+            },
+            onFinish: () => setFinalizingMatch(false),
+        });
+    };
+
+    const handleResetToSetup = () => {
+        if (!confirm('Kembalikan pertandingan ini ke status Setup? (Gunakan jika pertandingan salah live atau ingin memverifikasi ulang tim/pemain)')) {
+            return;
+        }
+        setResettingSetup(true);
+        router.post(route('scoring.reset-to-setup', matchData.id), {}, {
+            onSuccess: () => {
+                setShowSetup(true);
+            },
+            onFinish: () => setResettingSetup(false),
         });
     };
 
@@ -631,16 +692,12 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
 
     const handleFinishSet = async () => {
         if (!currentSet) return;
-        const confirmMsg = currentSet.status === 'finished'
-            ? `Set ${currentSet.set_number} sudah selesai. Simpan perubahan dan kunci kembali?`
+        const isAlreadyFinished = currentSet.status === 'finished';
+        const confirmMsg = isAlreadyFinished
+            ? `Set ${currentSet.set_number} sudah selesai. Simpan perubahan skor dan perbarui status pertandingan?`
             : `Yakin ingin mengakhiri Set ${currentSet.set_number}?`;
 
         if (!confirm(confirmMsg)) return;
-
-        if (currentSet.status === 'finished') {
-            setIsEditMode(false);
-            return;
-        }
 
         setProcessing(true);
         try {
@@ -650,6 +707,10 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
 
             if (res.match) {
                 setMatchData(res.match);
+            }
+
+            if (isAlreadyFinished) {
+                setIsEditMode(false);
             }
 
             if (res.matchFinished) {
@@ -1086,6 +1147,49 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
 
             {/* 1. Header Scoring & Tab Sesi Regu */}
             <div className="flex-shrink-0 bg-surface-900 border-b border-surface-700/50 px-2 sm:px-4 py-2">
+                {/* Match Info & Actions Toolbar */}
+                <div className="max-w-5xl mx-auto mb-1.5 flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-surface-800 text-emerald-400 border border-surface-700">
+                            {matchData.stage?.toUpperCase() || 'MATCH'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-surface-300 bg-surface-800 border border-surface-700">
+                            🏟️ Lap. {matchData.court_number || '-'}
+                        </span>
+                        {matchData.status === 'live' && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/30 flex items-center gap-1 animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                LIVE
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                        {isBracketMatch && (
+                            <button
+                                type="button"
+                                onClick={handleSyncBracket}
+                                disabled={syncingBracket}
+                                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 active:scale-95 shadow-sm"
+                                title="Sinkronkan ulang pemenang dari bagan/pool sebelumnya"
+                            >
+                                <span>🔄</span>
+                                <span className="hidden sm:inline">{syncingBracket ? 'Sinkron...' : 'Sinkronkan Tim Bagan'}</span>
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={handleResetToSetup}
+                            disabled={resettingSetup}
+                            className="px-2.5 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white border border-surface-700 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer active:scale-95 shadow-sm"
+                            title="Batalkan status live dan kembali ke pengaturan awal"
+                        >
+                            <span>↩️</span>
+                            <span className="hidden sm:inline">Reset ke Setup</span>
+                        </button>
+                    </div>
+                </div>
+
                 {/* Aggregate Header (If Team Mode) */}
                 {isTeamMode && (
                     <div className="max-w-5xl mx-auto mb-1.5 pb-1.5 border-b border-surface-800/80 flex items-center justify-between gap-2">
@@ -1241,23 +1345,42 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
                             Mode Edit Aktif ({isMatchFinished ? 'Pertandingan Selesai' : `Set ${currentSet?.set_number}`}): Anda dapat mengoreksi skor & statistik.
                         </span>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                            type="button"
+                            onClick={handleFinishSet}
+                            disabled={processing}
+                            className="px-3 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-surface-950 font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                        >
+                            <span>💾</span>
+                            <span>{processing ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
+                        </button>
+                        {allCompletedSets && (
+                            <button
+                                type="button"
+                                onClick={handleFinalizeMatch}
+                                disabled={finalizingMatch}
+                                className="px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-surface-950 font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                            >
+                                <span>🏆</span>
+                                <span>{finalizingMatch ? 'Memproses...' : 'Kunci & Selesaikan'}</span>
+                            </button>
+                        )}
                         {isMatchFinished && (
                             <button
                                 type="button"
                                 onClick={() => setViewFinishedSummary(true)}
                                 className="px-2.5 py-1 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-200 font-bold text-xs active:scale-95 transition-all cursor-pointer"
                             >
-                                🏆 Ringkasan Hasil
+                                🏆 Ringkasan
                             </button>
                         )}
                         <button
                             type="button"
                             onClick={() => setIsEditMode(false)}
-                            className="px-3 py-1 rounded-xl bg-surface-800 hover:bg-surface-700 text-emerald-300 border border-emerald-500/30 font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-400 hover:text-surface-200 font-bold text-xs active:scale-95 transition-all cursor-pointer"
                         >
-                            <span>🔒</span>
-                            <span>Kunci Kembali</span>
+                            Tutup
                         </button>
                     </div>
                 </div>
@@ -1346,25 +1469,51 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
 
                     <div className="flex items-center gap-2 flex-shrink-0">
                         {isLocked ? (
-                            <button
-                                type="button"
-                                onClick={() => setIsEditMode(true)}
-                                className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-                            >
-                                <span>✏️</span>
-                                <span>Aktifkan Mode Edit</span>
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditMode(true)}
+                                    className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                                >
+                                    <span>✏️</span>
+                                    <span>Mode Edit Skor</span>
+                                </button>
+                                {allCompletedSets && (
+                                    <button
+                                        type="button"
+                                        onClick={handleFinalizeMatch}
+                                        disabled={finalizingMatch}
+                                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                                    >
+                                        <span>🏆</span>
+                                        <span>{finalizingMatch ? 'Menyimpan...' : 'Selesaikan Pertandingan'}</span>
+                                    </button>
+                                )}
+                            </div>
                         ) : (
-                            <button
-                                onClick={handleFinishSet}
-                                disabled={processing}
-                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-md shadow-emerald-950/40 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                            >
-                                <span>🏁</span>
-                                <span>
-                                    {processing ? 'Memproses...' : isSetFinished ? 'Simpan / Selesai Edit' : 'Akhiri Set Ini'}
-                                </span>
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={handleFinishSet}
+                                    disabled={processing}
+                                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-md shadow-emerald-950/40 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                    <span>🏁</span>
+                                    <span>
+                                        {processing ? 'Memproses...' : isSetFinished ? 'Simpan / Selesai Edit' : 'Akhiri Set Ini'}
+                                    </span>
+                                </button>
+                                {allCompletedSets && (
+                                    <button
+                                        type="button"
+                                        onClick={handleFinalizeMatch}
+                                        disabled={finalizingMatch}
+                                        className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-surface-950 font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                                        title="Kunci dan selesaikan pertandingan sekarang"
+                                    >
+                                        <span>🏆 Selesaikan Match</span>
+                                    </button>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>

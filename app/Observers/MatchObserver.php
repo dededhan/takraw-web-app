@@ -22,8 +22,11 @@ class MatchObserver
      */
     public function updated(Match_ $match): void
     {
-        if ($match->isDirty('status') && $match->status === 'finished') {
-            Log::info("MatchObserver: Match #{$match->id} (stage: {$match->stage}) selesai. Menjalankan PlaceholderResolverService sinkron...");
+        $statusFinished = $match->isDirty('status') && $match->status === 'finished';
+        $winnerChanged  = $match->status === 'finished' && ($match->isDirty('winner_team_id') || $match->isDirty('winner_super_team_id'));
+
+        if ($statusFinished || $winnerChanged) {
+            Log::info("MatchObserver: Match #{$match->id} (stage: {$match->stage}) selesai/diperbarui pemenang. Menjalankan PlaceholderResolverService sinkron...");
             
             try {
                 app(PlaceholderResolverService::class)->resolve($match);

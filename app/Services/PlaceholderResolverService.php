@@ -92,11 +92,13 @@ class PlaceholderResolverService
 
     /**
      * Resolve semua placeholder bracket match yang bersumber dari pool ini.
+     * Menggunakan BracketMatrix dan/atau placeholder sebagai acuan permanen.
+     * Jika pemenang pool berubah dan match babak gugur belum selesai, tim otomatis diperbarui.
      */
     public function resolvePlaceholdersForPool(Pool $pool): int
     {
         $resolved   = 0;
-        $mode       = $pool->mode; // match_mode dari pool ini
+        $mode       = $pool->match_mode ?: ($pool->tournament?->mode ?? 'regu');
         $poolName   = strtoupper(trim($pool->name)); // e.g. "B", "E"
         $isTeamMode = in_array($mode, ['team_regu', 'team_double']);
 
@@ -123,10 +125,11 @@ class PlaceholderResolverService
             }
         }
 
-        // Query match bracket di turnamen dan mode yang sesuai
+        // Query match bracket di turnamen dan mode yang sesuai (hanya yang belum finished)
         $query = Match_::where('tournament_id', $pool->tournament_id)
             ->where('match_mode', $mode)
-            ->where('stage', '!=', 'pool');
+            ->where('stage', '!=', 'pool')
+            ->where('status', '!=', 'finished');
 
         // Jika pool memiliki bracket_name tertentu (multi-bracket), utamakan bracket_group yang sama
         if (!empty($pool->bracket_name)) {
@@ -142,35 +145,99 @@ class PlaceholderResolverService
         foreach ($bracketMatches as $bracketMatch) {
             $updated = false;
 
-            // 1. Cek home_placeholder
-            if ($bracketMatch->home_placeholder) {
-                $parsed = $this->parsePoolPlaceholder($bracketMatch->home_placeholder);
+            // Cari BracketMatrix jika ada untuk match ini
+            $matrix = \App\Models\BracketMatrix::where('tournament_id', $bracketMatch->tournament_id)
+                ->where('match_mode', $bracketMatch->match_mode)
+                ->where('bracket_stage', $bracketMatch->stage)
+                ->where('bracket_position', $bracketMatch->bracket_position)
+                ->when(!empty($bracketMatch->bracket_group), function ($q) use ($bracketMatch) {
+                    $q->where(function ($sub) use ($bracketMatch) {
+                        $sub->where('bracket_name', $bracketMatch->bracket_group)
+                            ->orWhereNull('bracket_name')
+                            ->orWhere('bracket_name', '');
+                    });
+                })
+                ->first();
+
+            // 1. Cek HOME Side (dari placeholder ATAU matrix home_source)
+            $homeSource = $bracketMatch->home_placeholder ?: ($matrix?->home_source ?? null);
+            if ($homeSource) {
+                $parsed = $this->parsePoolPlaceholder($homeSource);
                 if ($parsed && strtoupper($parsed['pool']) === $poolName) {
-                    $teamId = $rankMap[$parsed['rank']] ?? null;
-                    if ($teamId) {
+                    $expectedTeamId = $rankMap[$parsed['rank']] ?? null;
+                    $currentTeamId = $isTeamMode ? $bracketMatch->home_super_team_id : $bracketMatch->home_team_id;
+                    if ($expectedTeamId && ($currentTeamId !== $expectedTeamId || $bracketMatch->home_placeholder)) {
+                        if (!$matrix && $bracketMatch->home_placeholder) {
+                            \App\Models\BracketMatrix::firstOrCreate([
+                                'tournament_id'    => $bracketMatch->tournament_id,
+                                'match_mode'       => $bracketMatch->match_mode,
+                                'bracket_stage'    => $bracketMatch->stage,
+                                'bracket_position' => $bracketMatch->bracket_position ?: 1,
+                                'bracket_name'     => $bracketMatch->bracket_group,
+                            ], [
+                                'home_source'      => $bracketMatch->home_placeholder,
+                                'away_source'      => $bracketMatch->away_placeholder,
+                            ]);
+                        }
+
                         if ($isTeamMode) {
-                            $bracketMatch->home_super_team_id = $teamId;
+                            $bracketMatch->home_super_team_id = $expectedTeamId;
                         } else {
-                            $bracketMatch->home_team_id = $teamId;
+                            $bracketMatch->home_team_id = $expectedTeamId;
                         }
                         $bracketMatch->home_placeholder = null;
+
+                        // Reset lineup home agar pemain tim baru disiapkan
+                        $lineup = $bracketMatch->lineup ?: [];
+                        $lineup['home'] = [];
+                        $bracketMatch->lineup = $lineup;
+
+                        $this->ensureContestantAthletes($expectedTeamId, $isTeamMode);
+                        $this->syncSetStatsForNewContestant($bracketMatch, $expectedTeamId, 'home', $isTeamMode);
+
+                        Log::info("PlaceholderResolver: Match #{$bracketMatch->id} Home diupdate dari Tim #{$currentTeamId} ke Tim #{$expectedTeamId} (Pool {$poolName} Rank {$parsed['rank']})");
                         $updated = true;
                     }
                 }
             }
 
-            // 2. Cek away_placeholder
-            if ($bracketMatch->away_placeholder) {
-                $parsed = $this->parsePoolPlaceholder($bracketMatch->away_placeholder);
+            // 2. Cek AWAY Side (dari placeholder ATAU matrix away_source)
+            $awaySource = $bracketMatch->away_placeholder ?: ($matrix?->away_source ?? null);
+            if ($awaySource) {
+                $parsed = $this->parsePoolPlaceholder($awaySource);
                 if ($parsed && strtoupper($parsed['pool']) === $poolName) {
-                    $teamId = $rankMap[$parsed['rank']] ?? null;
-                    if ($teamId) {
+                    $expectedTeamId = $rankMap[$parsed['rank']] ?? null;
+                    $currentTeamId = $isTeamMode ? $bracketMatch->away_super_team_id : $bracketMatch->away_team_id;
+                    if ($expectedTeamId && ($currentTeamId !== $expectedTeamId || $bracketMatch->away_placeholder)) {
+                        if (!$matrix && $bracketMatch->away_placeholder) {
+                            \App\Models\BracketMatrix::firstOrCreate([
+                                'tournament_id'    => $bracketMatch->tournament_id,
+                                'match_mode'       => $bracketMatch->match_mode,
+                                'bracket_stage'    => $bracketMatch->stage,
+                                'bracket_position' => $bracketMatch->bracket_position ?: 1,
+                                'bracket_name'     => $bracketMatch->bracket_group,
+                            ], [
+                                'home_source'      => $bracketMatch->home_placeholder,
+                                'away_source'      => $bracketMatch->away_placeholder,
+                            ]);
+                        }
+
                         if ($isTeamMode) {
-                            $bracketMatch->away_super_team_id = $teamId;
+                            $bracketMatch->away_super_team_id = $expectedTeamId;
                         } else {
-                            $bracketMatch->away_team_id = $teamId;
+                            $bracketMatch->away_team_id = $expectedTeamId;
                         }
                         $bracketMatch->away_placeholder = null;
+
+                        // Reset lineup away agar pemain tim baru disiapkan
+                        $lineup = $bracketMatch->lineup ?: [];
+                        $lineup['away'] = [];
+                        $bracketMatch->lineup = $lineup;
+
+                        $this->ensureContestantAthletes($expectedTeamId, $isTeamMode);
+                        $this->syncSetStatsForNewContestant($bracketMatch, $expectedTeamId, 'away', $isTeamMode);
+
+                        Log::info("PlaceholderResolver: Match #{$bracketMatch->id} Away diupdate dari Tim #{$currentTeamId} ke Tim #{$expectedTeamId} (Pool {$poolName} Rank {$parsed['rank']})");
                         $updated = true;
                     }
                 }
@@ -190,74 +257,141 @@ class PlaceholderResolverService
      * Mencoba menyelesaikan home dan away placeholder dari data pool atau match sebelumnya yang sudah siap.
      *
      * @param  Match_ $bracketMatch
-     * @return bool True jika ada tim yang berhasil di-resolve
+     * @param  bool   $force Jika true, tetap update jika tim di hasil pool/babak sebelumnya berbeda
+     * @return bool   True jika ada tim yang berhasil di-resolve atau diperbarui
      */
-    public function resolveForMatch(Match_ $bracketMatch): bool
+    public function resolveForMatch(Match_ $bracketMatch, bool $force = false): bool
     {
-        if ($bracketMatch->stage === 'pool') {
+        if ($bracketMatch->stage === 'pool' || $bracketMatch->status === 'finished') {
             return false;
         }
 
         $updated = false;
         $isTeamMode = $bracketMatch->isTeamMode();
 
-        // 1. Resolve Home Side jika belum terisi tim
-        $homeId = $isTeamMode ? $bracketMatch->home_super_team_id : $bracketMatch->home_team_id;
-        if (!$homeId && $bracketMatch->home_placeholder) {
-            $resolvedId = $this->resolveContestantForPlaceholder($bracketMatch, $bracketMatch->home_placeholder, 'home');
-            if ($resolvedId) {
+        // Cari BracketMatrix jika ada untuk match ini
+        $matrix = \App\Models\BracketMatrix::where('tournament_id', $bracketMatch->tournament_id)
+            ->where('match_mode', $bracketMatch->match_mode)
+            ->where('bracket_stage', $bracketMatch->stage)
+            ->where('bracket_position', $bracketMatch->bracket_position)
+            ->when(!empty($bracketMatch->bracket_group), function ($q) use ($bracketMatch) {
+                $q->where(function ($sub) use ($bracketMatch) {
+                    $sub->where('bracket_name', $bracketMatch->bracket_group)
+                        ->orWhereNull('bracket_name')
+                        ->orWhere('bracket_name', '');
+                });
+            })
+            ->first();
+
+        // 1. Resolve Home Side
+        $homeSource = $bracketMatch->home_placeholder ?: ($matrix?->home_source ?? null);
+        $currentHomeId = $isTeamMode ? $bracketMatch->home_super_team_id : $bracketMatch->home_team_id;
+
+        if ($homeSource && (!$currentHomeId || $force || $bracketMatch->home_placeholder)) {
+            $resolvedId = $this->resolveContestantForSource($bracketMatch, $homeSource, 'home');
+            if ($resolvedId && ($resolvedId !== $currentHomeId || $bracketMatch->home_placeholder)) {
+                if (!$matrix && $bracketMatch->home_placeholder) {
+                    \App\Models\BracketMatrix::firstOrCreate([
+                        'tournament_id'    => $bracketMatch->tournament_id,
+                        'match_mode'       => $bracketMatch->match_mode,
+                        'bracket_stage'    => $bracketMatch->stage,
+                        'bracket_position' => $bracketMatch->bracket_position ?: 1,
+                        'bracket_name'     => $bracketMatch->bracket_group,
+                    ], [
+                        'home_source'      => $bracketMatch->home_placeholder,
+                        'away_source'      => $bracketMatch->away_placeholder,
+                    ]);
+                }
+
                 if ($isTeamMode) {
                     $bracketMatch->home_super_team_id = $resolvedId;
                 } else {
                     $bracketMatch->home_team_id = $resolvedId;
                 }
                 $bracketMatch->home_placeholder = null;
+
+                $lineup = $bracketMatch->lineup ?: [];
+                $lineup['home'] = [];
+                $bracketMatch->lineup = $lineup;
+
+                $this->ensureContestantAthletes($resolvedId, $isTeamMode);
+                $this->syncSetStatsForNewContestant($bracketMatch, $resolvedId, 'home', $isTeamMode);
                 $updated = true;
             }
         }
 
-        // 2. Resolve Away Side jika belum terisi tim
-        $awayId = $isTeamMode ? $bracketMatch->away_super_team_id : $bracketMatch->away_team_id;
-        if (!$awayId && $bracketMatch->away_placeholder) {
-            $resolvedId = $this->resolveContestantForPlaceholder($bracketMatch, $bracketMatch->away_placeholder, 'away');
-            if ($resolvedId) {
+        // 2. Resolve Away Side
+        $awaySource = $bracketMatch->away_placeholder ?: ($matrix?->away_source ?? null);
+        $currentAwayId = $isTeamMode ? $bracketMatch->away_super_team_id : $bracketMatch->away_team_id;
+
+        if ($awaySource && (!$currentAwayId || $force || $bracketMatch->away_placeholder)) {
+            $resolvedId = $this->resolveContestantForSource($bracketMatch, $awaySource, 'away');
+            if ($resolvedId && ($resolvedId !== $currentAwayId || $bracketMatch->away_placeholder)) {
+                if (!$matrix && $bracketMatch->away_placeholder) {
+                    \App\Models\BracketMatrix::firstOrCreate([
+                        'tournament_id'    => $bracketMatch->tournament_id,
+                        'match_mode'       => $bracketMatch->match_mode,
+                        'bracket_stage'    => $bracketMatch->stage,
+                        'bracket_position' => $bracketMatch->bracket_position ?: 1,
+                        'bracket_name'     => $bracketMatch->bracket_group,
+                    ], [
+                        'home_source'      => $bracketMatch->home_placeholder,
+                        'away_source'      => $bracketMatch->away_placeholder,
+                    ]);
+                }
+
                 if ($isTeamMode) {
                     $bracketMatch->away_super_team_id = $resolvedId;
                 } else {
                     $bracketMatch->away_team_id = $resolvedId;
                 }
                 $bracketMatch->away_placeholder = null;
+
+                $lineup = $bracketMatch->lineup ?: [];
+                $lineup['away'] = [];
+                $bracketMatch->lineup = $lineup;
+
+                $this->ensureContestantAthletes($resolvedId, $isTeamMode);
+                $this->syncSetStatsForNewContestant($bracketMatch, $resolvedId, 'away', $isTeamMode);
                 $updated = true;
             }
         }
 
-        // 3. Resolve dari relasi previousMatches jika masih ada sisi yang belum terisi
-        if ((!$bracketMatch->home_team_id && !$bracketMatch->home_super_team_id) ||
-            (!$bracketMatch->away_team_id && !$bracketMatch->away_super_team_id)) {
-            $prevMatches = $bracketMatch->previousMatches()->where('status', 'finished')->get();
-            foreach ($prevMatches as $pm) {
-                $pmWinner = $isTeamMode ? $pm->winner_super_team_id : $pm->winner_team_id;
-                if (!$pmWinner) continue;
+        // 3. Resolve dari relasi previousMatches jika bersumber dari babak gugur sebelumnya
+        $prevMatches = $bracketMatch->previousMatches()->where('status', 'finished')->get();
+        foreach ($prevMatches as $pm) {
+            $pmWinner = $isTeamMode ? $pm->winner_super_team_id : $pm->winner_team_id;
+            if (!$pmWinner) continue;
 
-                $targetSide = ($pm->bracket_position % 2 === 1) ? 'home' : 'away';
+            $targetSide = ($pm->bracket_position % 2 === 1) ? 'home' : 'away';
+            $sideContestantId = ($targetSide === 'home')
+                ? ($isTeamMode ? $bracketMatch->home_super_team_id : $bracketMatch->home_team_id)
+                : ($isTeamMode ? $bracketMatch->away_super_team_id : $bracketMatch->away_team_id);
 
-                if ($targetSide === 'home' && !$bracketMatch->home_team_id && !$bracketMatch->home_super_team_id) {
+            if ((!$sideContestantId || $force) && $sideContestantId !== $pmWinner) {
+                if ($targetSide === 'home') {
                     if ($isTeamMode) {
                         $bracketMatch->home_super_team_id = $pmWinner;
                     } else {
                         $bracketMatch->home_team_id = $pmWinner;
                     }
-                    $bracketMatch->home_placeholder = null;
-                    $updated = true;
-                } elseif ($targetSide === 'away' && !$bracketMatch->away_team_id && !$bracketMatch->away_super_team_id) {
+                    $lineup = $bracketMatch->lineup ?: [];
+                    $lineup['home'] = [];
+                    $bracketMatch->lineup = $lineup;
+                } else {
                     if ($isTeamMode) {
                         $bracketMatch->away_super_team_id = $pmWinner;
                     } else {
                         $bracketMatch->away_team_id = $pmWinner;
                     }
-                    $bracketMatch->away_placeholder = null;
-                    $updated = true;
+                    $lineup = $bracketMatch->lineup ?: [];
+                    $lineup['away'] = [];
+                    $bracketMatch->lineup = $lineup;
                 }
+
+                $this->ensureContestantAthletes($pmWinner, $isTeamMode);
+                $this->syncSetStatsForNewContestant($bracketMatch, $pmWinner, $targetSide, $isTeamMode);
+                $updated = true;
             }
         }
 
@@ -269,6 +403,79 @@ class PlaceholderResolverService
     }
 
     /**
+     * Resolve contestant ID dari source (bisa format BracketMatrix maupun format placeholder biasa).
+     */
+    public function resolveContestantForSource(Match_ $match, string $source, string $side): ?int
+    {
+        // 1. Coba parse via BracketMatrix
+        $parsed = \App\Models\BracketMatrix::parseSource($source);
+        if ($parsed['type'] === 'pool' && !empty($parsed['pool'])) {
+            return $this->resolveContestantFromPool($match, $parsed['pool'], (int) ($parsed['rank'] ?? 1));
+        }
+
+        if ($parsed['type'] === 'winner' && !empty($parsed['position'])) {
+            $stage = $parsed['stage'] ?? null;
+            if ($stage) {
+                $feederMatch = Match_::where('tournament_id', $match->tournament_id)
+                    ->where('match_mode', $match->match_mode)
+                    ->where('stage', $stage)
+                    ->where('bracket_position', $parsed['position'])
+                    ->first();
+                if ($feederMatch && $feederMatch->status === 'finished') {
+                    return $match->isTeamMode() ? $feederMatch->winner_super_team_id : $feederMatch->winner_team_id;
+                }
+            }
+        }
+
+        // 2. Coba parse via placeholder method
+        return $this->resolveContestantForPlaceholder($match, $source, $side);
+    }
+
+    /**
+     * Cari contestant ID dari Pool dan rank tertentu.
+     */
+    public function resolveContestantFromPool(Match_ $match, string $poolName, int $rank): ?int
+    {
+        $poolQuery = Pool::where('tournament_id', $match->tournament_id)
+            ->where(function ($q) use ($match) {
+                $q->where('match_mode', $match->match_mode)
+                  ->orWhereNull('match_mode');
+            })
+            ->where(function ($q) use ($poolName) {
+                $q->where('name', $poolName)
+                  ->orWhere('name', 'LIKE', "%{$poolName}%");
+            });
+
+        if (!empty($match->bracket_group)) {
+            $poolQuery->where(function ($q) use ($match) {
+                $q->where('bracket_name', $match->bracket_group)
+                  ->orWhereNull('bracket_name')
+                  ->orWhere('bracket_name', '');
+            });
+        }
+
+        $pool = $poolQuery->first();
+        if (!$pool) {
+            return null;
+        }
+
+        // Pastikan klasemen pool segar
+        PoolStanding::recalculate($pool->id);
+
+        $standing = PoolStanding::where('pool_id', $pool->id)
+            ->where('rank', $rank)
+            ->first();
+
+        if ($standing) {
+            return $match->isTeamMode()
+                ? ($standing->super_team_id ?? $standing->team_id)
+                : $standing->team_id;
+        }
+
+        return null;
+    }
+
+    /**
      * Resolve semua placeholder di satu turnamen (bisa dipanggil dari controller bracket/scoring).
      */
     public function resolveAllForTournament(Tournament|int $tournament): int
@@ -276,17 +483,12 @@ class PlaceholderResolverService
         $tournamentId = is_numeric($tournament) ? $tournament : $tournament->id;
         $bracketMatches = Match_::where('tournament_id', $tournamentId)
             ->where('stage', '!=', 'pool')
-            ->where(function ($q) {
-                $q->whereNotNull('home_placeholder')
-                  ->orWhereNotNull('away_placeholder')
-                  ->orWhereNull('home_team_id')
-                  ->orWhereNull('away_team_id');
-            })
+            ->where('status', '!=', 'finished')
             ->get();
 
         $resolvedCount = 0;
         foreach ($bracketMatches as $match) {
-            if ($this->resolveForMatch($match)) {
+            if ($this->resolveForMatch($match, true)) {
                 $resolvedCount++;
             }
         }
@@ -296,6 +498,7 @@ class PlaceholderResolverService
 
     /**
      * Majukan pemenang match saat ini ke babak berikutnya (next_match_id) secara presisi.
+     * Jika pemenang berubah, perbarui tim di next_match dan reset susunan pemain.
      */
     public function advanceWinnerToNextMatch(Match_ $match, int $winnerId, bool $isTeamMode): bool
     {
@@ -304,12 +507,17 @@ class PlaceholderResolverService
         }
 
         $nextMatch = Match_::find($match->next_match_id);
-        if (!$nextMatch) {
+        if (!$nextMatch || $nextMatch->status === 'finished') {
             return false;
         }
 
         // Tentukan apakah match ini mengalir ke sisi Home (posisi ganjil) atau Away (posisi genap)
         $isHomeFeeder = ($match->bracket_position % 2 === 1);
+        $targetSide = $isHomeFeeder ? 'home' : 'away';
+
+        $currentContestantId = $isHomeFeeder
+            ? ($isTeamMode ? $nextMatch->home_super_team_id : $nextMatch->home_team_id)
+            : ($isTeamMode ? $nextMatch->away_super_team_id : $nextMatch->away_team_id);
 
         if ($isHomeFeeder) {
             if ($isTeamMode) {
@@ -327,10 +535,94 @@ class PlaceholderResolverService
             $nextMatch->away_placeholder = null;
         }
 
+        // Jika tim berbeda dari sebelumnya, reset lineup dan pastikan atlet terdaftar
+        if ($currentContestantId !== $winnerId) {
+            $lineup = $nextMatch->lineup ?: [];
+            $lineup[$targetSide] = [];
+            $nextMatch->lineup = $lineup;
+
+            $this->ensureContestantAthletes($winnerId, $isTeamMode);
+            $this->syncSetStatsForNewContestant($nextMatch, $winnerId, $targetSide, $isTeamMode);
+        }
+
         $nextMatch->save();
         Log::info("PlaceholderResolver: Winner of Match #{$match->id} (Team #{$winnerId}) advanced to Match #{$nextMatch->id} (" . ($isHomeFeeder ? 'HOME' : 'AWAY') . ")");
 
         return true;
+    }
+
+    /**
+     * Pastikan atlet untuk kontestan (Team / SuperTeam) sudah terdaftar di database.
+     */
+    public function ensureContestantAthletes(int $contestantId, bool $isTeamMode): void
+    {
+        if ($isTeamMode) {
+            $superTeam = \App\Models\SuperTeam::with('members.athletes')->find($contestantId);
+            if ($superTeam) {
+                foreach ($superTeam->members as $team) {
+                    $this->ensureTeamDefaultAthletes($team);
+                }
+            }
+        } else {
+            $team = \App\Models\Team::with('athletes')->find($contestantId);
+            if ($team) {
+                $this->ensureTeamDefaultAthletes($team);
+            }
+        }
+    }
+
+    /**
+     * Buat default 4 atlet jika tim belum memiliki atlet sama sekali.
+     */
+    protected function ensureTeamDefaultAthletes(\App\Models\Team $team): void
+    {
+        if ($team->athletes()->count() === 0) {
+            $defaults = [
+                ['name' => 'Tekong ' . $team->name, 'jersey_number' => 1, 'position' => 'Tekong'],
+                ['name' => 'Feeder ' . $team->name, 'jersey_number' => 2, 'position' => 'Feeder'],
+                ['name' => 'Killer ' . $team->name, 'jersey_number' => 3, 'position' => 'Killer'],
+                ['name' => 'Cadangan ' . $team->name, 'jersey_number' => 4, 'position' => 'Cadangan'],
+            ];
+
+            foreach ($defaults as $data) {
+                \App\Models\Athlete::create([
+                    'team_id'       => $team->id,
+                    'name'          => $data['name'],
+                    'jersey_number' => $data['jersey_number'],
+                    'position'      => $data['position'],
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Sinkronkan baris SetStat untuk atlet baru pada set yang sudah ada dalam match.
+     */
+    public function syncSetStatsForNewContestant(Match_ $match, int $contestantId, string $side, bool $isTeamMode): void
+    {
+        $sets = $match->sets()->get();
+        if ($sets->isEmpty()) {
+            return;
+        }
+
+        if ($isTeamMode) {
+            $superTeam = \App\Models\SuperTeam::with('members.athletes')->find($contestantId);
+            $athletes = $superTeam?->members->flatMap->athletes ?? collect();
+        } else {
+            $team = \App\Models\Team::with('athletes')->find($contestantId);
+            $athletes = $team?->athletes ?? collect();
+        }
+
+        foreach ($sets as $set) {
+            foreach ($athletes as $athlete) {
+                \App\Models\SetStat::firstOrCreate([
+                    'match_set_id' => $set->id,
+                    'athlete_id'   => $athlete->id,
+                ], [
+                    'team_id'      => $athlete->team_id,
+                ]);
+            }
+        }
     }
 
     /**
@@ -349,8 +641,8 @@ class PlaceholderResolverService
             // Cari pool yang cocok dalam turnamen & mode ini
             $poolQuery = Pool::where('tournament_id', $match->tournament_id)
                 ->where(function ($q) use ($match) {
-                    $q->where('mode', $match->match_mode)
-                      ->orWhere('match_mode', $match->match_mode);
+                    $q->where('match_mode', $match->match_mode)
+                      ->orWhereNull('match_mode');
                 })
                 ->where(function ($q) use ($poolName) {
                     $q->where('name', $poolName)
