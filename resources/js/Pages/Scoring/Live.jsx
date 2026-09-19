@@ -352,7 +352,17 @@ export default function LiveScoring({ match: initialMatch }) {
         if (!res.ok) {
             const errText = await res.text();
             console.error('Fetch post error:', res.status, errText);
-            throw new Error(`HTTP Error ${res.status}: ${errText}`);
+            let message = `HTTP Error ${res.status}`;
+            try {
+                const parsed = JSON.parse(errText);
+                if (parsed.errors) {
+                    const detail = Object.values(parsed.errors).flat().join(', ');
+                    if (detail) message = detail;
+                } else if (parsed.message) {
+                    message = parsed.message;
+                }
+            } catch (e) { /* ignore JSON parse error */ }
+            throw new Error(message);
         }
 
         return res.json();
@@ -505,7 +515,7 @@ export default function LiveScoring({ match: initialMatch }) {
             }
         } catch (err) {
             console.error('Quick add athlete error:', err);
-            alert('Gagal menambahkan nomor punggung. Pastikan nomor valid.');
+            alert(err.message || 'Gagal menambahkan nomor punggung. Pastikan nomor valid.');
         }
     };
 
@@ -522,17 +532,23 @@ export default function LiveScoring({ match: initialMatch }) {
                 setMatchData(res.match);
                 if (res.athlete) {
                     setSelectedAthlete(prev => {
-                        if (prev[side]?.id === res.athlete.id) {
+                        const cur = prev[side];
+                        if (!cur) return prev;
+                        if (cur.id === res.athlete.id) {
                             return { ...prev, [side]: res.athlete };
                         }
-                        return prev;
+                        const sideAthletes = side === 'home'
+                            ? (res.match.home_team?.athletes || res.match.home_super_team?.members?.flatMap(m => m.athletes || []) || [])
+                            : (res.match.away_team?.athletes || res.match.away_super_team?.members?.flatMap(m => m.athletes || []) || []);
+                        const freshCurrent = sideAthletes.find(a => a.id === cur.id);
+                        return freshCurrent ? { ...prev, [side]: freshCurrent } : prev;
                     });
                 }
                 return res.athlete;
             }
         } catch (err) {
             console.error('Update athlete error:', err);
-            alert('Gagal mengupdate nomor punggung.');
+            alert(err.message || 'Gagal mengupdate nomor punggung.');
         }
     };
 
@@ -1246,6 +1262,8 @@ export default function LiveScoring({ match: initialMatch }) {
                 <QuickLineupBoxModal
                     modalData={lineupModal}
                     isTeamMode={isTeamMode}
+                    athletes={lineupModal.side === 'home' ? homeAthletes : awayAthletes}
+                    activeIds={courtLineup[lineupModal.side] || []}
                     onClose={() => setLineupModal(null)}
                     onToggleAthleteInCourt={(athleteId, side) => {
                         setCourtLineup(prev => {
@@ -1538,9 +1556,11 @@ function TabletStatRow({ group, stats, isLocked, onStatChange, onActionWithZone 
 }
 
 // ─── Modal Quick Lineup Box & Edit/Input Nomor Punggung ───
-function QuickLineupBoxModal({ modalData, isTeamMode, onClose, onToggleAthleteInCourt, onQuickAdd, onUpdateAthlete }) {
-    const { teamName, targetTeamId, subIndex, side, allAthletes = [], activeIds = [], isLocked } = modalData;
-    const [localActiveIds, setLocalActiveIds] = useState(activeIds);
+function QuickLineupBoxModal({ modalData, isTeamMode, athletes, activeIds, onClose, onToggleAthleteInCourt, onQuickAdd, onUpdateAthlete }) {
+    const { teamName, targetTeamId, subIndex, side, isLocked } = modalData;
+    const allAthletes = athletes || modalData.allAthletes || [];
+    const currentActiveIds = activeIds || modalData.activeIds || [];
+    const [localActiveIds, setLocalActiveIds] = useState(currentActiveIds);
     const [editingAthleteId, setEditingAthleteId] = useState(null);
     const [editJersey, setEditJersey] = useState('');
     const [editName, setEditName] = useState('');
@@ -1554,8 +1574,8 @@ function QuickLineupBoxModal({ modalData, isTeamMode, onClose, onToggleAthleteIn
     const [submittingNew, setSubmittingNew] = useState(false);
 
     useEffect(() => {
-        setLocalActiveIds(activeIds);
-    }, [activeIds]);
+        setLocalActiveIds(currentActiveIds);
+    }, [currentActiveIds]);
 
     const handleToggle = (athleteId) => {
         if (isLocked) {
@@ -1718,8 +1738,12 @@ function QuickLineupBoxModal({ modalData, isTeamMode, onClose, onToggleAthleteIn
                                                             <option value="Tekong">Tekong</option>
                                                             <option value="Feeder">Feeder</option>
                                                             <option value="Killer">Killer</option>
+                                                            <option value="Smash">Smash</option>
                                                             <option value="Cadangan">Cadangan</option>
                                                             <option value="Pemain">Pemain</option>
+                                                            {!['Tekong', 'Feeder', 'Killer', 'Smash', 'Cadangan', 'Pemain'].includes(editPosition) && editPosition && (
+                                                                <option value={editPosition}>{editPosition}</option>
+                                                            )}
                                                         </select>
                                                     </div>
                                                 </div>
@@ -1848,6 +1872,7 @@ function QuickLineupBoxModal({ modalData, isTeamMode, onClose, onToggleAthleteIn
                                         <option value="Tekong">Tekong</option>
                                         <option value="Feeder">Feeder</option>
                                         <option value="Killer">Killer</option>
+                                        <option value="Smash">Smash</option>
                                         <option value="Cadangan">Cadangan</option>
                                         <option value="Pemain">Pemain</option>
                                     </select>

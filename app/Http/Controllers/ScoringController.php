@@ -627,7 +627,7 @@ class ScoringController extends Controller
             'team_id'       => 'required|exists:teams,id',
             'jersey_number' => 'required|integer|min:1|max:99',
             'name'          => 'nullable|string|max:100',
-            'position'      => 'nullable|string|in:Tekong,Feeder,Killer,Cadangan,Pemain',
+            'position'      => 'nullable|string|max:50',
         ]);
 
         $team = \App\Models\Team::findOrFail($validated['team_id']);
@@ -663,13 +663,7 @@ class ScoringController extends Controller
             'success' => true,
             'athlete' => $athlete,
             'team'    => $team->fresh()->load('athletes'),
-            'match'   => $match->fresh()->load([
-                'homeTeam.athletes',
-                'awayTeam.athletes',
-                'homeSuperTeam.members.athletes',
-                'awaySuperTeam.members.athletes',
-                'sets.stats.athlete',
-            ]),
+            'match'   => $match->fresh()->load($this->defaultMatchRelations()),
         ]);
     }
 
@@ -683,58 +677,74 @@ class ScoringController extends Controller
             'athlete_id'    => 'required|exists:athletes,id',
             'jersey_number' => 'required|integer|min:1|max:99',
             'name'          => 'nullable|string|max:100',
-            'position'      => 'nullable|string|in:Tekong,Feeder,Killer,Cadangan,Pemain',
+            'position'      => 'nullable|string|max:50',
         ]);
 
         $athlete = \App\Models\Athlete::findOrFail($validated['athlete_id']);
         $newJersey = (int) $validated['jersey_number'];
         $oldJersey = (int) $athlete->jersey_number;
 
-        if ($newJersey !== $oldJersey) {
-            // Check if another athlete in the same team already has this jersey number
-            $conflictAthlete = \App\Models\Athlete::where('team_id', $athlete->team_id)
-                ->where('jersey_number', $newJersey)
-                ->where('id', '!=', $athlete->id)
-                ->first();
-
-            if ($conflictAthlete) {
-                // Temporary set conflict athlete to a safe unused number to prevent unique key violation
-                $tempNumber = 900 + ($oldJersey % 99);
-                while (\App\Models\Athlete::where('team_id', $athlete->team_id)->where('jersey_number', $tempNumber)->exists()) {
-                    $tempNumber++;
+        DB::transaction(function () use ($match, $athlete, $newJersey, $oldJersey, $validated) {
+            if ($newJersey !== $oldJersey) {
+                // Determine team scope (support super teams as well)
+                $teamIds = [$athlete->team_id];
+                if ($match->isTeamMode()) {
+                    if ($match->home_super_team_id && $match->homeSuperTeam?->members->contains('id', $athlete->team_id)) {
+                        $teamIds = $match->homeSuperTeam->members->pluck('id')->toArray();
+                    } elseif ($match->away_super_team_id && $match->awaySuperTeam?->members->contains('id', $athlete->team_id)) {
+                        $teamIds = $match->awaySuperTeam->members->pluck('id')->toArray();
+                    }
                 }
 
-                $conflictAthlete->update(['jersey_number' => $tempNumber]);
-                $athlete->update([
-                    'jersey_number' => $newJersey,
-                    'name'          => !empty($validated['name']) ? $validated['name'] : $athlete->name,
-                    'position'      => !empty($validated['position']) ? $validated['position'] : $athlete->position,
-                ]);
-                $conflictAthlete->update(['jersey_number' => $oldJersey]);
+                // Check if another athlete in the same team scope already has this jersey number
+                $conflictAthlete = \App\Models\Athlete::whereIn('team_id', $teamIds)
+                    ->where('jersey_number', $newJersey)
+                    ->where('id', '!=', $athlete->id)
+                    ->first();
+
+                if ($conflictAthlete) {
+                    if ($conflictAthlete->team_id === $athlete->team_id) {
+                        // Temporary set conflict athlete to a safe unused number to prevent unique key violation
+                        $tempNumber = 900 + ($oldJersey % 99);
+                        while (\App\Models\Athlete::where('team_id', $athlete->team_id)->where('jersey_number', $tempNumber)->exists()) {
+                            $tempNumber++;
+                        }
+
+                        $conflictAthlete->update(['jersey_number' => $tempNumber]);
+                        $athlete->update([
+                            'jersey_number' => $newJersey,
+                            'name'          => !empty($validated['name']) ? $validated['name'] : $athlete->name,
+                            'position'      => !empty($validated['position']) ? $validated['position'] : $athlete->position,
+                        ]);
+                        $conflictAthlete->update(['jersey_number' => $oldJersey]);
+                    } else {
+                        // Different sub-teams in SuperTeam mode (no unique index collision)
+                        $conflictAthlete->update(['jersey_number' => $oldJersey]);
+                        $athlete->update([
+                            'jersey_number' => $newJersey,
+                            'name'          => !empty($validated['name']) ? $validated['name'] : $athlete->name,
+                            'position'      => !empty($validated['position']) ? $validated['position'] : $athlete->position,
+                        ]);
+                    }
+                } else {
+                    $athlete->update([
+                        'jersey_number' => $newJersey,
+                        'name'          => !empty($validated['name']) ? $validated['name'] : $athlete->name,
+                        'position'      => !empty($validated['position']) ? $validated['position'] : $athlete->position,
+                    ]);
+                }
             } else {
                 $athlete->update([
-                    'jersey_number' => $newJersey,
-                    'name'          => !empty($validated['name']) ? $validated['name'] : $athlete->name,
-                    'position'      => !empty($validated['position']) ? $validated['position'] : $athlete->position,
+                    'name'     => !empty($validated['name']) ? $validated['name'] : $athlete->name,
+                    'position' => !empty($validated['position']) ? $validated['position'] : $athlete->position,
                 ]);
             }
-        } else {
-            $athlete->update([
-                'name'     => !empty($validated['name']) ? $validated['name'] : $athlete->name,
-                'position' => !empty($validated['position']) ? $validated['position'] : $athlete->position,
-            ]);
-        }
+        });
 
         return response()->json([
             'success' => true,
             'athlete' => $athlete->fresh(),
-            'match'   => $match->fresh()->load([
-                'homeTeam.athletes',
-                'awayTeam.athletes',
-                'homeSuperTeam.members.athletes',
-                'awaySuperTeam.members.athletes',
-                'sets.stats.athlete',
-            ]),
+            'match'   => $match->fresh()->load($this->defaultMatchRelations()),
         ]);
     }
 
