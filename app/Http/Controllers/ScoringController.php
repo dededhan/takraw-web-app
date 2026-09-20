@@ -20,7 +20,7 @@ class ScoringController extends Controller
     {
         // Jika match ini adalah babak gugur (braket) dan belum selesai, selalu pastikan tim sinkron dengan hasil pool/babak sebelumnya:
         if ($match->stage !== 'pool' && $match->status !== 'finished') {
-            app(\App\Services\PlaceholderResolverService::class)->resolveForMatch($match, true);
+            app(\App\Services\PlaceholderResolverService::class)->resolveForMatch($match, false);
             $match->refresh();
         }
 
@@ -70,6 +70,22 @@ class ScoringController extends Controller
                         ->orderBy('name')
                         ->get();
                 }
+                if ($tournamentTeams->isEmpty()) {
+                    $teamIds = \Illuminate\Support\Facades\DB::table('pool_teams')
+                        ->join('pools', 'pools.id', '=', 'pool_teams.pool_id')
+                        ->where('pools.tournament_id', $match->tournament_id)
+                        ->pluck('pool_teams.team_id');
+                    $tournamentTeams = \App\Models\Team::whereIn('id', $teamIds)
+                        ->with('athletes')
+                        ->orderBy('name')
+                        ->get();
+                }
+                if ($tournamentTeams->isEmpty()) {
+                    $tournamentTeams = \App\Models\Team::where('is_super_sub', false)
+                        ->with('athletes')
+                        ->orderBy('name')
+                        ->get();
+                }
             }
         }
 
@@ -85,8 +101,8 @@ class ScoringController extends Controller
     public function setup(Request $request, Match_ $match)
     {
         $validated = $request->validate([
-            'court_number'        => 'required|integer|min:1',
-            'max_sets'            => 'required|integer|min:1|max:9',
+            'court_number'        => 'nullable|integer|min:1',
+            'max_sets'            => 'nullable|integer|min:1|max:9',
             'home_lineup'         => 'nullable|array',
             'away_lineup'         => 'nullable|array',
             'home_team_id'        => 'nullable|integer|exists:teams,id',
@@ -95,7 +111,9 @@ class ScoringController extends Controller
             'away_super_team_id'  => 'nullable|integer|exists:super_teams,id',
         ]);
 
-        $totalSets = $match->isTeamMode() ? 9 : $validated['max_sets'];
+        $courtNumber = $validated['court_number'] ?? $match->court_number ?? 1;
+        $maxSets     = $validated['max_sets'] ?? $match->max_sets ?? 3;
+        $totalSets   = $match->isTeamMode() ? 9 : $maxSets;
 
         $lineup = $match->lineup ?: [];
         if ($request->has('home_lineup')) {
@@ -106,28 +124,39 @@ class ScoringController extends Controller
         }
 
         $updateData = [
-            'court_number' => $validated['court_number'],
+            'court_number' => $courtNumber,
             'max_sets'     => $totalSets,
-            'status'       => 'setup',
             'lineup'       => $lineup,
         ];
 
+        if ($match->status === 'scheduled') {
+            $updateData['status'] = 'setup';
+        }
+
         // Jika tim manual diset pada match braket:
-        if (!empty($validated['home_team_id'])) {
-            $updateData['home_team_id'] = $validated['home_team_id'];
-            $updateData['home_placeholder'] = null;
+        if ($request->has('home_team_id')) {
+            $updateData['home_team_id'] = $request->input('home_team_id') ?: null;
+            if ($updateData['home_team_id']) {
+                $updateData['home_placeholder'] = null;
+            }
         }
-        if (!empty($validated['away_team_id'])) {
-            $updateData['away_team_id'] = $validated['away_team_id'];
-            $updateData['away_placeholder'] = null;
+        if ($request->has('away_team_id')) {
+            $updateData['away_team_id'] = $request->input('away_team_id') ?: null;
+            if ($updateData['away_team_id']) {
+                $updateData['away_placeholder'] = null;
+            }
         }
-        if (!empty($validated['home_super_team_id'])) {
-            $updateData['home_super_team_id'] = $validated['home_super_team_id'];
-            $updateData['home_placeholder'] = null;
+        if ($request->has('home_super_team_id')) {
+            $updateData['home_super_team_id'] = $request->input('home_super_team_id') ?: null;
+            if ($updateData['home_super_team_id']) {
+                $updateData['home_placeholder'] = null;
+            }
         }
-        if (!empty($validated['away_super_team_id'])) {
-            $updateData['away_super_team_id'] = $validated['away_super_team_id'];
-            $updateData['away_placeholder'] = null;
+        if ($request->has('away_super_team_id')) {
+            $updateData['away_super_team_id'] = $request->input('away_super_team_id') ?: null;
+            if ($updateData['away_super_team_id']) {
+                $updateData['away_placeholder'] = null;
+            }
         }
 
         $match->update($updateData);

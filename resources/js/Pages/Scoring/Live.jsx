@@ -62,15 +62,25 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
     const [matchData, setMatchData] = useState(initialMatch);
     const [selectedAthlete, setSelectedAthlete] = useState({ home: null, away: null });
     const [scoreAnim, setScoreAnim] = useState({ home: false, away: false });
+    const isTeamMode = matchData.match_mode === 'team_regu' || matchData.match_mode === 'team_double';
+    const isBracketMatch = matchData.stage && matchData.stage !== 'pool';
+    const isHomeUnresolved = !matchData.home_team_id && !matchData.home_super_team_id;
+    const isAwayUnresolved = !matchData.away_team_id && !matchData.away_super_team_id;
+    const isTeamsUnresolved = isBracketMatch && (isHomeUnresolved || isAwayUnresolved);
+
     const [showSetup, setShowSetup] = useState(matchData.status === 'scheduled');
     const [setupData, setSetupData] = useState({ court_number: matchData.court_number || '', max_sets: matchData.max_sets || 3 });
     const [processing, setProcessing] = useState(false);
+    const [savingManualTeams, setSavingManualTeams] = useState(false);
     const [statsCache, setStatsCache] = useState({});
     const [syncingBracket, setSyncingBracket] = useState(false);
     const [finalizingMatch, setFinalizingMatch] = useState(false);
     const [resettingSetup, setResettingSetup] = useState(false);
     const [showManualTeamPicker, setShowManualTeamPicker] = useState(false);
-    const [selectedManualTeams, setSelectedManualTeams] = useState({ home: '', away: '' });
+    const [selectedManualTeams, setSelectedManualTeams] = useState({
+        home: (isTeamMode ? matchData.home_super_team_id : matchData.home_team_id) || '',
+        away: (isTeamMode ? matchData.away_super_team_id : matchData.away_team_id) || '',
+    });
 
     // Active on-court lineup per side (stores array of athlete IDs currently active on court)
     // Initialize from saved lineup in database if available
@@ -113,18 +123,20 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
                 away: initialMatch.lineup?.away || [],
             });
         }
+        const isTeam = initialMatch.match_mode === 'team_regu' || initialMatch.match_mode === 'team_double';
+        setSelectedManualTeams({
+            home: (isTeam ? initialMatch.home_super_team_id : initialMatch.home_team_id) || '',
+            away: (isTeam ? initialMatch.away_super_team_id : initialMatch.away_team_id) || '',
+        });
+        if (initialMatch.court_number) {
+            setSetupData(prev => ({ ...prev, court_number: initialMatch.court_number }));
+        }
         if (initialMatch.status === 'scheduled') {
             setShowSetup(true);
         } else if (initialMatch.status === 'finished') {
             setViewFinishedSummary(true);
         }
     }, [initialMatch]);
-
-    const isTeamMode = matchData.match_mode === 'team_regu' || matchData.match_mode === 'team_double';
-    const isBracketMatch = matchData.stage && matchData.stage !== 'pool';
-    const isHomeUnresolved = !matchData.home_team_id && !matchData.home_super_team_id && !selectedManualTeams.home;
-    const isAwayUnresolved = !matchData.away_team_id && !matchData.away_super_team_id && !selectedManualTeams.away;
-    const isTeamsUnresolved = isBracketMatch && (isHomeUnresolved || isAwayUnresolved);
 
     // Identify active live set
     const liveSet = useMemo(() => {
@@ -453,20 +465,57 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
         });
     };
 
+    const handleApplyManualTeams = () => {
+        const homeId = selectedManualTeams.home || (isTeamMode ? matchData.home_super_team_id : matchData.home_team_id);
+        const awayId = selectedManualTeams.away || (isTeamMode ? matchData.away_super_team_id : matchData.away_team_id);
+
+        if (!homeId && !awayId) {
+            alert('Silakan pilih minimal salah satu tim (Home atau Away) sebelum menyimpan.');
+            return;
+        }
+
+        setSavingManualTeams(true);
+        const payload = {
+            court_number: parseInt(setupData.court_number) || matchData.court_number || 1,
+            max_sets: parseInt(setupData.max_sets) || matchData.max_sets || 3,
+        };
+
+        if (homeId) {
+            payload[isTeamMode ? 'home_super_team_id' : 'home_team_id'] = parseInt(homeId);
+        }
+        if (awayId) {
+            payload[isTeamMode ? 'away_super_team_id' : 'away_team_id'] = parseInt(awayId);
+        }
+
+        router.post(route('scoring.setup', matchData.id), payload, {
+            preserveState: false,
+            preserveScroll: true,
+            onSuccess: () => {
+                setSavingManualTeams(false);
+            },
+            onError: (err) => {
+                setSavingManualTeams(false);
+                alert('Gagal menyimpan tim: ' + (Object.values(err)[0] || 'Terjadi kesalahan sistem.'));
+            }
+        });
+    };
+
     const handleSetup = (e) => {
         if (e) e.preventDefault();
         setProcessing(true);
         const payload = {
             ...setupData,
-            court_number: parseInt(setupData.court_number) || 1,
+            court_number: parseInt(setupData.court_number) || matchData.court_number || 1,
             home_lineup: setupLineup.home,
             away_lineup: setupLineup.away,
         };
-        if (selectedManualTeams.home) {
-            payload[isTeamMode ? 'home_super_team_id' : 'home_team_id'] = parseInt(selectedManualTeams.home);
+        const effHome = selectedManualTeams.home || (isTeamMode ? matchData.home_super_team_id : matchData.home_team_id);
+        const effAway = selectedManualTeams.away || (isTeamMode ? matchData.away_super_team_id : matchData.away_team_id);
+        if (effHome) {
+            payload[isTeamMode ? 'home_super_team_id' : 'home_team_id'] = parseInt(effHome);
         }
-        if (selectedManualTeams.away) {
-            payload[isTeamMode ? 'away_super_team_id' : 'away_team_id'] = parseInt(selectedManualTeams.away);
+        if (effAway) {
+            payload[isTeamMode ? 'away_super_team_id' : 'away_team_id'] = parseInt(effAway);
         }
         router.post(route('scoring.setup', matchData.id), payload, {
             preserveState: false,
@@ -479,11 +528,42 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
     };
 
     const handleStart = () => {
-        if (isTeamsUnresolved && !selectedManualTeams.home && !selectedManualTeams.away) {
-            alert('Pertandingan ini masih menunggu hasil tim dari penyisihan pool. Silakan muat tim otomatis atau tentukan tim secara manual sebelum memulai.');
+        const homeManual = selectedManualTeams.home;
+        const awayManual = selectedManualTeams.away;
+        const currentHome = isTeamMode ? matchData.home_super_team_id : matchData.home_team_id;
+        const currentAway = isTeamMode ? matchData.away_super_team_id : matchData.away_team_id;
+
+        if (isTeamsUnresolved && !homeManual && !awayManual && !currentHome && !currentAway) {
+            alert('Pertandingan ini masih menunggu hasil tim dari penyisihan pool. Silakan tentukan tim sebelum memulai.');
             return;
         }
         setProcessing(true);
+
+        const hasNewManualAssignment = (homeManual && homeManual != currentHome) || (awayManual && awayManual != currentAway);
+        if (hasNewManualAssignment) {
+            const payload = {
+                court_number: parseInt(setupData.court_number) || matchData.court_number || 1,
+                max_sets: parseInt(setupData.max_sets) || matchData.max_sets || 3,
+                home_lineup: setupLineup.home,
+                away_lineup: setupLineup.away,
+            };
+            if (homeManual) payload[isTeamMode ? 'home_super_team_id' : 'home_team_id'] = parseInt(homeManual);
+            if (awayManual) payload[isTeamMode ? 'away_super_team_id' : 'away_team_id'] = parseInt(awayManual);
+
+            router.post(route('scoring.setup', matchData.id), payload, {
+                preserveState: false,
+                onSuccess: () => {
+                    router.post(route('scoring.start', matchData.id), {}, {
+                        preserveState: false,
+                        onSuccess: () => setProcessing(false),
+                        onError: () => setProcessing(false)
+                    });
+                },
+                onError: () => setProcessing(false)
+            });
+            return;
+        }
+
         router.post(route('scoring.start', matchData.id), {}, {
             preserveState: false,
             onSuccess: () => setProcessing(false),
@@ -493,22 +573,29 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
 
     const handleSetupAndStart = (e) => {
         if (e) e.preventDefault();
-        if (isTeamsUnresolved && !selectedManualTeams.home && !selectedManualTeams.away) {
-            alert('Pertandingan ini masih menunggu hasil tim dari penyisihan pool. Silakan muat tim otomatis atau tentukan tim secara manual sebelum memulai.');
+        const homeManual = selectedManualTeams.home;
+        const awayManual = selectedManualTeams.away;
+        const currentHome = isTeamMode ? matchData.home_super_team_id : matchData.home_team_id;
+        const currentAway = isTeamMode ? matchData.away_super_team_id : matchData.away_team_id;
+
+        if (isTeamsUnresolved && !homeManual && !awayManual && !currentHome && !currentAway) {
+            alert('Pertandingan ini masih menunggu hasil tim dari penyisihan pool. Silakan tentukan tim sebelum memulai.');
             return;
         }
         setProcessing(true);
         const payload = {
             ...setupData,
-            court_number: parseInt(setupData.court_number) || 1,
+            court_number: parseInt(setupData.court_number) || matchData.court_number || 1,
             home_lineup: setupLineup.home,
             away_lineup: setupLineup.away,
         };
-        if (selectedManualTeams.home) {
-            payload[isTeamMode ? 'home_super_team_id' : 'home_team_id'] = parseInt(selectedManualTeams.home);
+        const effHome = homeManual || currentHome;
+        const effAway = awayManual || currentAway;
+        if (effHome) {
+            payload[isTeamMode ? 'home_super_team_id' : 'home_team_id'] = parseInt(effHome);
         }
-        if (selectedManualTeams.away) {
-            payload[isTeamMode ? 'away_super_team_id' : 'away_team_id'] = parseInt(selectedManualTeams.away);
+        if (effAway) {
+            payload[isTeamMode ? 'away_super_team_id' : 'away_team_id'] = parseInt(effAway);
         }
         router.post(route('scoring.setup', matchData.id), payload, {
             preserveState: false,
@@ -944,53 +1031,52 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 font-mono text-xs">
                                             <div className="bg-surface-950/70 p-3 rounded-xl border border-surface-800">
                                                 <span className="text-surface-400 block text-[10px] uppercase font-bold tracking-wider">Slot Home:</span>
-                                                <strong className="text-primary-300">{matchData.home_placeholder || homeTeamName}</strong>
+                                                <strong className="text-primary-300">{!isHomeUnresolved ? homeTeamName : (matchData.home_placeholder || 'TBD')}</strong>
                                                 {isHomeUnresolved && <span className="block text-[10px] text-amber-400/80 mt-0.5 font-sans">Belum terisi</span>}
                                             </div>
                                             <div className="bg-surface-950/70 p-3 rounded-xl border border-surface-800">
                                                 <span className="text-surface-400 block text-[10px] uppercase font-bold tracking-wider">Slot Away:</span>
-                                                <strong className="text-accent-300">{matchData.away_placeholder || awayTeamName}</strong>
+                                                <strong className="text-accent-300">{!isAwayUnresolved ? awayTeamName : (matchData.away_placeholder || 'TBD')}</strong>
                                                 {isAwayUnresolved && <span className="block text-[10px] text-amber-400/80 mt-0.5 font-sans">Belum terisi</span>}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-surface-800/80">
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-surface-800/80">
                                     <button
                                         type="button"
                                         onClick={handleSyncBracket}
                                         disabled={syncingBracket}
-                                        className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-surface-950 font-black text-xs transition-all flex items-center gap-1.5 shadow-lg shadow-amber-950/40 disabled:opacity-50 cursor-pointer active:scale-95"
+                                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-surface-950 font-black text-xs transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-amber-950/40 disabled:opacity-50 cursor-pointer active:scale-95"
                                     >
                                         <span>🔄</span>
-                                        <span>{syncingBracket ? 'Memeriksa Klasemen...' : 'Cek & Muat Tim Otomatis dari Pool Sekarang'}</span>
+                                        <span>{syncingBracket ? 'Memeriksa Klasemen...' : 'Cek & Muat Tim Otomatis Sekarang'}</span>
                                     </button>
 
-                                    {tournamentTeams.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowManualTeamPicker(!showManualTeamPicker)}
-                                            className="px-3.5 py-2.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white font-bold text-xs transition-all border border-surface-700 cursor-pointer"
-                                        >
-                                            {showManualTeamPicker ? '✕ Tutup Pilihan Manual' : '✏️ Pilih Tim Manual (Override)'}
-                                        </button>
-                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowManualTeamPicker(!showManualTeamPicker)}
+                                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-amber-300 hover:text-white font-bold text-xs transition-all border border-amber-500/40 cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                        <span>✏️</span>
+                                        <span>{showManualTeamPicker ? '✕ Sembunyikan Pilihan Tim' : 'Pilih Tim Manual (Override)'}</span>
+                                    </button>
                                 </div>
 
                                 {/* Manual Team Selection Form */}
-                                {showManualTeamPicker && tournamentTeams.length > 0 && (
+                                {showManualTeamPicker && (
                                     <div className="p-4 bg-surface-950/80 rounded-2xl border border-surface-800 space-y-3 mt-2">
                                         <p className="text-xs text-surface-300 font-semibold">
-                                            Gunakan opsi ini jika pertandingan pool selesai di lapangan fisik dan Anda ingin langsung menetapkan kedua tim:
+                                            Gunakan opsi ini jika pertandingan babak sebelumnya selesai di lapangan fisik dan Anda ingin langsung menetapkan kedua tim:
                                         </p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             <div>
                                                 <label className="block text-[11px] font-bold text-primary-300 mb-1">Tim Tuan Rumah (Home):</label>
                                                 <select
-                                                    value={selectedManualTeams.home || ''}
+                                                    value={selectedManualTeams.home || (isTeamMode ? matchData.home_super_team_id : matchData.home_team_id) || ''}
                                                     onChange={(e) => setSelectedManualTeams(prev => ({ ...prev, home: e.target.value }))}
-                                                    className="w-full rounded-xl bg-surface-900 border-surface-700 text-surface-100 text-xs font-bold focus:border-emerald-500"
+                                                    className="w-full rounded-xl bg-surface-900 border-surface-700 text-surface-100 text-xs font-bold focus:border-emerald-500 py-2.5 px-3"
                                                 >
                                                     <option value="">-- Tetapkan Tim Home --</option>
                                                     {tournamentTeams.map(t => (
@@ -1001,9 +1087,9 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
                                             <div>
                                                 <label className="block text-[11px] font-bold text-accent-300 mb-1">Tim Tamu (Away):</label>
                                                 <select
-                                                    value={selectedManualTeams.away || ''}
+                                                    value={selectedManualTeams.away || (isTeamMode ? matchData.away_super_team_id : matchData.away_team_id) || ''}
                                                     onChange={(e) => setSelectedManualTeams(prev => ({ ...prev, away: e.target.value }))}
-                                                    className="w-full rounded-xl bg-surface-900 border-surface-700 text-surface-100 text-xs font-bold focus:border-emerald-500"
+                                                    className="w-full rounded-xl bg-surface-900 border-surface-700 text-surface-100 text-xs font-bold focus:border-emerald-500 py-2.5 px-3"
                                                 >
                                                     <option value="">-- Tetapkan Tim Away --</option>
                                                     {tournamentTeams.map(t => (
@@ -1011,6 +1097,19 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
                                                     ))}
                                                 </select>
                                             </div>
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-surface-800">
+                                            <span className="text-[11px] text-surface-400">
+                                                💡 Klik tombol di samping untuk menyimpan tim pilihan ke database.
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={handleApplyManualTeams}
+                                                disabled={savingManualTeams || (!selectedManualTeams.home && !selectedManualTeams.away)}
+                                                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                                            >
+                                                <span>{savingManualTeams ? '⏳ Menyimpan Tim...' : '💾 Terapkan & Simpan Tim Pilihan'}</span>
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -1033,6 +1132,64 @@ export default function LiveScoring({ match: initialMatch, tournamentTeams = [] 
                                         </button>
                                     )}
                                 </div>
+
+                                {/* ─── Opsi Pemilihan Tim Manual di Pengaturan Lapangan untuk HP / Tablet ─── */}
+                                {(isTeamsUnresolved || isBracketMatch) && (
+                                    <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-base">✏️</span>
+                                                <label className="block text-xs font-black text-amber-300">
+                                                    Pilih Tim Pertandingan (Override Manual)
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <p className="text-[11px] text-surface-300 mt-0.5">
+                                            {isTeamsUnresolved 
+                                                ? 'Kedua tim belum terisi otomatis. Silakan pilih tim di bawah:'
+                                                : 'Anda dapat mengganti atau menetapkan ulang tim pertandingan di sini jika diperlukan:'}
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-primary-300 mb-1">Tim Tuan Rumah (Home):</label>
+                                                <select
+                                                    value={selectedManualTeams.home || (isTeamMode ? matchData.home_super_team_id : matchData.home_team_id) || ''}
+                                                    onChange={(e) => setSelectedManualTeams(prev => ({ ...prev, home: e.target.value }))}
+                                                    className="w-full rounded-xl bg-surface-800 border-surface-700 text-surface-100 text-xs font-bold focus:border-emerald-500 py-2.5 px-3"
+                                                >
+                                                    <option value="">-- Tetapkan Tim Home --</option>
+                                                    {tournamentTeams.map(t => (
+                                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-accent-300 mb-1">Tim Tamu (Away):</label>
+                                                <select
+                                                    value={selectedManualTeams.away || (isTeamMode ? matchData.away_super_team_id : matchData.away_team_id) || ''}
+                                                    onChange={(e) => setSelectedManualTeams(prev => ({ ...prev, away: e.target.value }))}
+                                                    className="w-full rounded-xl bg-surface-800 border-surface-700 text-surface-100 text-xs font-bold focus:border-emerald-500 py-2.5 px-3"
+                                                >
+                                                    <option value="">-- Tetapkan Tim Away --</option>
+                                                    {tournamentTeams.map(t => (
+                                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-end pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={handleApplyManualTeams}
+                                                disabled={savingManualTeams || (!selectedManualTeams.home && !selectedManualTeams.away)}
+                                                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                                            >
+                                                <span>{savingManualTeams ? '⏳ Menyimpan...' : '💾 Simpan Tim Sekarang'}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div>
                                     <label className="block text-xs font-bold text-surface-300 mb-1">Nomor Lapangan</label>
                                     <input
