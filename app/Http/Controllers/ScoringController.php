@@ -46,18 +46,30 @@ class ScoringController extends Controller
 
         // Ambil kandidat tim turnamen untuk opsi pemilihan manual jika match braket belum terisi
         $tournamentTeams = [];
-        if ($match->tournament_id) {
+        if ($match->tournament) {
             if ($match->isTeamMode()) {
-                $tournamentTeams = \App\Models\SuperTeam::where('tournament_id', $match->tournament_id)
-                    ->where('match_mode', $match->match_mode)
+                $tournamentTeams = $match->tournament->superTeams()
+                    ->wherePivot('match_mode', $match->match_mode)
                     ->with('members.athletes')
                     ->orderBy('name')
                     ->get();
+                if ($tournamentTeams->isEmpty()) {
+                    $tournamentTeams = $match->tournament->superTeams()
+                        ->with('members.athletes')
+                        ->orderBy('name')
+                        ->get();
+                }
             } else {
-                $tournamentTeams = \App\Models\Team::where('tournament_id', $match->tournament_id)
+                $tournamentTeams = $match->tournament->teamsForMode($match->match_mode)
                     ->with('athletes')
                     ->orderBy('name')
                     ->get();
+                if ($tournamentTeams->isEmpty()) {
+                    $tournamentTeams = $match->tournament->teams()
+                        ->with('athletes')
+                        ->orderBy('name')
+                        ->get();
+                }
             }
         }
 
